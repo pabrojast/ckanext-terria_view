@@ -77,8 +77,10 @@ Document any optional config settings here. For example::
     # (optional, default: 24).
     ckanext.terria_view.some_setting = some_default_value
     ckan.terria_view.instance_title = National Map
-    ckan.terria_view.instance_url = National Map
+    ckan.terria_view.instance_url = https://nationalmap.gov.au
 
+
+May also need to enable cors if instance is on a different origin.
 
 ------------------------
 Development Installation
