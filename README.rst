@@ -32,18 +32,13 @@
 ckanext-terria_view
 =============
 
-.. Put a description of your extension here:
-   What does it do? What features does it have?
-   Consider including some screenshots or embedding a video!
-
+Preview CKAN data on an instance of TerriaJS.
 
 ------------
 Requirements
 ------------
 
-For example, you might want to mention here which versions of CKAN this
-extension works with.
-
+Built with CKAN 2.7.
 
 ------------
 Installation
@@ -63,8 +58,8 @@ To install ckanext-terria_view:
 
      pip install ckanext-terria_view
 
-3. Add ``terria_view`` to the ``ckan.plugins`` setting in your CKAN
-   config file (by default the config file is located at
+3. Add ``terria_view`` to the ``ckan.plugins`` and ``ckan.views.default_views``
+   settings in your CKAN config file (by default the config file is located at
    ``/etc/ckan/default/production.ini``).
 
 4. Restart CKAN. For example if you've deployed CKAN with Apache on Ubuntu::
@@ -81,6 +76,8 @@ Document any optional config settings here. For example::
     # The minimum number of hours to wait before re-checking a resource
     # (optional, default: 24).
     ckanext.terria_view.some_setting = some_default_value
+    ckan.terria_view.instance_title = National Map
+    ckan.terria_view.instance_url = National Map
 
 
 ------------------------
