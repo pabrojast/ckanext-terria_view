@@ -1,13 +1,54 @@
-{% set target = preview_url or c.preview_url %}
+<script>
+
+  function makePopupSendMessage(message, domain, path)
+  {
+    var url = domain + path;
+    var name = url.toLowerCase().replace(/[^a-z]/g, '');
+    var popup = window.open(null, name);
+    
+    function post()
+    {
+      popup.postMessage(message, domain);
+      console.log('sent', message);
+    }
+    
+    function check()
+    {
+      try
+      {
+        if (popup.location.toString() === 'about:blank')
+        {
+          popup.location.href = url;
+        }
+        setTimeout(post, 1000);
+      } catch(e)
+      {
+        // console.error(e);
+        post();
+      }
+    }
+    setTimeout(check, 1000);
+  }
+
+
+  window.terriaJSPreview = function(e)
+  {
+    var destination = new URL('{{ terria_instance_url }}');
+    var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
+    makePopupSendMessage(message, destination.origin, destination.pathname);
+    e.preventDefault();
+  };
+
+</script>
 <a
   class="btn pull-right"
   style="margin-bottom: 10px;"
-  href="{{ target }}"
-  target="_blank">
-  {{ _('See Externally') }}
+  href="#"
+  onclick="terriaJSPreview(event)">
+  {{ _('View in a separate') }} {{title}} {{ _('window') }}
 </a>
 <iframe
-  src="{{ target }}"
+  src="{{ terria_instance_url }}#start={{ encoded_config }}"
   style="height: 600px; width: 100%; border: none;"
   allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
 </iframe>

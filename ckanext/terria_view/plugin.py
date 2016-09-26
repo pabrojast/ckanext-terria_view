@@ -3,13 +3,60 @@ import ckan.plugins.toolkit as toolkit
 import json
 import urllib
 import re
+import functools
+import os
+
+SUPPORTED_FORMATS = ['wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
+SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
+SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
+
+
+def can_view_resource(resource):
+    '''
+    Check if we support a resource
+    '''
+    
+    format_ = resource.get('format', '')
+    if (format_ == ''):
+        format_ = os.path.splitext(resource['url'])[1][1:]
+
+    return re.match(SUPPORTED_FORMATS_REGEX, format_.lower()) != None
+
+
+import ckan.logic.action.get as get
+resource_view_list = get.resource_view_list
+
+PLUGIN_NAME = 'terria_view'
+
+def new_resource_view_list(plugin, context, data_dict):
+    '''
+    Automatically add resource view to legacy resources which did add terria_view
+    on creation. Unfortunately, action patching is necessary.
+    '''
+    ret = resource_view_list(context, data_dict)
+    has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
+    if not has_plugin:
+        if can_view_resource(context['resource'].__dict__):
+            ret.append({
+                "description": "", 
+                "title": plugin.default_title, 
+                "resource_id": data_dict['id'], 
+                "view_type": "terria_view", 
+                "id": "00000000-0000-0000-0000-000000000000", 
+                "package_id": "00000000-0000-0000-0000-000000000000"
+            });
+    return ret
+
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
 
-    Site_Url = ''
-    Supported_Formats_Regex = '^(wms|wfs|kml|kmz|gjson|geojson|czml|csv-geo-.*)'
-    Default_Title = 'National Map'
-    Default_Instance_Url = 'http://nationalmap.gov.au'
+    site_url = ''
+    
+    default_title = 'National Map'
+    #default_instance_url = 'http://nationalmap.gov.au'
+    default_instance_url = 'http://130.155.156.139:3001'
+    
+    resource_view_list_callback = None
   
     # IConfigurer
 
@@ -23,9 +70,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IConfigurable, inherit=True)
 
     def configure(self, config):
-        self.Site_Url = config.get('ckan.site_url', self.Site_Url)
-        self.Default_Title = config.get('ckan.terria_view.instance_title', self.Default_Title)
-        self.Default_Instance_Url = config.get('ckan.terria_view.instance_url', self.Default_Instance_Url)
+        self.site_url = config.get('ckan.site_url', self.site_url)
+        self.default_title = config.get('ckan.' + PLUGIN_NAME + '.instance_title', self.default_title)
+        self.default_instance_url = config.get('ckan.' + PLUGIN_NAME + '.instance_url', self.default_instance_url)
+        self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
     
     # IResourceView
     
@@ -33,69 +81,116 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
   
     def info(self):
         return {
-            'name': 'terria_view',
-            'title': toolkit._('View In A TerriaJS Instance'),
-            'default_title': self.Default_Title,
+            'name': PLUGIN_NAME,
+            'title': toolkit._('TerriaJS Preview'),
+            'default_title': toolkit._(self.default_title),
             'icon': 'globe',
             'always_available': True,
             'iframed': False
         }
 
     def can_view(self, data_dict):
-        resource = data_dict['resource']
-        format_lower = resource['format'].lower()
-        if (format_lower == ''):
-            format_lower = os.path.splitext(resource['url'])[1][1:].lower()
-        return re.match(self.Supported_Formats_Regex, format_lower) != None
+        return can_view_resource(data_dict['resource']);
 
     def setup_template_variables(self, context, data_dict):
+        
+        package = data_dict['package']
         resource = data_dict['resource']
-        item = {
-            "type": "ckan-resource",
-            "name": resource['name'],
-            "isUserSupplied": True,
-            "isOpen": True,
-            "isEnabled": True,
-            "resourceId": resource['id'],
-            "datasetId": resource['package_id'],
-            "url": self.Site_Url,
-            "zoomOnEnable": True
-        }
-        config = {
-            "version": "0.0.03",
-            "initSources": [{
-                "catalog": [{
-                    "type": "group",
-                    "name": "User-Added Data",
-                    "description": "The group for data that was added by the user via the Add Data panel.",
-                    "isUserSupplied": True,
-                    "isOpen": True,
-                    "items": [item]
-                }],
-                "catalogIsUserSupplied": True
-            }]
-        }
-        encoded_config = urllib.quote(json.dumps(config))
+        resource_id = resource['id']
+        organisation = package['organization']
+        organization_id = organisation['id']
+        view = data_dict['resource_view']
+        view_title = view.get('title', self.default_title)
+        view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
 
-        view = {}
+        config = {  
+            "version":"0.0.05",
+            "initSources":[  
+                {  
+                    "catalog":[  
+                        {  
+                            "name":"User-Added Data",
+                            "description":"The group for data that was added by the user via the Add Data panel.",
+                            "isUserSupplied":True,
+                            "id":"Root Group/User-Added Data",
+                            "isOpen":True,
+                            "type":"group"
+                        },
+                        {  
+                            "name":"" + self.site_url + "",
+                            "isUserSupplied":True,
+                            "id":"Root Group/" + self.site_url + "",
+                            "isOpen":True,
+                            "url":"" + self.site_url + "",
+                            "filterQuery":[  
+                                SUPPORTED_FILTER_EXPR
+                            ],
+                            "groupBy":"organization",
+                            "includeWms":True,
+                            "includeWfs":True,
+                            "includeKml":True,
+                            "includeCsv":True,
+                            "includeEsriMapServer":True,
+                            "includeGeoJson":True,
+                            "includeCzml":True,
+                            "type":"ckan"
+                        }
+                    ]
+                },
+                {  
+                    "sharedCatalogMembers":{  
+                        "Root Group/User-Added Data":{  
+                            "isOpen":True,
+                            "type":"group",
+                            "parents":[  
+
+                            ]
+                        },
+                        "Root Group/" + self.site_url + "":{  
+                            "isOpen":True,
+                            "type":"ckan",
+                            "parents":[  
+
+                            ]
+                        },
+                        "Root Group/" + self.site_url + "/" + organization_id + "":{  
+                            "isOpen":True,
+                            "type":"group",
+                            "parents":[  
+                                "Root Group/" + self.site_url + ""
+                            ]
+                        },
+                        "Root Group/" + self.site_url + "/" + organization_id + "/" + resource_id + "":{  
+                            "nowViewingIndex":0,
+                            "isEnabled":True,
+                            "isShown":True,
+                            "isLegendVisible":True,
+                            "opacity":0.6,
+                            "keepOnTop":False,
+                            "disableUserChanges":False,
+                            "tableStyle":{  
+                                "scale":1,
+                                "colorBinMethod":"auto",
+                                "legendTicks":3,
+                                "dataVariable":"id"
+                            },
+                            "type":"csv",
+                            "parents":[  
+                                "Root Group/" + self.site_url + "",
+                                "Root Group/" + self.site_url + "/" + organization_id + ""
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
         
-        if 'resource_view' in data_dict:
-            view = data_dict['resource_view']
-        
-        if 'title' not in view:
-            view['title'] = self.Default_Title
-        
-        if 'terria_instance_url' not in view:
-            view['terria_instance_url'] = self.Default_Instance_Url
-        
-        terria_instance_url = view['terria_instance_url']
-        
-        preview_url = terria_instance_url + '#start=' + encoded_config
-        
-        plugins.toolkit.c.preview_url = preview_url
+        encoded_config = urllib.quote(json.dumps(config))
         
         return {
-            'preview_url': preview_url
+            'title': view_title,
+            'terria_instance_url': view_terria_instance_url,
+            'encoded_config': encoded_config
         }
 
     def view_template(self, context, data_dict):
@@ -105,7 +200,19 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # The template used to generate the custom form elements. See below.
         return 'terria_instance_url.html'
 
-    # IResourcePreview - deprecated but still needed
+
+    # IActions - Make it so that this plugin behaves like the
+    # deprecated IResourcePreview interface and better
+
+    plugins.implements(plugins.IActions, inherit=True)
+
+    def get_actions(self):
+        return {
+            'resource_view_list': self.resource_view_list_callback
+        }
+
+    '''
+    # IResourcePreview - deprecated implementation
     
     plugins.implements(plugins.IResourcePreview, inherit=True)
     
@@ -117,3 +224,4 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     def preview_template(self, context, data_dict):
         return 'terria.html'
+    '''
