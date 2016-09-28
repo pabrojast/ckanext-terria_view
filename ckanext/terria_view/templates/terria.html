@@ -9,7 +9,6 @@
     function post()
     {
       popup.postMessage(message, domain);
-      console.log('sent', message);
     }
     
     function check()
@@ -30,12 +29,16 @@
     setTimeout(check, 1000);
   }
 
-  window.terriaJSPreview = function(e)
+  window.terriaJSPreview = function()
   {
-    var destination = new URL('{{ terria_instance_url }}');
+    var url = '{{ terria_instance_url }}';
+    if (url.match(/^[/][/]/))
+    {
+      url = window.location.protocol + url;
+    }
+    var destination = new (URL || webkitURL)(url);
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
     makePopupSendMessage(message, destination.origin, destination.pathname + '#allowOrigin=' + (window.location.origin || '{{ origin }}'));
-    e.preventDefault();
   };
 
 </script>
