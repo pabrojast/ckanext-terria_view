@@ -6,6 +6,7 @@ import re
 import functools
 import os
 
+
 SUPPORTED_FORMATS = ['wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
@@ -17,7 +18,7 @@ def can_view_resource(resource):
     '''
     
     format_ = resource.get('format', '')
-    if (format_ == ''):
+    if format_ == '':
         format_ = os.path.splitext(resource['url'])[1][1:]
 
     return re.match(SUPPORTED_FORMATS_REGEX, format_.lower()) != None
@@ -53,8 +54,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     site_url = ''
     
     default_title = 'National Map'
-    #default_instance_url = 'http://nationalmap.gov.au'
-    default_instance_url = 'http://130.155.156.139:3001'
+    default_instance_url = '//nationalmap.gov.au'
     
     resource_view_list_callback = None
   
@@ -71,8 +71,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     def configure(self, config):
         self.site_url = config.get('ckan.site_url', self.site_url)
-        self.default_title = config.get('ckan.' + PLUGIN_NAME + '.instance_title', self.default_title)
-        self.default_instance_url = config.get('ckan.' + PLUGIN_NAME + '.instance_url', self.default_instance_url)
+        self.default_title = config.get('ckanext.' + PLUGIN_NAME + '.default_title', self.default_title)
+        self.default_instance_url = config.get('ckanext.' + PLUGIN_NAME + '.default_instance_url', self.default_instance_url)
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
     
     # IResourceView
@@ -86,7 +86,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'default_title': toolkit._(self.default_title),
             'icon': 'globe',
             'always_available': True,
-            'iframed': False
+            'iframed': False,
+            "schema": {
+                "terria_instance_url": []
+            }
         }
 
     def can_view(self, data_dict):
@@ -190,7 +193,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return {
             'title': view_title,
             'terria_instance_url': view_terria_instance_url,
-            'encoded_config': encoded_config
+            'encoded_config': encoded_config,
+            'origin': self.site_url
         }
 
     def view_template(self, context, data_dict):

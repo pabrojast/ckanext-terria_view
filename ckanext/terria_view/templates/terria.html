@@ -30,12 +30,11 @@
     setTimeout(check, 1000);
   }
 
-
   window.terriaJSPreview = function(e)
   {
     var destination = new URL('{{ terria_instance_url }}');
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-    makePopupSendMessage(message, destination.origin, destination.pathname);
+    makePopupSendMessage(message, destination.origin, destination.pathname + '#allowOrigin=' + (window.location.origin || '{{ origin }}'));
     e.preventDefault();
   };
 

@@ -32,7 +32,8 @@
 ckanext-terria_view
 =============
 
-Preview CKAN data on an instance of TerriaJS.
+Preview CKAN data on an instance of TerriaJS. Adds itself automatically
+to supported resources. Also able to configure as custom views.
 
 ------------
 Requirements
@@ -58,7 +59,7 @@ To install ckanext-terria_view:
 
      pip install ckanext-terria_view
 
-3. Add ``terria_view`` to the ``ckan.plugins`` and ``ckan.views.default_views``
+3. Add ``terria_view`` to the ``ckan.plugins`` 
    settings in your CKAN config file (by default the config file is located at
    ``/etc/ckan/default/production.ini``).
 
@@ -73,14 +74,17 @@ Config Settings
 
 Document any optional config settings here. For example::
 
-    # The minimum number of hours to wait before re-checking a resource
-    # (optional, default: 24).
-    ckanext.terria_view.some_setting = some_default_value
-    ckan.terria_view.instance_title = National Map
-    ckan.terria_view.instance_url = https://nationalmap.gov.au
+    # Default Instance Title (optional, default: National Map).
+    ckanext.terria_view.default_title = National Map
+    
+    # Default Instance Url (optional, default: //nationalmap.gov.au).
+    # Use protocol independent url to not encounter security issues
+    ckanext.terria_view.default_instance_url = //nationalmap.gov.au
 
+Enable CORS in ckan unless instance is on the same origin.
 
-May also need to enable cors if instance is on a different origin.
+Can also add ``terria_view`` to ``ckan.views.default_views`` if you want this
+view to be added to all new resources of supported formats.
 
 ------------------------
 Development Installation
@@ -113,6 +117,8 @@ coverage installed in your virtualenv (``pip install coverage``) then run::
 Registering ckanext-terria_view on PyPI
 ---------------------------------
 
+TODO: this does not work in ubuntu any more
+
 ckanext-terria_view should be availabe on PyPI as
 https://pypi.python.org/pypi/ckanext-terria_view. If that link doesn't work, then
 you can register the project on PyPI for the first time by following these
@@ -132,9 +138,9 @@ steps:
 
 4. Tag the first release of the project on GitHub with the version number from
    the ``setup.py`` file. For example if the version number in ``setup.py`` is
-   0.0.1 then do::
+   0.0.2 then do::
 
-       git tag 0.0.1
+       git tag 0.0.2
        git push --tags
 
 
