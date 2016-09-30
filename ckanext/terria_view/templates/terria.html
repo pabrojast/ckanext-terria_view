@@ -3,11 +3,12 @@
   function makePopupSendMessage(message, domain, path)
   {
     var url = domain + path;
-    var name = url.toLowerCase().replace(/[^a-z]/g, '');
+    var name = (url + window.location.origin).toLowerCase().replace(/[^a-z]/g, '');
     var popup = window.open(null, name);
     
     function post()
     {
+      message.allowOrigin = window.location.origin;
       popup.postMessage(message, domain);
     }
     
@@ -27,6 +28,14 @@
       }
     }
     setTimeout(check, 1000);
+    
+    window.addEventListener('message', function()
+    {
+      if (event.origin === domain && event.data === 'ready')
+      {
+        post();
+      }
+    }, false);
   }
 
   window.terriaJSPreview = function()
@@ -38,7 +47,7 @@
     }
     var destination = new (URL || webkitURL)(url);
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-    makePopupSendMessage(message, destination.origin, destination.pathname + '#allowOrigin=' + (window.location.origin || '{{ origin }}'));
+    makePopupSendMessage(message, destination.origin, destination.pathname);
   };
 
 </script>
