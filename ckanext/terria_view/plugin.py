@@ -188,7 +188,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             ]
         }
         
-        encoded_config = urllib.quote(json.dumps(config))
+        encoded_config = urllib.parse.quote(json.dumps(config))
         
         return {
             'title': view_title,
