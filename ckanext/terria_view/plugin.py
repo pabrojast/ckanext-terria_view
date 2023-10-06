@@ -7,7 +7,7 @@ import functools
 import os
 
 
-SUPPORTED_FORMATS = ['wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
+SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
 
@@ -53,8 +53,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     site_url = ''
     
-    default_title = 'National Map'
-    default_instance_url = '//nationalmap.gov.au'
+    default_title = 'Terria Viewer'
+    default_instance_url = '//terria.dev-wins.com'
     
     resource_view_list_callback = None
   
@@ -106,26 +106,61 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
 
-        config = {  
-            "version":"0.0.05",
-            "initSources":[  
-                {  
-                    "catalog":[  
-                        {  
-                            "name":"Kml test",
-                            "type": "kml",
-                            "url": "https://data.dev-wins.com/dataset/9897691a-c6d4-416c-8d16-02e0e7db1a2f/resource/64abc581-d97b-45ae-bd2d-6bc6b2e5953d/download/bwa.kml",
-                            "cacheDuration": "5m",
-                            "description":"The group for data that was added by the user via the Add Data panel.",
-                        }
-                 
+        config ="""{
+            "version": "8.0.0",
+            "initSources": [
+          {
+                "catalog": [
+                  {
+                    "name": """+'"'+resource["description"]+'"'+""",
+                    "type": "group",
+                    "isOpen": true,
+                    "members": [
+                      { "id": "zdjwipNdnA",
+                        "name": """+'"'+resource["description"]+'"'+""",
+                        "type": """+'"'+resource["format"].lower()+'"'+""",
+                        "url": """+'"'+resource["url"]+'"'+""",
+                        "cacheDuration": "5m",
+                        "isOpenInWorkbench": true
+                      }
                     ]
+                  }
+                ],
+          	  "stratum": "user",
+                "models": {
+                   """+'"//'+resource["description"]+'"'+""": {
+                    "isOpen": true,
+                    "knownContainerUniqueIds": [
+                      "/"
+                    ],
+                    "type": "group"
+                  },
+                  "zdjwipNdnA": {
+                    "show": true,
+                    "isOpenInWorkbench": true,
+                    "knownContainerUniqueIds": [
+                     """+'"//'+resource["description"]+'"'+"""
+                    ],
+                    "type": """+'"'+resource["format"].lower()+'"'+"""
+                  },
+                  "/": {
+                    "type": "group"
+                  }
+                },
+                "workbench": [
+                  "zdjwipNdnA"
+                ],
+                "viewerMode": "3dSmooth",
+          	  "focusWorkbenchItems": true,
+                "baseMaps": {
+                  "defaultBaseMapId": "basemap-positron",
+                  "previewBaseMapId": "basemap-positron"
                 }
-               
-            ]
-        }
-        
-        encoded_config = urllib.parse.quote(json.dumps(config))
+              }
+          	  ]
+          }"""
+
+        encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
         return {
             'title': view_title,
