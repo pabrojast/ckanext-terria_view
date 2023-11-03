@@ -126,6 +126,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     ]
                   }
                 ],
+              "homeCamera": {
+                   "north": """+package["ymax"]+""",
+                   "east": """+package["xmax"]+""",
+                   "south": """+package["ymin"]+""",
+                   "west": """+package["xmin"]+"""
+    },
+                  "initialCamera": {
+                   "north": """+package["ymax"]+""",
+                   "east": """+package["xmax"]+""",
+                   "south": """+package["ymin"]+""",
+                   "west": """+package["xmin"]+"""
+    },
           	  "stratum": "user",
                 "models": {
                    """+'"//'+resource["description"]+'"'+""": {
