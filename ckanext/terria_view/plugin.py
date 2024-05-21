@@ -111,7 +111,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         ymin = package.get("ymin", "-60")
         xmin = package.get("xmin", "-108")
         
-        
+        print(ymax)
+        print(xmax)
+        print(ymin)
+        print(xmin)
+
         config ="""{ 
             "version": "8.0.0",
             "initSources": [
@@ -177,7 +181,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
               }
           	  ]
           }"""
-
+        print(config)
+        
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
         return {
