@@ -96,39 +96,35 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return can_view_resource(data_dict['resource']);
 
     def setup_template_variables(self, context, data_dict):
-        package = data_dict.get('package', {})
-        resource = data_dict.get('resource', {})
-        view = data_dict.get('resource_view', {})
-
-        # Obtener valores con valor por defecto
+        
+        package = data_dict['package']
+        resource = data_dict['resource']
+        resource_id = resource['id']
+        organisation = package['organization']
+        organization_id = organisation['id']
+        view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
-
-        # Valores de localización con valor por defecto si no existen
-        ymax = package.get("ymax", "0")
+        #fix when ymax and xmax don't exist
+        ymax = package.get("ymax", "0")  # Supone un valor predeterminado, por ejemplo '0'
         xmax = package.get("xmax", "0")
         ymin = package.get("ymin", "0")
         xmin = package.get("xmin", "0")
-
-        #Descripción y URL del recurso con valor por defecto si no existen
-        resource_description = resource.get("description", "No description provided")
-        resource_url = resource.get("url", "#")
-        resource_format = resource.get("format", "unknown").lower()
-
+        
         config ="""{
             "version": "8.0.0",
             "initSources": [
           {
                 "catalog": [
                   {
-                    "name": """+'"'+resource_description+'"'+""",
+                    "name": """+'"'+resource["description"]+'"'+""",
                     "type": "group",
                     "isOpen": true,
                     "members": [
                       { "id": "zdjwipNdnA",
-                        "name": """+'"'+resource_description+'"'+""",
-                        "type": """+'"'+resource_format+'"'+""",
-                        "url": """+'"'+resource_url+'"'+""",
+                        "name": """+'"'+resource["description"]+'"'+""",
+                        "type": """+'"'+resource["format"].lower()+'"'+""",
+                        "url": """+'"'+resource["url"]+'"'+""",
                         "cacheDuration": "5m",
                         "isOpenInWorkbench": true
                       }
@@ -149,7 +145,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     },
           	  "stratum": "user",
                 "models": {
-                   """+'"//'+resource_description+'"'+""": {
+                   """+'"//'+resource["description"]+'"'+""": {
                     "isOpen": true,
                     "knownContainerUniqueIds": [
                       "/"
@@ -160,9 +156,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     "show": true,
                     "isOpenInWorkbench": true,
                     "knownContainerUniqueIds": [
-                     """+'"//'+resource_description+'"'+"""
+                     """+'"//'+resource["description"]+'"'+"""
                     ],
-                    "type": """+'"'+resource_format+'"'+"""
+                    "type": """+'"'+resource["format"].lower()+'"'+"""
                   },
                   "/": {
                     "type": "group"
