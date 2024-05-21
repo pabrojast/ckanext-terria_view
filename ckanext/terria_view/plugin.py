@@ -106,11 +106,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         #fix when ymax and xmax don't exist
-        ymax = package.get("ymax", 0)  # Supone un valor predeterminado, por ejemplo '0'
-        xmax = package.get("xmax", 0)
-        ymin = package.get("ymin", 0)
-        xmin = package.get("xmin", 0)
-        config ="""{
+        ymax = package.get("ymax", "0")  # Supone un valor predeterminado, por ejemplo '0'
+        xmax = package.get("xmax", "0")
+        ymin = package.get("ymin", "0")
+        xmin = package.get("xmin", "0")
+        
+        config ="""{ 
             "version": "8.0.0",
             "initSources": [
           {
