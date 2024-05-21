@@ -93,35 +93,42 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         }
 
     def can_view(self, data_dict):
-        return can_view_resource(data_dict['resource'])
+        return can_view_resource(data_dict['resource']);
 
     def setup_template_variables(self, context, data_dict):
-        package = data_dict['package']
-        resource = data_dict['resource']
-        view = data_dict['resource_view']
-<<<<<<< HEAD
-=======
+        package = data_dict.get('package', {})
+        resource = data_dict.get('resource', {})
+        view = data_dict.get('resource_view', {})
+
+        # Obtener valores con valor por defecto
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
-        #fix when ymax and xmax don't exist
-        ymax = package.get("ymax", 0)  # Supone un valor predeterminado, por ejemplo '0'
-        xmax = package.get("xmax", 0)
-        ymin = package.get("ymin", 0)
-        xmin = package.get("xmin", 0)
+
+        # Valores de localización con valor por defecto si no existen
+        ymax = package.get("ymax", "0")
+        xmax = package.get("xmax", "0")
+        ymin = package.get("ymin", "0")
+        xmin = package.get("xmin", "0")
+
+        #Descripción y URL del recurso con valor por defecto si no existen
+        resource_description = resource.get("description", "No description provided")
+        resource_url = resource.get("url", "#")
+        resource_format = resource.get("format", "unknown").lower()
+
         config ="""{
             "version": "8.0.0",
             "initSources": [
           {
                 "catalog": [
                   {
-                    "name": """+'"'+resource["description"]+'"'+""",
+                    "name": """+'"'+resource_description+'"'+""",
                     "type": "group",
                     "isOpen": true,
                     "members": [
                       { "id": "zdjwipNdnA",
-                        "name": """+'"'+resource["description"]+'"'+""",
-                        "type": """+'"'+resource["format"].lower()+'"'+""",
-                        "url": """+'"'+resource["url"]+'"'+""",
+                        "name": """+'"'+resource_description+'"'+""",
+                        "type": """+'"'+resource_format+'"'+""",
+                        "url": """+'"'+resource_url+'"'+""",
                         "cacheDuration": "5m",
                         "isOpenInWorkbench": true
                       }
@@ -142,7 +149,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     },
           	  "stratum": "user",
                 "models": {
-                   """+'"//'+resource["description"]+'"'+""": {
+                   """+'"//'+resource_description+'"'+""": {
                     "isOpen": true,
                     "knownContainerUniqueIds": [
                       "/"
@@ -153,9 +160,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     "show": true,
                     "isOpenInWorkbench": true,
                     "knownContainerUniqueIds": [
-                     """+'"//'+resource["description"]+'"'+"""
+                     """+'"//'+resource_description+'"'+"""
                     ],
-                    "type": """+'"'+resource["format"].lower()+'"'+"""
+                    "type": """+'"'+resource_format+'"'+"""
                   },
                   "/": {
                     "type": "group"
@@ -175,87 +182,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
           }"""
 
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
->>>>>>> parent of a37aea4 (typo fix)
         
-        # Preparar valores para el JSON
-        try:
-            resource_description = resource.get("description", "")
-            resource_url = resource.get("url", "")
-            resource_format = resource.get("format", "").lower()
-            ymax = package.get("ymax", "0")
-            xmax = package.get("xmax", "0")
-            ymin = package.get("ymin", "0")
-            xmin = package.get("xmin", "0")
-            
-            config = {
-                "version": "8.0.0",
-                "initSources": [{
-                    "catalog": [{
-                        "name": resource_description,
-                        "type": "group",
-                        "isOpen": True,
-                        "members": [{
-                            "id": "zdjwipNdnA",
-                            "name": resource_description,
-                            "type": resource_format,
-                            "url": resource_url,
-                            "cacheDuration": "5m",
-                            "isOpenInWorkbench": True
-                        }]
-                    }],
-                    "homeCamera": {
-                        "north": ymax,
-                        "east": xmax,
-                        "south": ymin,
-                        "west": xmin
-                    },
-                    "initialCamera": {
-                        "north": ymax,
-                        "east": xmax,
-                        "south": ymin,
-                        "west": xmin
-                    },
-                    "stratum": "user",
-                    "models": {
-                        resource_description: {
-                            "isOpen": True,
-                            "knownContainerUniqueIds": ["/"],
-                            "type": "group"
-                        },
-                        "zdjwipNdnA": {
-                            "show": True,
-                            "isOpenInWorkbench": True,
-                            "knownContainerUniqueIds": [resource_description],
-                            "type": resource_format
-                        },
-                        "/": {
-                            "type": "group"
-                        }
-                    },
-                    "workbench": ["zdjwipNdnA"],
-                    "viewerMode": "3dSmooth",
-                    "focusWorkbenchItems": True,
-                    "baseMaps": {
-                        "defaultBaseMapId": "basemap-positron",
-                        "previewBaseMapId": "basemap-positron"
-                    }
-                }]
-            }
-
-            # Codificar el JSON para la URL
-            encoded_config = urllib.parse.quote(json.dumps(config))
-
-            return {
-                'title': view.get('title', self.default_title),
-                'terria_instance_url': view.get('terria_instance_url', self.default_instance_url),
-                'encoded_config': encoded_config,
-                'origin': self.site_url
-            }
-        
-        except Exception as e:
-            # Manejar cualquier excepción que ocurra durante la configuración de las variables de la plantilla
-            toolkit.abort(400, f"Error al generar la configuración del visor: {str(e)}")
-
+        return {
+            'title': view_title,
+            'terria_instance_url': view_terria_instance_url,
+            'encoded_config': encoded_config,
+            'origin': self.site_url
+        }
 
     def view_template(self, context, data_dict):
         return 'terria.html'
