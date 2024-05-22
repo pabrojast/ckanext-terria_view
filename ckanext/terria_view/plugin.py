@@ -110,7 +110,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         xmax = package.get("xmax", "-13")
         ymin = package.get("ymin", "-60")
         xmin = package.get("xmin", "-108")
-        
+        #idk why in some case don't detect the default value on some server, not in local
+        #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
+        coordinates = [ymax, xmax, ymin, xmin]
+        default_coordinates = ["20", "-13", "-60", "-108"]
+        coordinates = [coord if coord else default_coord for coord, default_coord in zip(coordinates, default_coordinates)]
+
         print(ymax)
         print(xmax)
         print(ymin)
@@ -182,7 +187,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
           	  ]
           }"""
         print(config)
-        
+
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
         return {
