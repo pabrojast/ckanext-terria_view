@@ -5,6 +5,7 @@ import urllib
 import re
 import functools
 import os
+from ckan.lib import base, uploader
 
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
@@ -105,7 +106,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
+        
+        upload = uploader.get_resource_uploader(resource)
+        uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
 
+        print(upload)
+        print(uploaded_url)
         #idk why in some case don't detect the default value on some server, not in local
         #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
 
