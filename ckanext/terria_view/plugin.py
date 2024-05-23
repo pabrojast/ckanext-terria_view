@@ -109,8 +109,6 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         #idk why in some case don't detect the default value on some server, not in local
         #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
 
-
-
         def clean_coordinate(value, default):
             """
             Asegura que el valor de la coordenada es un número válido.
@@ -133,13 +131,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         ymin = clean_coordinate(package.get("ymin"), "-60")
         xmin = clean_coordinate(package.get("xmin"), "-108")
 
-        print("Valores después de la limpieza y validación:", ymax, xmax, ymin, xmin)
-        # Imprimir tipo y longitud de cada valor
-        print("Tipo y longitud de ymax:", type(ymax), len(ymax))
-        print("Tipo y longitud de xmax:", type(xmax), len(xmax))
-        print("Tipo y longitud de ymin:", type(ymin), len(ymin))
-        print("Tipo y longitud de xmin:", type(xmin), len(xmin))
-        
+
         config ="""{ 
             "version": "8.0.0",
             "initSources": [
