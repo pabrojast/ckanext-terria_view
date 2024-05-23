@@ -107,11 +107,20 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         
-        upload = uploader.get_resource_uploader(resource)
-        uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
+        # Contexto con información del usuario
+        context = {
+            'user': toolkit.g.user, 
+            'auth_user_obj': toolkit.g.userobj
+        }
 
-        print(upload)
-        print(uploaded_url)
+        # Solo verifica si el usuario está logueado
+        if context['user']:
+          print('user logeado')
+          upload = uploader.get_resource_uploader(resource)
+          uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
+        else:
+          uploaded_url = resource["url"]
+
         #idk why in some case don't detect the default value on some server, not in local
         #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
 
@@ -151,7 +160,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                       { "id": "zdjwipNdnA",
                         "name": """+'"'+resource["description"]+'"'+""",
                         "type": """+'"'+resource["format"].lower()+'"'+""",
-                        "url": """+'"'+resource["url"]+'"'+""",
+                        "url": """+'"'+uploaded_url+'"'+""",
                         "cacheDuration": "5m",
                         "isOpenInWorkbench": true
                       }
