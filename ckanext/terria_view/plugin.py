@@ -115,7 +115,6 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
         # Solo verifica si el usuario está logueado
         if context['user']:
-          print('user logeado')
           upload = uploader.get_resource_uploader(resource)
           uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
         else:
