@@ -105,22 +105,41 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
-        #fix when ymax and xmax don't exist
-        ymax = package.get("ymax", "20")  # Supone un valor predeterminado, por ejemplo '0'
-        xmax = package.get("xmax", "-13")
-        ymin = package.get("ymin", "-60")
-        xmin = package.get("xmin", "-108")
+
         #idk why in some case don't detect the default value on some server, not in local
         #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
-        coordinates = [ymax, xmax, ymin, xmin]
-        default_coordinates = ["20", "-13", "-60", "-108"]
-        coordinates = [coord if coord else default_coord for coord, default_coord in zip(coordinates, default_coordinates)]
 
-        print(ymax)
-        print(xmax)
-        print(ymin)
-        print(xmin)
 
+
+        def clean_coordinate(value, default):
+            """
+            Asegura que el valor de la coordenada es un número válido.
+            Elimina espacios en blanco y verifica si el valor es numérico.
+            Retorna el valor limpio o un valor predeterminado si es necesario.
+            """
+            if value is None:
+                return default
+            # Remover cualquier espacio en blanco
+            cleaned_value = re.sub(r'\s+', '', str(value))
+            # Verificar si el valor es un número válido (incluyendo negativos)
+            if re.match(r'^-?\d+(\.\d+)?$', cleaned_value):
+                return cleaned_value
+            else:
+                return default
+
+        # Limpieza y asignación de valores predeterminados
+        ymax = clean_coordinate(package.get("ymax"), "20")
+        xmax = clean_coordinate(package.get("xmax"), "-13")
+        ymin = clean_coordinate(package.get("ymin"), "-60")
+        xmin = clean_coordinate(package.get("xmin"), "-108")
+
+        print("Valores después de la limpieza y validación:", ymax, xmax, ymin, xmin)
+        # Imprimir tipo y longitud de cada valor
+        print("Tipo y longitud de ymax:", type(ymax), len(ymax))
+        print("Tipo y longitud de xmax:", type(xmax), len(xmax))
+        print("Tipo y longitud de ymin:", type(ymin), len(ymin))
+        print("Tipo y longitud de xmin:", type(xmin), len(xmin))
+        
         config ="""{ 
             "version": "8.0.0",
             "initSources": [
