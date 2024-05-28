@@ -122,7 +122,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             # Verificar si el formato está en la lista de formatos aceptados
             return any(resource_format == format for format in accepted_formats)
         # Verificar si la URL comienza con los dominios permitidos
-        
+
         def is_valid_domain(url):
             return url.startswith('https://data.dev-wins.com') or url.startswith('https://ihp-wins.unesco.org/')
 
@@ -187,13 +187,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                    "east": """+xmax+""",
                    "south": """+ymin+""",
                    "west": """+xmin+"""
-    },
+                            },
                   "initialCamera": {
                    "north": """+ymax+""",
                    "east": """+xmax+""",
                    "south": """+ymin+""",
                    "west": """+xmin+"""
-    },
+                                  },
           	  "stratum": "user",
                 "models": {
                    """+'"//'+resource["description"]+'"'+""": {
@@ -203,7 +203,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     ],
                     "type": "group"
                   },
-                  "zdjwipNdnA": {
+                  """+'"'+name+'"'+""": {
                     "show": true,
                     "isOpenInWorkbench": true,
                     "knownContainerUniqueIds": [
@@ -216,7 +216,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                   }
                 },
                 "workbench": [
-                  "zdjwipNdnA"
+                  """+'"'+name+'"'+"""
                 ],
                 "viewerMode": "3dSmooth",
           	  "focusWorkbenchItems": true,
