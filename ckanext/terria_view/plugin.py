@@ -101,8 +101,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         package = data_dict['package']
         resource = data_dict['resource']
         resource_id = resource['id']
-        organisation = package['organization']
-        organization_id = organisation['id']
+        organization = package['organization']
+        name = package['name']
+        organization_id = organization['id']
         view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
@@ -112,15 +113,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'user': toolkit.g.user, 
             'auth_user_obj': toolkit.g.userobj
         }
+        #fix formato
+        def is_accepted_format(resource):
+            # Lista de formatos aceptados
+            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us']
+            # Obtener el formato del recurso y convertirlo a minúsculas
+            resource_format = resource["format"].lower()
+            # Verificar si el formato está en la lista de formatos aceptados
+            return any(resource_format == format for format in accepted_formats)
+        # Verificar si la URL comienza con los dominios permitidos
+        
+        def is_valid_domain(url):
+            return url.startswith('https://data.dev-wins.com') or url.startswith('https://ihp-wins.unesco.org/')
 
-        # Solo verifica si el usuario está logueado
-        if context['user']:
-          upload = uploader.get_resource_uploader(resource)
-          uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
+        if is_valid_domain(resource["url"]):
+            if is_accepted_format(resource):
+                if context['user']:
+                    upload = uploader.get_resource_uploader(resource)
+                    uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
+            else:
+                uploaded_url = resource["url"]
         else:
-          uploaded_url = resource["url"]
-
-        #idk why in some case don't detect the default value on some server, not in local
+            uploaded_url = resource["url"]
+          
+        #idk why in some case didn't detect the default value on some server, not in local
         #Verificar si alguno de los valores es None o vacío y asignar un valor predeterminado
 
         def clean_coordinate(value, default):
@@ -152,11 +168,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
           {
                 "catalog": [
                   {
-                    "name": """+'"'+resource["description"]+'"'+""",
+                    "name": """+'"'+name+'"'+""",
                     "type": "group",
                     "isOpen": true,
                     "members": [
-                      { "id": "zdjwipNdnA",
+                      { "id": """+'"'+resource["description"]+'"'+""",
                         "name": """+'"'+resource["description"]+'"'+""",
                         "type": """+'"'+resource["format"].lower()+'"'+""",
                         "url": """+'"'+uploaded_url+'"'+""",
@@ -211,7 +227,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
               }
           	  ]
           }"""
-        print(config)
+
 
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
