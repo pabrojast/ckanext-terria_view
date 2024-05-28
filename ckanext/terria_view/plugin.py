@@ -39,14 +39,15 @@ def new_resource_view_list(plugin, context, data_dict):
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
     if not has_plugin:
         if can_view_resource(context['resource'].__dict__):
-            ret.append({
-                "description": "", 
-                "title": plugin.default_title, 
-                "resource_id": data_dict['id'], 
-                "view_type": "terria_view", 
-                "id": "00000000-0000-0000-0000-000000000000", 
-                "package_id": "00000000-0000-0000-0000-000000000000"
-            });
+            data_dict2 = {
+            'resource_id': data_dict['id'],
+            'title': plugin.default_title,
+            'view_type': 'terria_view',
+            'description': '',
+            'terria_instance_url': '//terria.dev-wins.com'
+            }
+            toolkit.get_action('resource_view_create')(context, data_dict2)
+            ret = resource_view_list(context, data_dict)
     return ret
 
 
