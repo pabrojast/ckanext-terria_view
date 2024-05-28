@@ -163,70 +163,70 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
 
         config ="""{ 
-            "version": "8.0.0",
-            "initSources": [
-          {
-                "catalog": [
+                    "version": "8.0.0",
+                    "initSources": [
                   {
-                    "name": """+'"'+name+'"'+""",
-                    "type": "group",
-                    "isOpen": true,
-                    "members": [
-                      { "id": """+'"'+resource["description"]+'"'+""",
-                        "name": """+'"'+resource["description"]+'"'+""",
-                        "type": """+'"'+resource["format"].lower()+'"'+""",
-                        "url": """+'"'+uploaded_url+'"'+""",
-                        "cacheDuration": "5m",
-                        "isOpenInWorkbench": true
+                        "catalog": [
+                          {
+                            "name": """+'"'+resource["description"]+'"'+""",
+                            "type": "group",
+                            "isOpen": true,
+                            "members": [
+                              { "id": """+'"'+resource["description"]+'"'+""",
+                                "name": """+'"'+resource["description"]+'"'+""",
+                                "type": """+'"'+resource["format"].lower()+'"'+""",
+                                "url": """+'"'+uploaded_url+'"'+""",
+                                "cacheDuration": "5m",
+                                "isOpenInWorkbench": true
+                              }
+                            ]
+                          }
+                        ],
+                      "homeCamera": {
+                          "north": """+ymax+""",
+                          "east": """+xmax+""",
+                          "south": """+ymin+""",
+                          "west": """+xmin+"""
+            },
+                          "initialCamera": {
+                          "north": """+ymax+""",
+                          "east": """+xmax+""",
+                          "south": """+ymin+""",
+                          "west": """+xmin+"""
+            },
+                      "stratum": "user",
+                        "models": {
+                          """+'"//'+resource["description"]+'"'+""": {
+                            "isOpen": true,
+                            "knownContainerUniqueIds": [
+                              "/"
+                            ],
+                            "type": "group"
+                          },
+                          """+'"'+resource["description"]+'"'+""": {
+                            "show": true,
+                            "isOpenInWorkbench": true,
+                            "knownContainerUniqueIds": [
+                            """+'"//'+resource["description"]+'"'+"""
+                            ],
+                            "type": """+'"'+resource["format"].lower()+'"'+"""
+                          },
+                          "/": {
+                            "type": "group"
+                          }
+                        },
+                        "workbench": [
+                          """+'"'+resource["description"]+'"'+"""
+                        ],
+                        "viewerMode": "3dSmooth",
+                      "focusWorkbenchItems": true,
+                        "baseMaps": {
+                          "defaultBaseMapId": "basemap-positron",
+                          "previewBaseMapId": "basemap-positron"
+                        }
                       }
-                    ]
-                  }
-                ],
-              "homeCamera": {
-                   "north": """+ymax+""",
-                   "east": """+xmax+""",
-                   "south": """+ymin+""",
-                   "west": """+xmin+"""
-                            },
-                  "initialCamera": {
-                   "north": """+ymax+""",
-                   "east": """+xmax+""",
-                   "south": """+ymin+""",
-                   "west": """+xmin+"""
-                                  },
-          	  "stratum": "user",
-                "models": {
-                   """+'"//'+resource["description"]+'"'+""": {
-                    "isOpen": true,
-                    "knownContainerUniqueIds": [
-                      "/"
-                    ],
-                    "type": "group"
-                  },
-                  """+'"'+name+'"'+""": {
-                    "show": true,
-                    "isOpenInWorkbench": true,
-                    "knownContainerUniqueIds": [
-                     """+'"//'+resource["description"]+'"'+"""
-                    ],
-                    "type": """+'"'+resource["format"].lower()+'"'+"""
-                  },
-                  "/": {
-                    "type": "group"
-                  }
-                },
-                "workbench": [
-                  """+'"'+name+'"'+"""
-                ],
-                "viewerMode": "3dSmooth",
-          	  "focusWorkbenchItems": true,
-                "baseMaps": {
-                  "defaultBaseMapId": "basemap-positron",
-                  "previewBaseMapId": "basemap-positron"
-                }
-              }
-          	  ]
-          }"""
+                      ]
+                  }"""
 
 
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
