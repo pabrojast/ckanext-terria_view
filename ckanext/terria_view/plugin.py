@@ -132,6 +132,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 if context['user']:
                     upload = uploader.get_resource_uploader(resource)
                     uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
+                else:
+                    uploaded_url = resource["url"]
             else:
                 uploaded_url = resource["url"]
         else:
