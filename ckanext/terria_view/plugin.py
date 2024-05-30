@@ -46,6 +46,7 @@ def new_resource_view_list(plugin, context, data_dict):
             'description': '',
             'terria_instance_url': '//terria.dev-wins.com'
             }
+            context['user'] = 'ckan.system'
             toolkit.get_action('resource_view_create')(context, data_dict2)
             ret = resource_view_list(context, data_dict)
     return ret
