@@ -180,12 +180,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                   {
                         "catalog": [
                           {
-                            "name": """+'"'+resource["description"]+'"'+""",
+                            "name": """+'"'+resource["name"]+'"'+""",
                             "type": "group",
                             "isOpen": true,
                             "members": [
-                              { "id": """+'"'+resource["description"]+'"'+""",
-                                "name": """+'"'+resource["description"]+'"'+""",
+                              { "id": """+'"'+resource["name"]+'"'+""",
+                                "name": """+'"'+resource["name"]+'"'+""",
                                 "type": """+'"'+resource["format"].lower()+'"'+""",
                                 "url": """+'"'+uploaded_url+'"'+""",
                                 "cacheDuration": "5m",
@@ -208,18 +208,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             },
                       "stratum": "user",
                         "models": {
-                          """+'"//'+resource["description"]+'"'+""": {
+                          """+'"//'+resource["name"]+'"'+""": {
                             "isOpen": true,
                             "knownContainerUniqueIds": [
                               "/"
                             ],
                             "type": "group"
                           },
-                          """+'"'+resource["description"]+'"'+""": {
+                          """+'"'+resource["name"]+'"'+""": {
                             "show": true,
                             "isOpenInWorkbench": true,
                             "knownContainerUniqueIds": [
-                            """+'"//'+resource["description"]+'"'+"""
+                            """+'"//'+resource["name"]+'"'+"""
                             ],
                             "type": """+'"'+resource["format"].lower()+'"'+"""
                           },
@@ -228,7 +228,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                           }
                         },
                         "workbench": [
-                          """+'"'+resource["description"]+'"'+"""
+                          """+'"'+resource["name"]+'"'+"""
                         ],
                         "viewerMode": "3dSmooth",
                       "focusWorkbenchItems": true,
