@@ -46,9 +46,17 @@ def new_resource_view_list(plugin, context, data_dict):
             'description': '',
             'terria_instance_url': '//terria.dev-wins.com'
             }
-            context['user'] = 'ckan.system'
-            toolkit.get_action('resource_view_create')(context, data_dict2)
+            # Create a new sysadmin context
+            sysadmin_context = {
+                'model': context['model'],
+                'session': context['session'],
+                'user': 'ckan.system',
+                'ignore_auth': True
+            }
+
+            toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
             ret = resource_view_list(context, data_dict)
+            
     return ret
 
 
