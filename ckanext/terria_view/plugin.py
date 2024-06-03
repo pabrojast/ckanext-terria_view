@@ -35,7 +35,10 @@ def new_resource_view_list(plugin, context, data_dict):
     Automatically add resource view to legacy resources which did add terria_view
     on creation. Unfortunately, action patching is necessary.
     '''
-    ret = resource_view_list(context, data_dict)
+    try:
+        ret = resource_view_list(context, data_dict)
+    except NotFound:
+        ret=[]
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
     if not has_plugin:
         if can_view_resource(context['resource'].__dict__):
