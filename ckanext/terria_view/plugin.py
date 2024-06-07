@@ -6,6 +6,7 @@ import re
 import functools
 import os
 from ckan.lib import base, uploader
+from flask import abort
 
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
@@ -40,7 +41,8 @@ def new_resource_view_list(plugin, context, data_dict):
         resource_id = data_dict.get('id')
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
-            raise NotFound    
+            #Esto arregla que no envié por defecto un correo cuando haya un 404.
+            abort(404, description='Resource not found')   
         ret = resource_view_list(context, data_dict)
     except NotFound:
         ret=[]
