@@ -36,6 +36,11 @@ def new_resource_view_list(plugin, context, data_dict):
     on creation. Unfortunately, action patching is necessary.
     '''
     try:
+        # Verificar si el recurso existe
+        resource_id = data_dict.get('id')
+        resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
+        if not resource:
+            raise NotFound    
         ret = resource_view_list(context, data_dict)
     except NotFound:
         ret=[]
