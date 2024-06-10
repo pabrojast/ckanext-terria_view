@@ -54,7 +54,7 @@ def new_resource_view_list(plugin, context, data_dict):
             'title': plugin.default_title,
             'view_type': 'terria_view',
             'description': '',
-            'terria_instance_url': '//terria.dev-wins.com'
+            'terria_instance_url': '//ihp-wins.unesco.org/terria/'
             }
             # Create a new sysadmin context
             sysadmin_context = {
@@ -75,7 +75,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     site_url = ''
     
     default_title = 'Terria Viewer'
-    default_instance_url = '//terria.dev-wins.com'
+    default_instance_url = '//ihp-wins.unesco.org/terria/'
     
     resource_view_list_callback = None
   
