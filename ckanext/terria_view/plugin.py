@@ -309,7 +309,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             config ="""{ 
                         "version": "8.0.0",
                         "initSources": [
-                    {
+                    { 
                             "catalog": [
                             {
                                 "name": """+'"'+resource["name"]+'"'+""",
@@ -320,13 +320,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 "url": """+'"'+result_url+'"'+""",
                                 "cacheDuration": "5m",
                                 "isOpenInWorkbench": true,
-                                "minimumLevel":  """+'"'+minzoom+'"'+""",
-	                            "maximumLevel": """+'"'+maxzoom+'"'+""",
+                                "minimumLevel":  """+'"'+str(minzoom)+'"'+""",
+	                            "maximumLevel": """+'"'+str(maxzoom)+'"'+""",
                                 "opacity": 0.8,
                                 "legends": [
                                     {
                                     "title": """+'"'+resource["name"]+'"'+""",
-                                    "items": """+json.dumps(color_scale_list, indent=4)+"""
+                                    "items": """+str(json.dumps(color_scale_list, indent=4))+"""
                                     }
                                          ]
                             }
