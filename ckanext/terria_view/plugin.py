@@ -320,8 +320,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 "url": """+'"'+result_url+'"'+""",
                                 "cacheDuration": "5m",
                                 "isOpenInWorkbench": true,
-                                "minimumLevel":  """+'"'+str(minzoom)+'"'+""",
-	                            "maximumLevel": """+'"'+str(maxzoom)+'"'+""",
+                                "minimumLevel":  """+str(minzoom)+""",
+	                            "maximumLevel": """+str(maxzoom)+""",
                                 "opacity": 0.8,
                                 "legends": [
                                     {
