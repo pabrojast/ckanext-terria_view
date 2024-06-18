@@ -283,7 +283,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "workbench": [
                             "{resource["name"]}"
                         ],
-                        "viewerMode": "3dSmooth",
+                        "viewerMode": "2D",
                         "focusWorkbenchItems": true,
                         "baseMaps": {{
                             "defaultBaseMapId": "basemap-positron",
