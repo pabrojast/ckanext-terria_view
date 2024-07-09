@@ -36,7 +36,7 @@ def new_resource_view_list(plugin, context, data_dict):
         ret = []
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
     if not has_plugin:
-        if can_view_resource(context['resource'].__dict__):
+        if 'resource' in context and can_view_resource(context['resource'].__dict__):
             data_dict2 = {
                 'resource_id': data_dict['id'],
                 'title': plugin.default_title,
@@ -52,6 +52,8 @@ def new_resource_view_list(plugin, context, data_dict):
             }
             toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
             ret = resource_view_list(context, data_dict)
+        else:
+            ret = []
             
     return ret
 
