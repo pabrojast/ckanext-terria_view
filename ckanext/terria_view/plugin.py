@@ -341,7 +341,6 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                             "{resource["name"]}": {{
                                 "show": true,
                                 "isOpenInWorkbench": true,
-                                "styles": [{{"pointSize": {{"pointSizeColumn": ""}},"hidden": false}}],
                                 "knownContainerUniqueIds": [
                                     "//{resource["name"]}"
                                 ],
