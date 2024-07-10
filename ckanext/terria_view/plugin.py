@@ -42,7 +42,7 @@ def new_resource_view_list(plugin, context, data_dict):
                 'title': plugin.default_title,
                 'view_type': 'terria_view',
                 'description': '',
-                'custom_config': '',
+                'custom_config': 'NA',
                 'terria_instance_url': '//ihp-wins.unesco.org/terria/'
             }
             sysadmin_context = {
