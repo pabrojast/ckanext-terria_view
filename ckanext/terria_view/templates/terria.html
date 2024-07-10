@@ -54,12 +54,12 @@
 <a
   class="btn pull-right"
   style="margin-bottom: 10px;"
-  href="#"
-  onclick="terriaJSPreview(event)">
+  target="_blank"
+  href="{{ terria_instance_url }}#start={{ encoded_config }}" >
   {{ _('View in a separate') }} {{title}} {{ _('window') }}
 </a>
 <iframe
   src="{{ terria_instance_url }}#start={{ encoded_config }}"
-  style="height: 600px; width: 100%; border: none;"
+  style="height: 100vh; width: 100%; border: none;"
   allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
 </iframe>

@@ -3,6 +3,15 @@
 {{ form.input('terria_instance_url',
               label=_('URL of TerriaJS Instance'),
               value=data.terria_instance_url,
-              placeholder=_('e.g. //nationalmap.gov.au'),
+              placeholder=_('e.g. //ihp-wins.unesco.org/terria/'),
               error=errors.terria_instance_url,
               classes=['control-full', 'control-large']) }}
+
+{{ form.input('custom_config',
+              label=_('Custom Config'),
+              value=data.custom_config,
+              placeholder=_('e.g. //ihp-wins.unesco.org/terria/'),
+              error=errors.custom_config,
+              classes=['control-full', 'control-large']) }}
+
+              
