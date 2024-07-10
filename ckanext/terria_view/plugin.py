@@ -7,6 +7,7 @@ import functools
 import os
 from ckan.lib import base, uploader
 from flask import abort
+from time import sleep
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','tif','tiff','geotiff']
 #SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
