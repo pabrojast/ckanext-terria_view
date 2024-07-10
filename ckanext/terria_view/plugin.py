@@ -42,6 +42,7 @@ def new_resource_view_list(plugin, context, data_dict):
                 'title': plugin.default_title,
                 'view_type': 'terria_view',
                 'description': '',
+                'custom_config': '',
                 'terria_instance_url': '//ihp-wins.unesco.org/terria/'
             }
             sysadmin_context = {
@@ -66,6 +67,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IConfigurer)
     def update_config(self, config_):
         toolkit.add_template_directory(config_, 'templates')
+        toolkit.add_public_directory(config_,'public')
 
     plugins.implements(plugins.IConfigurable, inherit=True)
     def configure(self, config):
