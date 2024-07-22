@@ -30,7 +30,13 @@ def new_resource_view_list(plugin, context, data_dict):
     try:
         resource_id = data_dict.get('id')
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
+        # Verificar si hay un activity_id en la URL, asi no intenta crear nada. 
+        if 'activity_id' in request.args:
+            print("Activity ID detected, skipping resource view creation.")
+            return resource_view_list(context, data_dict)
+        
         if not resource:
+            print("Debug: Resource not found") 
             abort(404, description='Resource not found')   
         ret = resource_view_list(context, data_dict)
     except:
@@ -52,8 +58,12 @@ def new_resource_view_list(plugin, context, data_dict):
                 'user': 'ckan.system',
                 'ignore_auth': True
             }
-            toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
-            ret = resource_view_list(context, data_dict)
+            try:
+                toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
+                ret = resource_view_list(context, data_dict)
+            except Exception as e:
+                print(f"Error creating resource view: {e}")  # debug
+                ret = []
         else:
             ret = []
             
