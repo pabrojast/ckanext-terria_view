@@ -70,8 +70,6 @@ def new_resource_view_list(plugin, context, data_dict):
             except Exception as e:
                 print(f"Error creating resource view: {e}")
                 ret = resource_view_list(context, data_dict)
-        else:
-            ret = resource_view_list(context, data_dict)
 
     return ret
 
