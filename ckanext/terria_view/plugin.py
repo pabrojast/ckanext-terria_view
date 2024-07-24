@@ -29,22 +29,21 @@ PLUGIN_NAME = 'terria_view'
 def new_resource_view_list(plugin, context, data_dict):
 
     try:
+        ret = resource_view_list(context, data_dict)
         resource_id = data_dict.get('id')
-        resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
 
         # Verificar si hay un activity_id en la URL, así no intenta crear nada.
         if 'activity_id' in request.args:
             print("Activity ID detected, skipping resource view creation.")
-            return resource_view_list(context, data_dict)
-
+            return ret
+        
+        resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
             print("Debug: Resource not found")
             abort(404, description='Resource not found')
 
-        ret = resource_view_list(context, data_dict)
     except Exception as e:
         print(f"Error retrieving resource view list: {e}")
-        ret = []
 
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
 
@@ -69,7 +68,6 @@ def new_resource_view_list(plugin, context, data_dict):
                 ret = resource_view_list(context, data_dict)
             except Exception as e:
                 print(f"Error creating resource view: {e}")
-                ret = resource_view_list(context, data_dict)
 
     return ret
 
