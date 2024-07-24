@@ -6,7 +6,7 @@ import re
 import functools
 import os
 from ckan.lib import base, uploader
-from flask import abort
+from flask import abort, request
 from time import sleep
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','tif','tiff','geotiff']
@@ -15,10 +15,10 @@ SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORT
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
 
 def can_view_resource(resource):
+    print('can view')
     format_ = resource.get('format', '')
     if format_ == '':
         format_ = os.path.splitext(resource['url'])[1][1:]
-
     return re.match(SUPPORTED_FORMATS_REGEX, format_.lower()) != None
 
 import ckan.logic.action.get as get
@@ -27,21 +27,27 @@ resource_view_list = get.resource_view_list
 PLUGIN_NAME = 'terria_view'
 
 def new_resource_view_list(plugin, context, data_dict):
+
     try:
         resource_id = data_dict.get('id')
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
-        # Verificar si hay un activity_id en la URL, asi no intenta crear nada. 
+
+        # Verificar si hay un activity_id en la URL, así no intenta crear nada.
         if 'activity_id' in request.args:
             print("Activity ID detected, skipping resource view creation.")
             return resource_view_list(context, data_dict)
-        
+
         if not resource:
-            print("Debug: Resource not found") 
-            abort(404, description='Resource not found')   
+            print("Debug: Resource not found")
+            abort(404, description='Resource not found')
+
         ret = resource_view_list(context, data_dict)
-    except:
+    except Exception as e:
+        print(f"Error retrieving resource view list: {e}")
         ret = []
+
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
+
     if not has_plugin:
         if 'resource' in context and can_view_resource(context['resource'].__dict__):
             data_dict2 = {
@@ -62,11 +68,11 @@ def new_resource_view_list(plugin, context, data_dict):
                 toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
                 ret = resource_view_list(context, data_dict)
             except Exception as e:
-                print(f"Error creating resource view: {e}")  # debug
-                ret = []
+                print(f"Error creating resource view: {e}")
+                ret = resource_view_list(context, data_dict)
         else:
-            ret = []
-            
+            ret = resource_view_list(context, data_dict)
+
     return ret
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
