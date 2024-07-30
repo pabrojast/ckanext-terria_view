@@ -27,7 +27,7 @@ resource_view_list = get.resource_view_list
 PLUGIN_NAME = 'terria_view'
 
 def new_resource_view_list(plugin, context, data_dict):
-    ret = resource_view_list(context, data_dict)
+
     try:
         resource_id = data_dict.get('id')
         # Verificar si hay un activity_id en la URL, así no intenta crear nada.
@@ -37,8 +37,8 @@ def new_resource_view_list(plugin, context, data_dict):
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
             print("Debug: Resource not found")
-            abort(404, description='Resource not found')
-
+            return ret
+        ret = resource_view_list(context, data_dict)
     except Exception as e:
         print(f"Error retrieving resource view list: {e}")
 
@@ -123,7 +123,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         }
 
         def is_accepted_format(resource):
-            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'tif','tiff','geotiff']
+            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'WMTS']
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
