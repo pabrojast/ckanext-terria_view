@@ -6,7 +6,8 @@ import re
 import functools
 import os
 from ckan.lib import base, uploader
-from flask import abort
+from flask import abort, request
+from time import sleep
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS']
 #SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
@@ -14,10 +15,10 @@ SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORT
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
 
 def can_view_resource(resource):
+    print('can view')
     format_ = resource.get('format', '')
     if format_ == '':
         format_ = os.path.splitext(resource['url'])[1][1:]
-
     return re.match(SUPPORTED_FORMATS_REGEX, format_.lower()) != None
 
 import ckan.logic.action.get as get
@@ -26,15 +27,23 @@ resource_view_list = get.resource_view_list
 PLUGIN_NAME = 'terria_view'
 
 def new_resource_view_list(plugin, context, data_dict):
+    ret = resource_view_list(context, data_dict)
     try:
         resource_id = data_dict.get('id')
+        # Verificar si hay un activity_id en la URL, así no intenta crear nada.
+        if 'activity_id' in request.args:
+            print("Activity ID detected, skipping resource view creation.")
+            return ret
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
-            abort(404, description='Resource not found')   
-        ret = resource_view_list(context, data_dict)
-    except:
-        ret = []
+            print("Debug: Resource not found")
+            abort(404, description='Resource not found')
+
+    except Exception as e:
+        print(f"Error retrieving resource view list: {e}")
+
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
+
     if not has_plugin:
         if 'resource' in context and can_view_resource(context['resource'].__dict__):
             data_dict2 = {
@@ -42,6 +51,7 @@ def new_resource_view_list(plugin, context, data_dict):
                 'title': plugin.default_title,
                 'view_type': 'terria_view',
                 'description': '',
+                'custom_config': 'NA',
                 'terria_instance_url': '//ihp-wins.unesco.org/terria/'
             }
             sysadmin_context = {
@@ -50,11 +60,12 @@ def new_resource_view_list(plugin, context, data_dict):
                 'user': 'ckan.system',
                 'ignore_auth': True
             }
-            toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
-            ret = resource_view_list(context, data_dict)
-        else:
-            ret = []
-            
+            try:
+                toolkit.get_action('resource_view_create')(sysadmin_context, data_dict2)
+                ret = resource_view_list(context, data_dict)
+            except Exception as e:
+                print(f"Error creating resource view: {e}")
+
     return ret
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
@@ -66,6 +77,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IConfigurer)
     def update_config(self, config_):
         toolkit.add_template_directory(config_, 'templates')
+        toolkit.add_public_directory(config_,'public')
 
     plugins.implements(plugins.IConfigurable, inherit=True)
     def configure(self, config):
@@ -84,7 +96,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'always_available': True,
             'iframed': False,
             "schema": {
-                "terria_instance_url": []
+                "terria_instance_url": [],
+                "custom_config": []
             }
         }
 
@@ -101,6 +114,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
+        view_custom_config = view.get('custom_config', 'NA')
         
         # Contexto con información del usuario
         user_context = {
@@ -363,13 +377,33 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 ]
             }}"""
 
-        encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
-        
+        if(view_custom_config == 'NA'):
+            encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
+        else:
+            # Extraer el parámetro 'start' de la URL
+            parsed_url = urllib.parse.urlparse(view_custom_config)
+            fragment = parsed_url.fragment
+            start_param = fragment.split('=', 1)[1]
+            decoded_param = urllib.parse.unquote(start_param)
+            # Parsear el JSON
+            start_data = json.loads(decoded_param)
+            # Modificar el valor del parámetro 'url' en el JSON
+            for init_source in start_data['initSources']:
+                if 'models' in init_source:
+                    for model_key, model_value in init_source['models'].items():
+                        if 'url' in model_value:
+                            model_value['url'] = uploaded_url
+
+            # Codificar nuevamente el JSON
+            updated_start_param = json.dumps(start_data)
+            encoded_config = urllib.parse.quote(updated_start_param)
+
         return {
             'title': view_title,
             'terria_instance_url': view_terria_instance_url,
             'encoded_config': encoded_config,
-            'origin': self.site_url
+            'origin': self.site_url,
+            'custom_config': view_custom_config
         }
 
     def view_template(self, context, data_dict):
