@@ -157,7 +157,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         xmin = clean_coordinate(package.get("xmin"), "-108")
 
         def is_tiff(resource):
-            accepted_formats = ['tif','tiff','geotiff']
+            #this depcretaed the use in old views
+            #accepted_formats = ['tif','tiff','geotiff']
+            accepted_formats = []
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
