@@ -385,7 +385,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 ]
             }}"""
 
-        if(view_custom_config == 'NA'):
+        if(view_custom_config == 'NA' or view_custom_config == '' or view_custom_config is None):
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
             # Extraer el parámetro 'start' de la URL
