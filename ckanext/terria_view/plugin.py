@@ -16,7 +16,6 @@ SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORT
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
 
 def can_view_resource(resource):
-    print('can view')
     format_ = resource.get('format', '')
     if format_ == '':
         format_ = os.path.splitext(resource['url'])[1][1:]
@@ -388,23 +387,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         if(view_custom_config == 'NA' or view_custom_config == ''):
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
-            # Extraer el parámetro 'start' de la URL
-            parsed_url = urllib.parse.urlparse(view_custom_config)
-            fragment = parsed_url.fragment
-            start_param = fragment.split('=', 1)[1]
-            decoded_param = urllib.parse.unquote(start_param)
-            # Parsear el JSON
-            start_data = json.loads(decoded_param)
-            # Modificar el valor del parámetro 'url' en el JSON
-            for init_source in start_data['initSources']:
-                if 'models' in init_source:
-                    for model_key, model_value in init_source['models'].items():
-                        if 'url' in model_value:
-                            model_value['url'] = uploaded_url
+            try:
+                # Extraer el parámetro 'start' de la URL
+                parsed_url = urllib.parse.urlparse(view_custom_config)
+                fragment = parsed_url.fragment
+                start_param = fragment.split('=', 1)[1]
+                decoded_param = urllib.parse.unquote(start_param)
+                
+                # Parsear el JSON
+                start_data = json.loads(decoded_param)
+                
+                # Modificar el valor del parámetro 'url' en el JSON
+                for init_source in start_data['initSources']:
+                    if 'models' in init_source:
+                        for model_key, model_value in init_source['models'].items():
+                            if 'url' in model_value:
+                                model_value['url'] = uploaded_url
+                
+                # Codificar nuevamente el JSON
+                updated_start_param = json.dumps(start_data)
+                encoded_config = urllib.parse.quote(updated_start_param)
 
-            # Codificar nuevamente el JSON
-            updated_start_param = json.dumps(start_data)
-            encoded_config = urllib.parse.quote(updated_start_param)
+            except (IndexError, json.JSONDecodeError) as e:
+                # Si ocurre un error, se usa el encoded_config básico
+                encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
 
         return {
             'title': view_title,
