@@ -155,11 +155,32 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 return cleaned_value
             else:
                 return default
+            
+        def extract_bounds_from_spatial(spatial):
+            try:
+                spatial_data = json.loads(spatial)
+                if spatial_data["type"] == "Polygon":
+                    coordinates = spatial_data["coordinates"][0]
+                    lats = [coord[1] for coord in coordinates]
+                    lons = [coord[0] for coord in coordinates]
+                    ymax = max(lats)
+                    ymin = min(lats)
+                    xmax = max(lons)
+                    xmin = min(lons)
+                    return str(ymax), str(xmax), str(ymin), str(xmin)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+            return None, None, None, None
 
-        ymax = clean_coordinate(package.get("ymax"), "20")
-        xmax = clean_coordinate(package.get("xmax"), "-13")
-        ymin = clean_coordinate(package.get("ymin"), "-60")
-        xmin = clean_coordinate(package.get("xmin"), "-108")
+        # Intentar extraer las coordenadas desde 'spatial'
+        ymax_spatial, xmax_spatial, ymin_spatial, xmin_spatial = extract_bounds_from_spatial(package.get("spatial"))
+
+        # Si no se pudo extraer desde 'spatial', usar el valor predeterminado
+        ymax = clean_coordinate(ymax_spatial if ymax_spatial else package.get("ymax"), "20")
+        xmax = clean_coordinate(xmax_spatial if xmax_spatial else package.get("xmax"), "-13")
+        ymin = clean_coordinate(ymin_spatial if ymin_spatial else package.get("ymin"), "-60")
+        xmin = clean_coordinate(xmin_spatial if xmin_spatial else package.get("xmin"), "-108")
+
 
         def is_tiff(resource):
             #this depcretaed the use in old views
