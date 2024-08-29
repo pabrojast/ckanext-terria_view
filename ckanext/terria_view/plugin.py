@@ -10,7 +10,7 @@ from flask import abort, request
 from time import sleep
 import ckan.logic.action.get as get
 
-SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS']
+SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS', 'tif','tiff','geotiff']
 #SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
@@ -128,7 +128,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         }
 
         def is_accepted_format(resource):
-            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'WMTS']
+            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'WMTS', 'tif', 'tiff', 'geotiff']
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
@@ -184,109 +184,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
         def is_tiff(resource):
             #this depcretaed the use in old views
-            #accepted_formats = ['tif','tiff','geotiff']
-            accepted_formats = []
+            accepted_formats = ['tif','tiff','geotiff']
+            #accepted_formats = []
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
         if is_tiff(resource):
-            import httpx
-            import matplotlib.pyplot as plt
-            import numpy as np
 
-            def fetch_with_retries(endpoint, params, retries=3, delay=5, timeout=30.0):
-                for attempt in range(retries):
-                    try:
-                        response = httpx.get(endpoint, params=params, timeout=timeout)
-                        response.raise_for_status()
-                        return response
-                    except httpx.ReadTimeout:
-                        print(f"Timeout al intentar acceder a {endpoint} (intento {attempt + 1} de {retries})")
-                        if attempt < retries - 1:
-                            sleep(delay)
-                        else:
-                            raise
-                    except httpx.RequestError as exc:
-                        print(f"Error en la solicitud: {exc} (intento {attempt + 1} de {retries})")
-                        if attempt < retries - 1:
-                            sleep(delay)
-                        else:
-                            raise
-
-            def get_statistics_and_color_scale(url: str):
-                titiler_statistics_endpoint = "https://titiler.dev-wins.com/cog/statistics"
-                titiler_tiles_endpoint = "https://titiler.dev-wins.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png"
-
-                response = fetch_with_retries(titiler_statistics_endpoint, {"url": url})
-
-                stats = response.json()
-                print(json.dumps(stats, indent=4))
-
-                first_band = next(iter(stats.keys()))
-                band_stats = stats[first_band]
-                
-                histogram_counts = band_stats["histogram"][0]
-                bins = band_stats["histogram"][1]
-
-                num_bins = len(bins) - 1
-
-                colormap = []
-
-                if num_bins < 2:
-                    colormap.append(([band_stats["min"], band_stats["max"]], [0, 0, 255, 255]))
-                else:
-                    ranges_per_bin = np.maximum(np.ceil(np.array(histogram_counts) / np.max(histogram_counts) * 3).astype(int), 1)
-
-                    total_ranges = np.sum(ranges_per_bin)
-                    cmap = plt.get_cmap('viridis', total_ranges)
-                    color_index = 0
-
-                    for i in range(num_bins):
-                        bin_start = bins[i]
-                        bin_end = bins[i+1]
-                        bin_ranges = ranges_per_bin[i]
-
-                        if bin_ranges > 0:
-                            range_step = (bin_end - bin_start) / bin_ranges
-                            for j in range(bin_ranges):
-                                range_start = bin_start + j * range_step
-                                range_end = bin_start + (j + 1) * range_step
-                                color = [int(cmap(color_index)[k] * 255) for k in range(4)]
-                                colormap.append(([range_start, range_end], color))
-                                color_index += 1
-
-                cmap_param = json.dumps(colormap)
-                request_url = f"{titiler_tiles_endpoint}?url={url}&bidx=1&colormap={cmap_param}"
-                return request_url, colormap
-
-            def generate_color_list(colormap):
-                color_list = []
-                for color_range, color in colormap:
-                    hex_color = '#{:02x}{:02x}{:02x}'.format(color[0], color[1], color[2])
-                    title = f"{int(color_range[0])} - {int(color_range[1])}"
-                    color_list.append({"title": title, "color": hex_color})
-                return color_list
-
-            def get_zoom_levels(url: str):
-                titiler_info_endpoint = "https://titiler.dev-wins.com/cog/info"
-                response = fetch_with_retries(titiler_info_endpoint, {"url": url})
-                info = response.json()
-                bounds = info.get("bounds", None)
-                minzoom = info.get("minzoom", None)
-                maxzoom = info.get("maxzoom", None)
-                return bounds, minzoom, maxzoom
-
-            result_url, colormap = get_statistics_and_color_scale(uploaded_url)
-            color_scale_list = generate_color_list(colormap)
-            bounds, minzoom, maxzoom = get_zoom_levels(uploaded_url)
-
-            print("Generated URL:")
-            print(result_url)
-            print("\nGenerated Color Scale List:")
-            print(json.dumps(color_scale_list, indent=4))
-            print("\nBounds, Min Zoom, Max Zoom:")
-            print(bounds, minzoom, maxzoom)
-            
             config = f"""{{
                 "version": "8.0.0",
                 "initSources": [
@@ -294,22 +198,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "catalog": [
                             {{
                                 "name": "{resource["name"]}",
-                                "type": "url-template-imagery",
+                                "type": "cog",
                                 "id": "{resource["name"]}",
                                 "name": "{resource["name"]}",
-                                "type": "url-template-imagery",
-                                "url": "{result_url}",
+                                "type": "cog",
+                                "url": "{uploaded_url}",
                                 "cacheDuration": "5m",
                                 "isOpenInWorkbench": true,
-                                "minimumLevel": {minzoom},
-                                "maximumLevel": {maxzoom},
-                                "opacity": 0.8,
-                                "legends": [
-                                    {{
-                                        "title": "{resource["name"]}",
-                                        "items": {json.dumps(color_scale_list, indent=4)}
-                                    }}
-                                ]
+                                "opacity": 0.8
                             }}
                         ],
                         "homeCamera": {{
