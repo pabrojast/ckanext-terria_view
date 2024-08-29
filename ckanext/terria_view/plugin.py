@@ -133,8 +133,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             return any(resource_format == format for format in accepted_formats)
 
         def is_valid_domain(url):
+            #return False
             return url.startswith('https://data.dev-wins.com') or url.startswith('https://ihp-wins.unesco.org/')
-
+        
         if is_valid_domain(resource["url"]):
             if is_accepted_format(resource):
                 if user_context['user']:
@@ -224,7 +225,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "workbench": [
                             "{resource["name"]}"
                         ],
-                        "viewerMode": "2D",
+                        "viewerMode": "3D",
                         "focusWorkbenchItems": true,
                         "baseMaps": {{
                             "defaultBaseMapId": "basemap-positron",
