@@ -305,47 +305,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         if(view_custom_config == 'NA' or view_custom_config == ''):
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
-            try:                            
+            try:
                 # Extraer el parámetro 'start' de la URL
                 parsed_url = urllib.parse.urlparse(view_custom_config)
                 fragment = parsed_url.fragment
                 start_param = fragment.split('=', 1)[1]
                 decoded_param = urllib.parse.unquote(start_param)
-
+                
                 # Parsear el JSON
                 start_data = json.loads(decoded_param)
-
-                # Crear una función que reemplace '+' por espacios en claves y valores
-                def replace_plus_in_dict(d):
-                    new_dict = {}
-                    for key, value in d.items():
-                        # Reemplazar '+' por espacios en las claves
-                        new_key = key.replace('+', ' ')
-                        if isinstance(value, dict):
-                            # Recursivamente reemplazar '+' por espacios en los valores que son diccionarios
-                            new_dict[new_key] = replace_plus_in_dict(value)
-                        elif isinstance(value, list):
-                            # Reemplazar '+' por espacios en listas
-                            new_dict[new_key] = [item.replace('+', ' ') if isinstance(item, str) else item for item in value]
-                        elif isinstance(value, str):
-                            # Reemplazar '+' por espacios en los valores que son cadenas
-                            new_dict[new_key] = value.replace('+', ' ')
-                        else:
-                            new_dict[new_key] = value
-                    return new_dict
-
-                # Aplicar la función a 'models' dentro de 'initSources'
-                for init_source in start_data['initSources']:
-                    if 'models' in init_source:
-                        init_source['models'] = replace_plus_in_dict(init_source['models'])
-
-                # Modificar la URL
+                
+                # Modificar el valor del parámetro 'url' en el JSON
                 for init_source in start_data['initSources']:
                     if 'models' in init_source:
                         for model_key, model_value in init_source['models'].items():
+                            if 'name' in model_value:
+                                model_value['name'] = model_value['name'].replace('+', ' ')
                             if 'url' in model_value:
                                 model_value['url'] = uploaded_url
-
+                            if 'styles' in model_value:
+                                for style in model_value['styles']:                   
+                                    if 'color' in style and 'legend' in style['color']:
+                                        style['color']['legend']['title'] = style['color']['legend']['title'].replace('+', ' ')
+                                
+                
                 # Codificar nuevamente el JSON
                 updated_start_param = json.dumps(start_data)
                 encoded_config = urllib.parse.quote(updated_start_param)
