@@ -323,11 +323,39 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 model_value['name'] = model_value['name'].replace('+', ' ')
                             if 'url' in model_value:
                                 model_value['url'] = uploaded_url
+                            if not 'description' in model_value:
+                                model_value['description'] = package["notes"] + '<br/> <strong>Dataset URL:</strong> '+ toolkit.url_for('dataset.read', id=package["id"], _external=True) 
                             if 'styles' in model_value:
                                 for style in model_value['styles']:                   
                                     if 'color' in style and 'legend' in style['color']:
                                         style['color']['legend']['title'] = style['color']['legend']['title'].replace('+', ' ')
-                                
+
+                            if not 'info' in model_value:
+                                model_value['info'] = []
+
+                                # Verifica si 'organization' está definida y tiene los campos necesarios
+                                if 'organization' in locals() and organization:
+                                    organization_info = {
+                                        "name": "Organization: " + organization.get("title", "Unknown Organization"),
+                                        "content": (
+                                            '<img src=' + organization.get("image_url", "") +
+                                            ' alt=' + organization.get("title", "No Title") +
+                                            ' style="max-width:300px;width:100%"/> <br/>' +
+                                            organization.get("description", "No description available") + '<br/>'
+                                        )
+                                    }
+                                    model_value['info'].append(organization_info)
+
+                                # Verifica si 'resource' está definida y tiene los campos necesarios
+                                if 'resource' in locals() and resource:
+                                    resource_info = [
+                                        {"name": "File Description", "content": resource.get("description", "No description available")},
+                                        {"name": "Availability", "content": resource.get("availability", "Not available")},
+                                        {"name": "Last Modified", "content": resource.get("last_modified", "Unknown")},
+                                        {"name": "Created", "content": resource.get("Created", "Unknown")}
+                                    ]
+                                    model_value['info'].extend(resource_info)
+           
                 
                 # Codificar nuevamente el JSON
                 updated_start_param = json.dumps(start_data)
