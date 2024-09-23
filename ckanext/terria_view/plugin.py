@@ -346,7 +346,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                         # Si no es una URL completa (es una imagen subida localmente)
                                         organization_info["content"] += (
                                             '<img style="max-width:300px;width:100%" alt="' + organization.get("title", "No Title") +
-                                            '" src="/uploads/group/' + image_url + '" />'
+                                            '" src="'+toolkit.config.get('ckan.site_url')+'/uploads/group/' + image_url + '" />'
                                         )
                                     else:
                                         # Si es una URL externa completa
