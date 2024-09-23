@@ -324,7 +324,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                             if 'url' in model_value:
                                 model_value['url'] = uploaded_url
                             if not 'description' in model_value:
-                                model_value['description'] = package["notes"] + '<br/> <strong>Dataset URL:</strong> '+ toolkit.url_for('dataset.read', id=package["id"], _external=True) 
+                                model_value['description'] = package["notes"] + '<br/> <br/><strong>Dataset URL: </strong> '+ toolkit.url_for('dataset.read', id=package["id"], _external=True) 
                             if 'styles' in model_value:
                                 for style in model_value['styles']:                   
                                     if 'color' in style and 'legend' in style['color']:
@@ -337,13 +337,27 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 if 'organization' in locals() and organization:
                                     organization_info = {
                                         "name": "Organization: " + organization.get("title", "Unknown Organization"),
-                                        "content": (
-                                            '<img src=' + organization.get("image_url", "") +
-                                            ' alt=' + organization.get("title", "No Title") +
-                                            ' style="max-width:300px;width:100%"/> <br/>' +
-                                            organization.get("description", "No description available") + '<br/>'
-                                        )
+                                        "content": ""
                                     }
+
+                                    # Verifica si la URL de la imagen es local o un enlace externo
+                                    image_url = organization.get("image_url", "")
+                                    if not image_url.startswith('http'):
+                                        # Si no es una URL completa (es una imagen subida localmente)
+                                        organization_info["content"] += (
+                                            '<img style="max-width:300px;width:100%" alt="' + organization.get("title", "No Title") +
+                                            '" src="/uploads/group/' + image_url + '" />'
+                                        )
+                                    else:
+                                        # Si es una URL externa completa
+                                        organization_info["content"] += (
+                                            '<img style="max-width:300px;width:100%" alt="' + organization.get("title", "No Title") +
+                                            '" src="' + image_url + '" />'
+                                        )
+
+                                    # Agrega la descripción
+                                    organization_info["content"] += '<br/>' + organization.get("description", "No description available") + '<br/>'
+
                                     model_value['info'].append(organization_info)
 
                                 # Verifica si 'resource' está definida y tiene los campos necesarios
