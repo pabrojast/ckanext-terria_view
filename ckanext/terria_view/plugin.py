@@ -8,40 +8,45 @@ import os
 from ckan.lib import base, uploader
 from flask import abort, request
 from time import sleep
+import ckan.logic.action.get as get
 
-SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','tif','tiff','geotiff']
+SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS', 'tif','tiff','geotiff']
 #SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
 
 def can_view_resource(resource):
-    print('can view')
     format_ = resource.get('format', '')
     if format_ == '':
         format_ = os.path.splitext(resource['url'])[1][1:]
     return re.match(SUPPORTED_FORMATS_REGEX, format_.lower()) != None
 
-import ckan.logic.action.get as get
 resource_view_list = get.resource_view_list
 
 PLUGIN_NAME = 'terria_view'
 
 def new_resource_view_list(plugin, context, data_dict):
-    ret = resource_view_list(context, data_dict)
+
     try:
         resource_id = data_dict.get('id')
         # Verificar si hay un activity_id en la URL, así no intenta crear nada.
         if 'activity_id' in request.args:
             print("Activity ID detected, skipping resource view creation.")
+            ret = []
             return ret
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
             print("Debug: Resource not found")
-            abort(404, description='Resource not found')
-
+            ret = []
+            return ret
+        ret = resource_view_list(context, data_dict)
     except Exception as e:
         print(f"Error retrieving resource view list: {e}")
-
+    try:
+        ret
+    except NameError:
+        ret = []
+        
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
 
     if not has_plugin:
@@ -123,13 +128,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         }
 
         def is_accepted_format(resource):
-            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'tif','tiff','geotiff']
+            accepted_formats = ['shp', 'kml', 'geojson', 'czml', 'csv-geo-au', 'csv-geo-nz', 'csv-geo-us', 'WMTS', 'tif', 'tiff', 'geotiff']
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
         def is_valid_domain(url):
-            return url.startswith('https://data.dev-wins.com') or url.startswith('https://ihp-wins.unesco.org/')
-
+            #return url.startswith('https://data.dev-wins.com') or url.startswith('https://ihp-wins.unesco.org/')
+            return False
         if is_valid_domain(resource["url"]):
             if is_accepted_format(resource):
                 if user_context['user']:
@@ -150,115 +155,42 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 return cleaned_value
             else:
                 return default
+            
+        def extract_bounds_from_spatial(spatial):
+            try:
+                spatial_data = json.loads(spatial)
+                if spatial_data["type"] == "Polygon":
+                    coordinates = spatial_data["coordinates"][0]
+                    lats = [coord[1] for coord in coordinates]
+                    lons = [coord[0] for coord in coordinates]
+                    ymax = max(lats)
+                    ymin = min(lats)
+                    xmax = max(lons)
+                    xmin = min(lons)
+                    return str(ymax), str(xmax), str(ymin), str(xmin)
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+            return None, None, None, None
 
-        ymax = clean_coordinate(package.get("ymax"), "20")
-        xmax = clean_coordinate(package.get("xmax"), "-13")
-        ymin = clean_coordinate(package.get("ymin"), "-60")
-        xmin = clean_coordinate(package.get("xmin"), "-108")
+        # Intentar extraer las coordenadas desde 'spatial'
+        ymax_spatial, xmax_spatial, ymin_spatial, xmin_spatial = extract_bounds_from_spatial(package.get("spatial"))
+
+        # Si no se pudo extraer desde 'spatial', usar el valor predeterminado
+        ymax = clean_coordinate(ymax_spatial if ymax_spatial else package.get("ymax"), "20")
+        xmax = clean_coordinate(xmax_spatial if xmax_spatial else package.get("xmax"), "-13")
+        ymin = clean_coordinate(ymin_spatial if ymin_spatial else package.get("ymin"), "-60")
+        xmin = clean_coordinate(xmin_spatial if xmin_spatial else package.get("xmin"), "-108")
+
 
         def is_tiff(resource):
+            #this depcretaed the use in old views
             accepted_formats = ['tif','tiff','geotiff']
+            #accepted_formats = []
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
         if is_tiff(resource):
-            import httpx
-            import matplotlib.pyplot as plt
-            import numpy as np
 
-            def fetch_with_retries(endpoint, params, retries=3, delay=5, timeout=30.0):
-                for attempt in range(retries):
-                    try:
-                        response = httpx.get(endpoint, params=params, timeout=timeout)
-                        response.raise_for_status()
-                        return response
-                    except httpx.ReadTimeout:
-                        print(f"Timeout al intentar acceder a {endpoint} (intento {attempt + 1} de {retries})")
-                        if attempt < retries - 1:
-                            sleep(delay)
-                        else:
-                            raise
-                    except httpx.RequestError as exc:
-                        print(f"Error en la solicitud: {exc} (intento {attempt + 1} de {retries})")
-                        if attempt < retries - 1:
-                            sleep(delay)
-                        else:
-                            raise
-
-            def get_statistics_and_color_scale(url: str):
-                titiler_statistics_endpoint = "https://titiler.dev-wins.com/cog/statistics"
-                titiler_tiles_endpoint = "https://titiler.dev-wins.com/cog/tiles/WebMercatorQuad/{z}/{x}/{y}.png"
-
-                response = fetch_with_retries(titiler_statistics_endpoint, {"url": url})
-
-                stats = response.json()
-                print(json.dumps(stats, indent=4))
-
-                first_band = next(iter(stats.keys()))
-                band_stats = stats[first_band]
-                
-                histogram_counts = band_stats["histogram"][0]
-                bins = band_stats["histogram"][1]
-
-                num_bins = len(bins) - 1
-
-                colormap = []
-
-                if num_bins < 2:
-                    colormap.append(([band_stats["min"], band_stats["max"]], [0, 0, 255, 255]))
-                else:
-                    ranges_per_bin = np.maximum(np.ceil(np.array(histogram_counts) / np.max(histogram_counts) * 3).astype(int), 1)
-
-                    total_ranges = np.sum(ranges_per_bin)
-                    cmap = plt.get_cmap('viridis', total_ranges)
-                    color_index = 0
-
-                    for i in range(num_bins):
-                        bin_start = bins[i]
-                        bin_end = bins[i+1]
-                        bin_ranges = ranges_per_bin[i]
-
-                        if bin_ranges > 0:
-                            range_step = (bin_end - bin_start) / bin_ranges
-                            for j in range(bin_ranges):
-                                range_start = bin_start + j * range_step
-                                range_end = bin_start + (j + 1) * range_step
-                                color = [int(cmap(color_index)[k] * 255) for k in range(4)]
-                                colormap.append(([range_start, range_end], color))
-                                color_index += 1
-
-                cmap_param = json.dumps(colormap)
-                request_url = f"{titiler_tiles_endpoint}?url={url}&bidx=1&colormap={cmap_param}"
-                return request_url, colormap
-
-            def generate_color_list(colormap):
-                color_list = []
-                for color_range, color in colormap:
-                    hex_color = '#{:02x}{:02x}{:02x}'.format(color[0], color[1], color[2])
-                    title = f"{int(color_range[0])} - {int(color_range[1])}"
-                    color_list.append({"title": title, "color": hex_color})
-                return color_list
-
-            def get_zoom_levels(url: str):
-                titiler_info_endpoint = "https://titiler.dev-wins.com/cog/info"
-                response = fetch_with_retries(titiler_info_endpoint, {"url": url})
-                info = response.json()
-                bounds = info.get("bounds", None)
-                minzoom = info.get("minzoom", None)
-                maxzoom = info.get("maxzoom", None)
-                return bounds, minzoom, maxzoom
-
-            result_url, colormap = get_statistics_and_color_scale(uploaded_url)
-            color_scale_list = generate_color_list(colormap)
-            bounds, minzoom, maxzoom = get_zoom_levels(uploaded_url)
-
-            print("Generated URL:")
-            print(result_url)
-            print("\nGenerated Color Scale List:")
-            print(json.dumps(color_scale_list, indent=4))
-            print("\nBounds, Min Zoom, Max Zoom:")
-            print(bounds, minzoom, maxzoom)
-            
             config = f"""{{
                 "version": "8.0.0",
                 "initSources": [
@@ -266,22 +198,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "catalog": [
                             {{
                                 "name": "{resource["name"]}",
-                                "type": "url-template-imagery",
+                                "type": "cog",
                                 "id": "{resource["name"]}",
                                 "name": "{resource["name"]}",
-                                "type": "url-template-imagery",
-                                "url": "{result_url}",
+                                "type": "cog",
+                                "url": "{uploaded_url}",
                                 "cacheDuration": "5m",
                                 "isOpenInWorkbench": true,
-                                "minimumLevel": {minzoom},
-                                "maximumLevel": {maxzoom},
-                                "opacity": 0.8,
-                                "legends": [
-                                    {{
-                                        "title": "{resource["name"]}",
-                                        "items": {json.dumps(color_scale_list, indent=4)}
-                                    }}
-                                ]
+                                "opacity": 0.8
                             }}
                         ],
                         "homeCamera": {{
@@ -300,7 +224,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "workbench": [
                             "{resource["name"]}"
                         ],
-                        "viewerMode": "2D",
+                        "viewerMode": "3D",
                         "focusWorkbenchItems": true,
                         "baseMaps": {{
                             "defaultBaseMapId": "basemap-positron",
@@ -377,26 +301,57 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 ]
             }}"""
 
-        if(view_custom_config == 'NA'):
+        if(view_custom_config == 'NA' or view_custom_config == ''):
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
-            # Extraer el parámetro 'start' de la URL
-            parsed_url = urllib.parse.urlparse(view_custom_config)
-            fragment = parsed_url.fragment
-            start_param = fragment.split('=', 1)[1]
-            decoded_param = urllib.parse.unquote(start_param)
-            # Parsear el JSON
-            start_data = json.loads(decoded_param)
-            # Modificar el valor del parámetro 'url' en el JSON
-            for init_source in start_data['initSources']:
-                if 'models' in init_source:
-                    for model_key, model_value in init_source['models'].items():
-                        if 'url' in model_value:
-                            model_value['url'] = uploaded_url
+            try:                            
+                # Extraer el parámetro 'start' de la URL
+                parsed_url = urllib.parse.urlparse(view_custom_config)
+                fragment = parsed_url.fragment
+                start_param = fragment.split('=', 1)[1]
+                decoded_param = urllib.parse.unquote(start_param)
 
-            # Codificar nuevamente el JSON
-            updated_start_param = json.dumps(start_data)
-            encoded_config = urllib.parse.quote(updated_start_param)
+                # Parsear el JSON
+                start_data = json.loads(decoded_param)
+
+                # Crear una función que reemplace '+' por espacios en claves y valores
+                def replace_plus_in_dict(d):
+                    new_dict = {}
+                    for key, value in d.items():
+                        # Reemplazar '+' por espacios en las claves
+                        new_key = key.replace('+', ' ')
+                        if isinstance(value, dict):
+                            # Recursivamente reemplazar '+' por espacios en los valores que son diccionarios
+                            new_dict[new_key] = replace_plus_in_dict(value)
+                        elif isinstance(value, list):
+                            # Reemplazar '+' por espacios en listas
+                            new_dict[new_key] = [item.replace('+', ' ') if isinstance(item, str) else item for item in value]
+                        elif isinstance(value, str):
+                            # Reemplazar '+' por espacios en los valores que son cadenas
+                            new_dict[new_key] = value.replace('+', ' ')
+                        else:
+                            new_dict[new_key] = value
+                    return new_dict
+
+                # Aplicar la función a 'models' dentro de 'initSources'
+                for init_source in start_data['initSources']:
+                    if 'models' in init_source:
+                        init_source['models'] = replace_plus_in_dict(init_source['models'])
+
+                # Modificar la URL
+                for init_source in start_data['initSources']:
+                    if 'models' in init_source:
+                        for model_key, model_value in init_source['models'].items():
+                            if 'url' in model_value:
+                                model_value['url'] = uploaded_url
+
+                # Codificar nuevamente el JSON
+                updated_start_param = json.dumps(start_data)
+                encoded_config = urllib.parse.quote(updated_start_param)
+
+            except (IndexError, json.JSONDecodeError) as e:
+                # Si ocurre un error, se usa el encoded_config básico
+                encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
 
         return {
             'title': view_title,
