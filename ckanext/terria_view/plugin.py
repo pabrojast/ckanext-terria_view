@@ -9,6 +9,8 @@ from ckan.lib import base, uploader
 from flask import abort, request
 from time import sleep
 import ckan.logic.action.get as get
+import urllib.request  # Asegúrate de tener esta importación
+import xml.etree.ElementTree as ET  # Asegúrate de tener esta importación
 
 SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS', 'tif','tiff','geotiff']
 #SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
@@ -57,7 +59,8 @@ def new_resource_view_list(plugin, context, data_dict):
                 'view_type': 'terria_view',
                 'description': '',
                 'custom_config': 'NA',
-                'terria_instance_url': '//ihp-wins.unesco.org/terria/'
+                'terria_instance_url': '//ihp-wins.unesco.org/terria/',
+                'style':  'NA'
             }
             sysadmin_context = {
                 'model': context['model'],
@@ -102,7 +105,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'iframed': False,
             "schema": {
                 "terria_instance_url": [],
-                "custom_config": []
+                "custom_config": [],
+                "style": []
             }
         }
 
@@ -120,6 +124,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         view_custom_config = view.get('custom_config', 'NA')
+        view_style = view.get('style', 'NA')
         
         # Contexto con información del usuario
         user_context = {
@@ -184,56 +189,107 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
 
         def is_tiff(resource):
-            #this depcretaed the use in old views
-            accepted_formats = ['tif','tiff','geotiff']
-            #accepted_formats = []
+            accepted_formats = ['tif', 'tiff', 'geotiff']
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
         if is_tiff(resource):
+            colors = []
+            legend_items = []
 
-            config = f"""{{
+            if view_style and view_style != 'NA':
+                try:
+                    with urllib.request.urlopen(view_style) as response:
+                        sld_xml = response.read()
+                except Exception as e:
+                    print(f"Error fetching SLD file from {view_style}: {e}")
+                    sld_xml = None
+
+                if sld_xml:
+                    try:
+                        root = ET.fromstring(sld_xml)
+                        namespaces = {'sld': 'http://www.opengis.net/sld'}
+                        color_map_entries = root.findall('.//sld:ColorMapEntry', namespaces)
+
+                        for entry in color_map_entries:
+                            quantity = entry.get('quantity')
+                            color = entry.get('color')
+                            label = entry.get('label', '')
+
+                            if color.startswith('#'):
+                                hex_color = color.lstrip('#')
+                                rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+                                rgb_string = f"rgb({rgb[0]}, {rgb[1]}, {rgb[2]})"
+                            else:
+                                rgb_string = color
+
+                            colors.append([float(quantity), rgb_string])
+                            legend_items.append({
+                                "title": label,
+                                "color": color
+                            })
+
+                    except Exception as e:
+                        print(f"Error parsing SLD XML: {e}")
+                        colors = []
+                        legend_items = []
+
+            catalog_item = {
+                "name": resource["name"],
+                "type": "cog",
+                "id": resource["name"],
+                "url": uploaded_url,
+                "cacheDuration": "5m",
+                "isOpenInWorkbench": True,
+                "opacity": 0.8
+            }
+
+            if colors:
+                catalog_item["renderOptions"] = {
+                    "single": {
+                        "colors": colors,
+                        "useRealValue": True
+                    }
+                }
+
+            if legend_items:
+                catalog_item["legends"] = [
+                    {
+                        "title": "Leyenda",
+                        "items": legend_items
+                    }
+                ]
+
+            config_dict = {
                 "version": "8.0.0",
                 "initSources": [
-                    {{
-                        "catalog": [
-                            {{
-                                "name": "{resource["name"]}",
-                                "type": "cog",
-                                "id": "{resource["name"]}",
-                                "name": "{resource["name"]}",
-                                "type": "cog",
-                                "url": "{uploaded_url}",
-                                "cacheDuration": "5m",
-                                "isOpenInWorkbench": true,
-                                "opacity": 0.8
-                            }}
-                        ],
-                        "homeCamera": {{
-                            "north": {ymax},
-                            "east": {xmax},
-                            "south": {ymin},
-                            "west": {xmin}
-                        }},
-                        "initialCamera": {{
-                            "north": {ymax},
-                            "east": {xmax},
-                            "south": {ymin},
-                            "west": {xmin}
-                        }},
+                    {
+                        "catalog": [catalog_item],
+                        "homeCamera": {
+                            "north": float(ymax),
+                            "east": float(xmax),
+                            "south": float(ymin),
+                            "west": float(xmin)
+                        },
+                        "initialCamera": {
+                            "north": float(ymax),
+                            "east": float(xmax),
+                            "south": float(ymin),
+                            "west": float(xmin)
+                        },
                         "stratum": "user",
-                        "workbench": [
-                            "{resource["name"]}"
-                        ],
+                        "workbench": [resource["name"]],
                         "viewerMode": "3D",
-                        "focusWorkbenchItems": true,
-                        "baseMaps": {{
+                        "focusWorkbenchItems": True,
+                        "baseMaps": {
                             "defaultBaseMapId": "basemap-positron",
                             "previewBaseMapId": "basemap-positron"
-                        }}
-                    }}
+                        }
+                    }
                 ]
-            }}"""
+            }
+
+            config = json.dumps(config_dict)
         else:
             config = f"""{{
                 "version": "8.0.0",
@@ -398,3 +454,4 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return {
             'resource_view_list': self.resource_view_list_callback
         }
+
