@@ -113,6 +113,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     def can_view(self, data_dict):
         return can_view_resource(data_dict['resource'])
 
+    def is_shp(self, resource):
+        return resource["format"].lower() == 'shp'
+
     def setup_template_variables(self, context, data_dict):
         package = data_dict['package']
         resource = data_dict['resource']
@@ -255,7 +258,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             if legend_items:
                 catalog_item["legends"] = [
                     {
-                        "title": "Leyenda",
+                        "title": "Legend",
                         "items": legend_items
                     }
                 ]
@@ -287,6 +290,115 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         }
                     }
                 ]
+            }
+
+            config = json.dumps(config_dict)
+        elif self.is_shp(resource):  # Note the self. prefix here
+            colors = []
+            legend_items = []
+            enum_colors = []  # Nueva lista para los estilos
+
+            if view_style and view_style != 'NA':
+                try:
+                    with urllib.request.urlopen(view_style) as response:
+                        sld_xml = response.read()
+                except Exception as e:
+                    print(f"Error fetching SLD file from {view_style}: {e}")
+                    sld_xml = None
+
+                if sld_xml:
+                    try:
+                        root = ET.fromstring(sld_xml)
+                        namespaces = {
+                            'sld': 'http://www.opengis.net/sld',
+                            'se': 'http://www.opengis.net/se',
+                            'ogc': 'http://www.opengis.net/ogc'
+                        }
+                        
+                        rules = root.findall('.//se:Rule', namespaces)
+                        
+                        for rule in rules:
+                            name = rule.find('se:Name', namespaces)
+                            title = rule.find('.//se:Title', namespaces)
+                            fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', namespaces)
+                            property_name = rule.find('.//ogc:PropertyName', namespaces)
+                            property_value = rule.find('.//ogc:Literal', namespaces)
+                            
+                            if fill is not None and (name is not None or title is not None):
+                                color = fill.text
+                                label = (title.text if title is not None else name.text) if name is not None else "Sin etiqueta"
+                                
+                                # Agregar a la leyenda
+                                legend_items.append({
+                                    "title": label,
+                                    "color": color
+                                })
+
+                                # Agregar al estilo
+                                if property_name is not None and property_value is not None:
+                                    enum_colors.append({
+                                        "value": property_value.text,
+                                        "color": f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},1)"
+                                    })
+
+                    except Exception as e:
+                        print(f"Error parsing SLD XML: {e}")
+                        legend_items = []
+                        enum_colors = []
+
+            catalog_item = {
+                "name": resource["name"],
+                "type": "shp",
+                "id": resource["name"],
+                "url": uploaded_url,
+                "cacheDuration": "5m",
+                "isOpenInWorkbench": True,
+                "opacity": 0.8
+            }
+
+            if legend_items:
+                catalog_item["legends"] = [{
+                    "title": "Legend",
+                    "items": legend_items
+                }]
+
+            # Agregar estilos si hay colores definidos
+            if enum_colors:
+                property_name = rules[0].find('.//ogc:PropertyName', namespaces).text
+                catalog_item["styles"] = [{
+                    "id": property_name,
+                    "color": {
+                        "enumColors": enum_colors,
+                        "colorPalette": "HighContrast"
+                    }
+                }]
+                catalog_item["activeStyle"] = property_name
+
+            config_dict = {
+                "version": "8.0.0",
+                "initSources": [{
+                    "catalog": [catalog_item],
+                    "homeCamera": {
+                        "north": float(ymax),
+                        "east": float(xmax),
+                        "south": float(ymin),
+                        "west": float(xmin)
+                    },
+                    "initialCamera": {
+                        "north": float(ymax),
+                        "east": float(xmax),
+                        "south": float(ymin),
+                        "west": float(xmin)
+                    },
+                    "stratum": "user",
+                    "workbench": [resource["name"]],
+                    "viewerMode": "3D",
+                    "focusWorkbenchItems": True,
+                    "baseMaps": {
+                        "defaultBaseMapId": "basemap-positron",
+                        "previewBaseMapId": "basemap-positron"
+                    }
+                }]
             }
 
             config = json.dumps(config_dict)
@@ -371,68 +483,28 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 # Parsear el JSON
                 start_data = json.loads(decoded_param)
                 
-                # Modificar el valor del parámetro 'url' en el JSON
+                # Reemplazar los '+' por espacios en los títulos de la leyenda
                 for init_source in start_data['initSources']:
                     if 'models' in init_source:
                         for model_key, model_value in init_source['models'].items():
-                            if 'name' in model_value:
-                                model_value['name'] = model_value['name'].replace('+', ' ')
-                            if 'url' in model_value:
-                                model_value['url'] = uploaded_url
-                            if not 'description' in model_value:
-                                model_value['description'] = package["notes"] + '<br/> <br/><strong>Dataset URL: </strong> '+ toolkit.url_for('dataset.read', id=package["id"], _external=True) 
+                            if 'legends' in model_value:
+                                for legend in model_value['legends']:
+                                    if 'items' in legend:
+                                        for item in legend['items']:
+                                            if 'title' in item:
+                                                item['title'] = urllib.parse.unquote_plus(item['title'])
+                            # También reemplazar en los estilos si existen
                             if 'styles' in model_value:
-                                for style in model_value['styles']:                   
-                                    if 'color' in style and 'legend' in style['color']:
-                                        style['color']['legend']['title'] = style['color']['legend']['title'].replace('+', ' ')
+                                for style in model_value['styles']:
+                                    if 'color' in style and 'enumColors' in style['color']:
+                                        for color_entry in style['color']['enumColors']:
+                                            if 'value' in color_entry:
+                                                color_entry['value'] = urllib.parse.unquote_plus(color_entry['value'])
 
-                            if not 'info' in model_value:
-                                model_value['info'] = []
+                encoded_config = urllib.parse.quote(json.dumps(start_data))
 
-                                # Verifica si 'organization' está definida y tiene los campos necesarios
-                                if 'organization' in locals() and organization:
-                                    organization_info = {
-                                        "name": "Organization: " + organization.get("title", "Unknown Organization"),
-                                        "content": ""
-                                    }
-
-                                    # Verifica si la URL de la imagen es local o un enlace externo
-                                    image_url = organization.get("image_url", "")
-                                    if not image_url.startswith('http'):
-                                        # Si no es una URL completa (es una imagen subida localmente)
-                                        organization_info["content"] += (
-                                            '<img style="max-width:300px;width:100%" alt="' + organization.get("title", "No Title") +
-                                            '" src="'+toolkit.config.get('ckan.site_url')+'/uploads/group/' + image_url + '" />'
-                                        )
-                                    else:
-                                        # Si es una URL externa completa
-                                        organization_info["content"] += (
-                                            '<img style="max-width:300px;width:100%" alt="' + organization.get("title", "No Title") +
-                                            '" src="' + image_url + '" />'
-                                        )
-
-                                    # Agrega la descripción
-                                    organization_info["content"] += '<br/>' + organization.get("description", "No description available") + '<br/>'
-
-                                    model_value['info'].append(organization_info)
-
-                                # Verifica si 'resource' está definida y tiene los campos necesarios
-                                if 'resource' in locals() and resource:
-                                    resource_info = [
-                                        {"name": "File Description", "content": resource.get("description", "No description available")},
-                                        {"name": "Availability", "content": resource.get("availability", "Not available")},
-                                        {"name": "Last Modified", "content": resource.get("last_modified", "Unknown")},
-                                        {"name": "Created", "content": resource.get("Created", "Unknown")}
-                                    ]
-                                    model_value['info'].extend(resource_info)
-           
-                
-                # Codificar nuevamente el JSON
-                updated_start_param = json.dumps(start_data)
-                encoded_config = urllib.parse.quote(updated_start_param)
-
-            except (IndexError, json.JSONDecodeError) as e:
-                # Si ocurre un error, se usa el encoded_config básico
+            except Exception as e:
+                print(f"Error processing custom config: {e}")
                 encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
 
         return {
@@ -454,4 +526,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return {
             'resource_view_list': self.resource_view_list_callback
         }
+
+
+
 
