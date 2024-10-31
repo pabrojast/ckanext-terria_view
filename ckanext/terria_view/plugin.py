@@ -483,23 +483,118 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 # Parsear el JSON
                 start_data = json.loads(decoded_param)
                 
-                # Reemplazar los '+' por espacios en los títulos de la leyenda
+                # Obtener los estilos del SLD si existe y el recurso es shp o cog
+                sld_styles = None
+                if view_style and view_style != 'NA' and (resource["format"].lower() in ['shp', 'tif', 'tiff', 'geotiff']):
+                    try:
+                        with urllib.request.urlopen(view_style) as response:
+                            sld_xml = response.read()
+                            root = ET.fromstring(sld_xml)
+                            namespaces = {
+                                'sld': 'http://www.opengis.net/sld',
+                                'se': 'http://www.opengis.net/se',
+                                'ogc': 'http://www.opengis.net/ogc'
+                            }
+                            
+                            legend_items = []
+                            if resource["format"].lower() == 'shp':
+                                # Procesar estilos para SHP
+                                enum_colors = []
+                                rules = root.findall('.//se:Rule', namespaces)
+                                
+                                for rule in rules:
+                                    name = rule.find('se:Name', namespaces)
+                                    title = rule.find('.//se:Title', namespaces)
+                                    fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', namespaces)
+                                    property_name = rule.find('.//ogc:PropertyName', namespaces)
+                                    property_value = rule.find('.//ogc:Literal', namespaces)
+                                    
+                                    if fill is not None and (name is not None or title is not None):
+                                        color = fill.text
+                                        label = (title.text if title is not None else name.text) if name is not None else "Sin etiqueta"
+                                        
+                                        legend_items.append({
+                                            "title": label,
+                                            "color": color
+                                        })
+                                        
+                                        if property_name is not None and property_value is not None:
+                                            enum_colors.append({
+                                                "value": property_value.text,
+                                                "color": f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},1)"
+                                            })
+                            
+                                sld_styles = {
+                                    "legends": [{
+                                        "title": "Legend",
+                                        "items": legend_items
+                                    }]
+                                }
+                                
+                                if enum_colors and property_name is not None:
+                                    sld_styles["styles"] = [{
+                                        "id": property_name.text,
+                                        "color": {
+                                            "enumColors": enum_colors,
+                                            "colorPalette": "HighContrast"
+                                        }
+                                    }]
+                                    sld_styles["activeStyle"] = property_name.text
+                                    
+                            else:  # COG (tif, tiff, geotiff)
+                                # Procesar estilos para COG
+                                colors = []
+                                color_map_entries = root.findall('.//sld:ColorMapEntry', namespaces)
+                                
+                                for entry in color_map_entries:
+                                    quantity = entry.get('quantity')
+                                    color = entry.get('color')
+                                    label = entry.get('label', '')
+                                    
+                                    if color.startswith('#'):
+                                        hex_color = color.lstrip('#')
+                                        rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+                                        rgb_string = f"rgb({rgb[0]}, {rgb[1]}, {rgb[2]})"
+                                    else:
+                                        rgb_string = color
+                                        
+                                    colors.append([float(quantity), rgb_string])
+                                    legend_items.append({
+                                        "title": label,
+                                        "color": color
+                                    })
+                                
+                                sld_styles = {
+                                    "legends": [{
+                                        "title": "Legend",
+                                        "items": legend_items
+                                    }]
+                                }
+                                
+                                if colors:
+                                    sld_styles["renderOptions"] = {
+                                        "single": {
+                                            "colors": colors,
+                                            "useRealValue": True
+                                        }
+                                    }
+                                    
+                    except Exception as e:
+                        print(f"Error processing SLD styles: {e}")
+                        sld_styles = None
+                
+                # Actualizar la URL y aplicar estilos en el custom config
                 for init_source in start_data['initSources']:
                     if 'models' in init_source:
                         for model_key, model_value in init_source['models'].items():
-                            if 'legends' in model_value:
-                                for legend in model_value['legends']:
-                                    if 'items' in legend:
-                                        for item in legend['items']:
-                                            if 'title' in item:
-                                                item['title'] = urllib.parse.unquote_plus(item['title'])
-                            # También reemplazar en los estilos si existen
-                            if 'styles' in model_value:
-                                for style in model_value['styles']:
-                                    if 'color' in style and 'enumColors' in style['color']:
-                                        for color_entry in style['color']['enumColors']:
-                                            if 'value' in color_entry:
-                                                color_entry['value'] = urllib.parse.unquote_plus(color_entry['value'])
+                            if isinstance(model_value, dict) and 'url' in model_value:
+                                # Actualizar la URL
+                                model_value['url'] = uploaded_url
+                                
+                                # Aplicar los nuevos estilos si existen
+                                if sld_styles:
+                                    for key, value in sld_styles.items():
+                                        model_value[key] = value
 
                 encoded_config = urllib.parse.quote(json.dumps(start_data))
 
