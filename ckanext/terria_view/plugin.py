@@ -483,6 +483,39 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 # Parsear el JSON
                 start_data = json.loads(decoded_param)
                 
+                # Función auxiliar para decodificar nombres
+                def decode_names(obj):
+                    if isinstance(obj, dict):
+                        new_dict = {}
+                        for key, value in obj.items():
+                            # Decodificar el key si contiene '+'
+                            new_key = urllib.parse.unquote_plus(key) if '+' in key else key
+                            
+                            if isinstance(value, dict):
+                                # Si hay campos específicos que contienen nombres
+                                if 'name' in value:
+                                    value['name'] = urllib.parse.unquote_plus(value['name'])
+                                if 'title' in value:
+                                    value['title'] = urllib.parse.unquote_plus(value['title'])
+                                if 'legend' in value and isinstance(value['legend'], dict):
+                                    if 'title' in value['legend']:
+                                        value['legend']['title'] = urllib.parse.unquote_plus(value['legend']['title'])
+                                
+                                value = decode_names(value)
+                            elif isinstance(value, list):
+                                value = [urllib.parse.unquote_plus(item) if isinstance(item, str) else decode_names(item) for item in value]
+                            elif isinstance(value, str) and '+' in value:
+                                value = urllib.parse.unquote_plus(value)
+                                
+                            new_dict[new_key] = value
+                        return new_dict
+                    elif isinstance(obj, list):
+                        return [decode_names(item) for item in obj]
+                    return obj
+
+                # Decodificar todos los nombres en el custom config
+                start_data = decode_names(start_data)
+
                 # Obtener los estilos del SLD si existe y el recurso es shp o cog
                 sld_styles = None
                 if view_style and view_style != 'NA' and (resource["format"].lower() in ['shp', 'tif', 'tiff', 'geotiff']):
