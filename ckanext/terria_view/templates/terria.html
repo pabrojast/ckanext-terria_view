@@ -50,14 +50,28 @@
     makePopupSendMessage(message, destination.origin, destination.pathname);
   };
 
+  function toggleContainerWidth() {
+    const containers = document.querySelectorAll('.container');
+    containers.forEach(container => {
+        if (container.classList.contains('full-width')) {
+            container.classList.remove('full-width');
+        } else {
+            container.classList.add('full-width');
+        }
+    });
+  }
+
 </script>
-<a
-  class="btn pull-right"
-  style="margin-bottom: 10px;"
-  target="_blank"
-  href="{{ terria_instance_url }}#start={{ encoded_config }}" >
-  {{ _('View in a separate') }} {{title}} {{ _('window') }}
-</a>
+<div style="margin-bottom: 10px;" class="pull-right">
+  <a class="btn"
+    target="_blank"
+    href="{{ terria_instance_url }}#start={{ encoded_config }}" >
+    {{ _('View in a separate') }} {{title}} {{ _('window') }}
+  </a>
+  <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
+    Toggle full width
+  </a>
+</div>
 <iframe
   src="{{ terria_instance_url }}#start={{ encoded_config }}"
   style="height: 100vh; width: 100%; border: none;"

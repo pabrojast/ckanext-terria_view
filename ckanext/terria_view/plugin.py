@@ -12,10 +12,9 @@ import ckan.logic.action.get as get
 import urllib.request  # Asegúrate de tener esta importación
 import xml.etree.ElementTree as ET  # Asegúrate de tener esta importación
 
-SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*','WMTS', 'tif','tiff','geotiff', 'csv']
-#SUPPORTED_FORMATS = ['shp','wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*']
+SUPPORTED_FORMATS = ['shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
-SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) +')$'
+SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) + ')$'
 
 def can_view_resource(resource):
     format_ = resource.get('format', '')
@@ -293,7 +292,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             }
 
             config = json.dumps(config_dict)
-        elif self.is_shp(resource):  # Note the self. prefix here
+        elif self.is_shp(resource):
             colors = []
             legend_items = []
             enum_colors = []  # Nueva lista para los estilos
@@ -316,6 +315,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         }
                         
                         rules = root.findall('.//se:Rule', namespaces)
+                        valid_property_name = None  # Para almacenar un property_name válido
                         
                         for rule in rules:
                             name = rule.find('se:Name', namespaces)
@@ -334,8 +334,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                     "color": color
                                 })
 
-                                # Agregar al estilo
-                                if property_name is not None and property_value is not None:
+                                # Solo procesar si property_name tiene un valor no vacío
+                                if (property_name is not None and property_name.text and 
+                                    property_name.text.strip() and property_value is not None):
+                                    valid_property_name = property_name.text.strip()
                                     enum_colors.append({
                                         "value": property_value.text,
                                         "color": f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},1)"
@@ -362,17 +364,16 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     "items": legend_items
                 }]
 
-            # Agregar estilos si hay colores definidos
-            if enum_colors:
-                property_name = rules[0].find('.//ogc:PropertyName', namespaces).text
+            # Solo agregar estilos si tenemos un property_name válido y enum_colors
+            if enum_colors and valid_property_name:
                 catalog_item["styles"] = [{
-                    "id": property_name,
+                    "id": valid_property_name,
                     "color": {
                         "enumColors": enum_colors,
                         "colorPalette": "HighContrast"
                     }
                 }]
-                catalog_item["activeStyle"] = property_name
+                catalog_item["activeStyle"] = valid_property_name
 
             config_dict = {
                 "version": "8.0.0",
@@ -534,6 +535,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 # Procesar estilos para SHP
                                 enum_colors = []
                                 rules = root.findall('.//se:Rule', namespaces)
+                                valid_property_name = None  # Para almacenar un property_name válido
                                 
                                 for rule in rules:
                                     name = rule.find('se:Name', namespaces)
@@ -541,7 +543,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                     fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', namespaces)
                                     property_name = rule.find('.//ogc:PropertyName', namespaces)
                                     property_value = rule.find('.//ogc:Literal', namespaces)
-                                    
+
                                     if fill is not None and (name is not None or title is not None):
                                         color = fill.text
                                         label = (title.text if title is not None else name.text) if name is not None else "Sin etiqueta"
@@ -550,8 +552,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                             "title": label,
                                             "color": color
                                         })
-                                        
-                                        if property_name is not None and property_value is not None:
+
+                                        # Solo procesar si property_name tiene un valor no vacío
+                                        if (property_name is not None and property_name.text and 
+                                            property_name.text.strip() and property_value is not None):
+                                            valid_property_name = property_name.text.strip()
                                             enum_colors.append({
                                                 "value": property_value.text,
                                                 "color": f"rgba({int(color[1:3],16)},{int(color[3:5],16)},{int(color[5:7],16)},1)"
@@ -564,16 +569,16 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                     }]
                                 }
                                 
-                                if enum_colors and property_name is not None:
+                                # Solo agregar styles si tenemos un property_name válido y enum_colors
+                                if enum_colors and valid_property_name:
                                     sld_styles["styles"] = [{
-                                        "id": property_name.text,
+                                        "id": valid_property_name,
                                         "color": {
                                             "enumColors": enum_colors,
                                             "colorPalette": "HighContrast"
                                         }
                                     }]
-                                    sld_styles["activeStyle"] = property_name.text
-                                    
+                                    sld_styles["activeStyle"] = valid_property_name
                             else:  # COG (tif, tiff, geotiff)
                                 # Procesar estilos para COG
                                 colors = []
@@ -624,11 +629,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 # Actualizar la URL
                                 model_value['url'] = uploaded_url
                                 
-                                # Aplicar los nuevos estilos si existen
+                                # Aplicar los nuevos estilos si existen y el tipo es SHP
                                 if sld_styles:
                                     for key, value in sld_styles.items():
                                         model_value[key] = value
-
                 encoded_config = urllib.parse.quote(json.dumps(start_data))
 
             except Exception as e:
@@ -654,7 +658,3 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return {
             'resource_view_list': self.resource_view_list_callback
         }
-
-
-
-
