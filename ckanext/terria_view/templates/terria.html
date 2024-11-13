@@ -65,7 +65,11 @@
 <div style="margin-bottom: 10px;" class="pull-right">
   <a class="btn"
     target="_blank"
-    href="{{ terria_instance_url }}#start={{ encoded_config }}" >
+    {% if resource.format.lower() == 'json' %}
+    href="{{ terria_instance_url }}#{{ resource.url }}"
+    {% else %}
+    href="{{ terria_instance_url }}#start={{ encoded_config }}"
+    {% endif %}>
     {{ _('View in a separate') }} {{title}} {{ _('window') }}
   </a>
   <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
@@ -73,7 +77,11 @@
   </a>
 </div>
 <iframe
+  {% if resource.format.lower() == 'json' %}
+  src="{{ terria_instance_url }}#{{ resource.url }}"
+  {% else %}
   src="{{ terria_instance_url }}#start={{ encoded_config }}"
+  {% endif %}
   style="height: 100vh; width: 100%; border: none;"
   allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
 </iframe>

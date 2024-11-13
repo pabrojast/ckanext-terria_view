@@ -118,6 +118,20 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     def setup_template_variables(self, context, data_dict):
         package = data_dict['package']
         resource = data_dict['resource']
+        view = data_dict['resource_view']
+        view_title = view.get('title', self.default_title)
+        view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
+        view_custom_config = view.get('custom_config', 'NA')
+        view_style = view.get('style', 'NA')
+        
+        # Si el formato es JSON, solo necesitamos pasar la URL de TerriaJS
+        if resource.get('format', '').lower() == 'json':
+            return {
+                'title': view_title,
+                'terria_instance_url': view_terria_instance_url,
+                'resource': resource
+            }
+        
         resource_id = resource['id']
         organization = package['organization']
         name = package['name']
