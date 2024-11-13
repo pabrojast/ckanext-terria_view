@@ -12,7 +12,7 @@ import ckan.logic.action.get as get
 import urllib.request  # Asegúrate de tener esta importación
 import xml.etree.ElementTree as ET  # Asegúrate de tener esta importación
 
-SUPPORTED_FORMATS = ['shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv']
+SUPPORTED_FORMATS = ['shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv', 'json']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
 SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) + ')$'
 
