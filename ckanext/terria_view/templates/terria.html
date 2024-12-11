@@ -76,12 +76,16 @@
     Toggle full width
   </a>
 </div>
-<iframe
-  {% if resource.format.lower() == 'json' %}
-  src="{{ terria_instance_url }}#{{ resource.url }}"
-  {% else %}
-  src="{{ terria_instance_url }}#start={{ encoded_config }}"
-  {% endif %}
-  style="height: 100vh; width: 100%; border: none;"
-  allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
-</iframe>
+{% if direct_url %}
+  <iframe src="{{ terria_instance_url }}" frameborder="0" style="border:0;width:100%;height: 100vh;" allowFullScreen mozAllowFullScreen webkitAllowFullScreen></iframe>
+{% else %}
+  <iframe
+    {% if resource.format.lower() == 'json' %}
+    src="{{ terria_instance_url }}#{{ resource.url }}"
+    {% else %}
+    src="{{ terria_instance_url }}#start={{ encoded_config }}"
+    {% endif %}
+    style="height: 100vh; width: 100%; border: none;"
+    allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
+  </iframe>
+{% endif %}

@@ -121,6 +121,15 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view = data_dict['resource_view']
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
+        
+        # Si terria_instance_url contiene una URL completa de TerriaJS, usarla directamente
+        if view_terria_instance_url and '#' in view_terria_instance_url:
+            return {
+                'title': view_title,
+                'terria_instance_url': view_terria_instance_url,
+                'direct_url': True  # Nueva bandera para indicar URL directa
+            }
+        
         view_custom_config = view.get('custom_config', 'NA')
         view_style = view.get('style', 'NA')
         
