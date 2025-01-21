@@ -153,6 +153,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         name = package['name']
         organization_id = organization['id']
         view = data_dict['resource_view']
+        print(view)
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         view_custom_config = view.get('custom_config', 'NA')
