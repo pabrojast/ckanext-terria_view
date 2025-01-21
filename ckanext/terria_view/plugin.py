@@ -1,3 +1,4 @@
+# encoding: utf-8
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 import json
@@ -11,6 +12,9 @@ from time import sleep
 import ckan.logic.action.get as get
 import urllib.request  # Asegúrate de tener esta importación
 import xml.etree.ElementTree as ET  # Asegúrate de tener esta importación
+ignore_missing = toolkit.get_validator(u'ignore_missing')
+boolean_validator = toolkit.get_validator(u'boolean_validator')
+default = toolkit.get_validator(u'default')
 
 SUPPORTED_FORMATS = ['shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv', 'json']
 SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
@@ -78,7 +82,7 @@ def new_resource_view_list(plugin, context, data_dict):
 class Terria_ViewPlugin(plugins.SingletonPlugin):
     site_url = ''
     default_title = 'Terria Viewer'
-    default_instance_url = '//ihp-wins.unesco.org/terria/'
+    default_instance_url = 'https://ihp-wins.unesco.org/terria/'
     resource_view_list_callback = None
   
     plugins.implements(plugins.IConfigurer)
@@ -101,11 +105,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'default_title': toolkit._(self.default_title),
             'icon': 'globe',
             'always_available': True,
+            'filterable': True,
             'iframed': False,
             "schema": {
                 "terria_instance_url": [],
                 "custom_config": [],
-                "style": []
+                "style": [],
+                'show_fields': [ignore_missing],
+                'filterable': [default(True), boolean_validator],
             }
         }
 
@@ -498,11 +505,24 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
             try:
-                # Extraer el parámetro 'start' de la URL
+                # Extraer el parámetro 'start' o 'share' de la URL
                 parsed_url = urllib.parse.urlparse(view_custom_config)
                 fragment = parsed_url.fragment
-                start_param = fragment.split('=', 1)[1]
-                decoded_param = urllib.parse.unquote(start_param)
+                
+                if fragment.startswith('share='):
+                    # Caso de URL con #share
+                    gist_id = fragment.split('=g-')[1]
+                    gist_url = f'https://gist.githubusercontent.com/pabrojast/{gist_id}/raw/Terriajs-usercatalog.json'
+                    try:
+                        with urllib.request.urlopen(gist_url) as response:
+                            decoded_param = response.read().decode('utf-8')
+                    except Exception as e:
+                        print(f"Error fetching gist config: {e}")
+                        decoded_param = urllib.parse.unquote(json.dumps(json.loads(config)))
+                else:
+                    # Caso original con #start
+                    start_param = fragment.split('=', 1)[1]
+                    decoded_param = urllib.parse.unquote(start_param)
                 
                 # Parsear el JSON
                 start_data = json.loads(decoded_param)
