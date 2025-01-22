@@ -226,6 +226,28 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             resource_format = resource["format"].lower()
             return any(resource_format == format for format in accepted_formats)
 
+        def is_csv(resource):
+            accepted_formats = ['csv', 'csv-geo-*']
+            resource_format = resource["format"].lower()
+            return any(resource_format == format for format in accepted_formats)
+        
+        if is_csv(resource):
+            # Construir la URL base del datastore
+            base_url = self.site_url.rstrip('/')
+            resource_id = resource['id']
+            datastore_url = f"{base_url}/datastore/dump/{resource_id}"
+            
+            filters = view.get('filters', {})
+            if filters:
+                # Convertir los filtros a formato JSON
+                filters_json = json.dumps(filters)
+                # Codificar los filtros para la URL
+                encoded_filters = urllib.parse.quote(filters_json)
+                # Construir la URL con los filtros
+                uploaded_url = f"{datastore_url}?filters={encoded_filters}"
+                print(uploaded_url)
+
+
         if is_tiff(resource):
             colors = []
             legend_items = []
