@@ -153,7 +153,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         name = package['name']
         organization_id = organization['id']
         view = data_dict['resource_view']
-        print(view)
+        #print(view)
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         view_custom_config = view.get('custom_config', 'NA')
@@ -176,7 +176,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
         if is_valid_domain(resource["url"]):
             if is_accepted_format(resource):
-                if user_context['user']:
+                #fix for private datasets
+                if user_context['user'] and package["private"] == True:
                     upload = uploader.get_resource_uploader(resource)
                     uploaded_url = upload.get_url_from_filename(resource_id, resource['url'])
                 else:
