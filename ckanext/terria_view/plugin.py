@@ -248,8 +248,47 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 uploaded_url = f"{datastore_url}?filters={encoded_filters}"
                 print(uploaded_url)
 
-
-        if is_tiff(resource):
+            # Configurar spreadStartTime y spreadFinishTime para archivos CSV
+            catalog_item = {
+                "name": resource["name"],
+                "type": "csv",
+                "id": resource["name"],
+                "url": uploaded_url,
+                "cacheDuration": "5m",
+                "isOpenInWorkbench": True,
+                "spreadStartTime": True,
+                "spreadFinishTime": True
+            }
+            
+            config_dict = {
+                "version": "8.0.0",
+                "initSources": [{
+                    "catalog": [catalog_item],
+                    "homeCamera": {
+                        "north": float(ymax),
+                        "east": float(xmax),
+                        "south": float(ymin),
+                        "west": float(xmin)
+                    },
+                    "initialCamera": {
+                        "north": float(ymax),
+                        "east": float(xmax),
+                        "south": float(ymin),
+                        "west": float(xmin)
+                    },
+                    "stratum": "user",
+                    "workbench": [resource["name"]],
+                    "viewerMode": "3D",
+                    "focusWorkbenchItems": True,
+                    "baseMaps": {
+                        "defaultBaseMapId": "basemap-positron",
+                        "previewBaseMapId": "basemap-positron"
+                    }
+                }]
+            }
+            
+            config = json.dumps(config_dict)
+        elif is_tiff(resource):
             colors = []
             legend_items = []
 
