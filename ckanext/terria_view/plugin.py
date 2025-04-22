@@ -248,7 +248,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 uploaded_url = f"{datastore_url}?filters={encoded_filters}"
                 print(uploaded_url)
 
-            # Configurar spreadStartTime y spreadFinishTime para archivos CSV
+            # Configurar CSV con time properties correctamente
             catalog_item = {
                 "name": resource["name"],
                 "type": "csv",
@@ -256,8 +256,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
-                "spreadStartTime": True,
-                "spreadFinishTime": True
+                # Mover spreadStartTime y spreadFinishTime al objeto time
+                "time": {
+                    "spreadStartTime": True,
+                    "spreadFinishTime": True
+                }
             }
             
             config_dict = {
