@@ -256,11 +256,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
-                # Mover spreadStartTime y spreadFinishTime al objeto time
-                "time": {
-                    "spreadStartTime": True,
-                    "spreadFinishTime": True
-                }
+                # Colocar las propiedades de tiempo en styles según la especificación correcta
+                "styles": [{
+                    "id": "default",
+                    "time": {
+                        "spreadStartTime": True,
+                        "spreadFinishTime": True
+                    }
+                }]
             }
             
             config_dict = {
