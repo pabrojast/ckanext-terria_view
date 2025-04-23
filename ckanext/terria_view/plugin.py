@@ -256,7 +256,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             
             # Si hay resampling configurado, usar SQL query
             if time_resample and time_resample in ['day', 'week', 'month', 'year']:
-                # Construir SQL query para resampling
+                # Construir URL diferente que devuelva CSV directamente en lugar de JSON
+                # Usamos datastore_dump con la definición SQL en lugar de datastore_search_sql
                 sql_query = f"""
                 SELECT 
                     "Latitude", 
@@ -282,12 +283,47 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 ORDER BY time ASC
                 """
                 
-                # Crear URL para datastore_search_sql
-                encoded_sql = urllib.parse.quote(sql_query)
-                datastore_url = f"{base_url}/api/3/action/datastore_search_sql?sql={encoded_sql}"
+                # Crear URL para SQL con formato CSV
+                # En lugar de usar datastore_search_sql, crear una vista temporal y usar datastore_dump
+                # Esto hacemos que la respuesta sea directamente un CSV
                 
-                # Comprobar si se debe usar CSV o JSON como formato de salida
-                datastore_url += "&format=csv"
+                # Obtenemos primero los resultados a través de datastore_search_sql
+                context = {'user': toolkit.g.user} if hasattr(toolkit, 'g') else {}
+                data_dict = {'sql': sql_query}
+                
+                try:
+                    # Consulta directa usando SQL (para obtener los datos resampled)
+                    result = toolkit.get_action('datastore_search_sql')(context, data_dict)
+                    
+                    # Crear un nombre único para la vista temporal basado en resource_id y time_resample
+                    temp_view_id = f"temp_view_{resource_id}_{time_resample}"
+                    
+                    # Crear una vista temporal con los datos resampled
+                    fields = []
+                    for field in result['fields']:
+                        field_info = {'id': field['id'], 'type': field['type']}
+                        fields.append(field_info)
+                    
+                    # Crear la vista temporal en el datastore
+                    create_data_dict = {
+                        'resource': {'package_id': package['id']},
+                        'resource_id': temp_view_id,
+                        'fields': fields,
+                        'records': result['records'],
+                        'force': True
+                    }
+                    
+                    toolkit.get_action('datastore_create')(context, create_data_dict)
+                    
+                    # Ahora usamos datastore_dump para obtener directamente el CSV
+                    datastore_url = f"{base_url}/datastore/dump/{temp_view_id}"
+                except Exception as e:
+                    print(f"Error processing SQL resampling: {e}")
+                    # En caso de error, usar la URL original
+                    if filters_param:
+                        datastore_url = f"{base_url}/datastore/dump/{resource_id}?{filters_param}"
+                    else:
+                        datastore_url = f"{base_url}/datastore/dump/{resource_id}"
             elif filters_param:
                 # Si no hay resampling pero sí hay filtros, añadir los filtros a la URL normal
                 datastore_url += f"?{filters_param}"
