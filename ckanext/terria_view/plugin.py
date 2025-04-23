@@ -256,8 +256,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             
             # Si hay resampling configurado, usar SQL query
             if time_resample and time_resample in ['day', 'week', 'month', 'year']:
-                # Construir URL diferente que devuelva CSV directamente en lugar de JSON
-                # Usamos datastore_dump con la definición SQL en lugar de datastore_search_sql
+                # Construir SQL query para resampling
                 sql_query = f"""
                 SELECT 
                     "Latitude", 
@@ -283,43 +282,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 ORDER BY time ASC
                 """
                 
-                # Crear URL para SQL con formato CSV
-                # En lugar de usar datastore_search_sql, crear una vista temporal y usar datastore_dump
-                # Esto hacemos que la respuesta sea directamente un CSV
+                # Usar directamente datastore_search_sql con formato CSV
+                encoded_sql = urllib.parse.quote(sql_query)
                 
-                # Obtenemos primero los resultados a través de datastore_search_sql
-                context = {'user': toolkit.g.user} if hasattr(toolkit, 'g') else {}
-                data_dict = {'sql': sql_query}
+                # Dos opciones para intentar obtener CSV:
+                # 1. Usar el endpoint SQL con parámetro de formato CSV
+                datastore_url = f"{base_url}/api/3/action/datastore_search_sql?sql={encoded_sql}&format=csv"
                 
                 try:
-                    # Consulta directa usando SQL (para obtener los datos resampled)
-                    result = toolkit.get_action('datastore_search_sql')(context, data_dict)
+                    # Verificar si el endpoint con format=csv funciona
+                    response = urllib.request.urlopen(datastore_url)
+                    content_type = response.info().get_content_type()
                     
-                    # Crear un nombre único para la vista temporal basado en resource_id y time_resample
-                    temp_view_id = f"temp_view_{resource_id}_{time_resample}"
-                    
-                    # Crear una vista temporal con los datos resampled
-                    fields = []
-                    for field in result['fields']:
-                        field_info = {'id': field['id'], 'type': field['type']}
-                        fields.append(field_info)
-                    
-                    # Crear la vista temporal en el datastore
-                    create_data_dict = {
-                        'resource': {'package_id': package['id']},
-                        'resource_id': temp_view_id,
-                        'fields': fields,
-                        'records': result['records'],
-                        'force': True
-                    }
-                    
-                    toolkit.get_action('datastore_create')(context, create_data_dict)
-                    
-                    # Ahora usamos datastore_dump para obtener directamente el CSV
-                    datastore_url = f"{base_url}/datastore/dump/{temp_view_id}"
+                    # Si la respuesta no es CSV, volver a la URL sin format=csv
+                    if 'csv' not in content_type.lower():
+                        print(f"Warning: Expected CSV response but got {content_type}")
+                        # Intentar opción alternativa - guardar en variable de sesión y crear endpoint
+                        # temporal para servir CSV
+                        
+                        # En producción: implementar solución más robusta aquí
+                        datastore_url = f"{base_url}/api/3/action/datastore_search_sql?sql={encoded_sql}"
+                        
                 except Exception as e:
-                    print(f"Error processing SQL resampling: {e}")
-                    # En caso de error, usar la URL original
+                    print(f"Error testing SQL endpoint: {e}")
+                    # Fallback a la URL normal con filtros
                     if filters_param:
                         datastore_url = f"{base_url}/datastore/dump/{resource_id}?{filters_param}"
                     else:
