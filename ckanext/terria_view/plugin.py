@@ -248,7 +248,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 uploaded_url = f"{datastore_url}?filters={encoded_filters}"
                 print(uploaded_url)
 
-            # Configurar CSV con time properties correctamente
+            # Configurar CSV con time properties correctamente y estilo por defecto
             catalog_item = {
                 "name": resource["name"],
                 "type": "csv",
@@ -256,14 +256,16 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
-                # Colocar las propiedades de tiempo en styles según la especificación correcta
-                "styles": [{
-                    "id": "default",
-                    "time": {
-                        "spreadStartTime": True,
-                        "spreadFinishTime": True
+                "styles": [
+                    {
+                        "id": "default",
+                        "time": {
+                            "spreadStartTime": True,
+                            "spreadFinishTime": True
+                        }
                     }
-                }]
+                ],
+                "activeStyle": "default"
             }
             
             config_dict = {
