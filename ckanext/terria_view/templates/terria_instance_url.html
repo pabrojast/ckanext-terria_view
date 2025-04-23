@@ -21,6 +21,19 @@
               error=errors.style,
               classes=['control-full', 'control-large']) }}
 
+{# Add time resampling options for CSV files #}
+{% if data.resource_format and data.resource_format.lower() == 'csv' %}
+  {{ form.select('time_resample',
+                label=_('Time Resampling'),
+                options=[{'value': '', 'text': _('No resampling (show raw data)')},
+                         {'value': 'day', 'text': _('Daily average')},
+                         {'value': 'week', 'text': _('Weekly average')},
+                         {'value': 'month', 'text': _('Monthly average')},
+                         {'value': 'year', 'text': _('Yearly average')}],
+                selected=data.time_resample,
+                error=errors.time_resample) }}
+{% endif %}
+
 <div style="margin-bottom: 10px; position: relative; display: inline-block;">
 <span style="cursor: pointer;">{{ _('Custom Config Example') }}</span>
 <div class="gif-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 1px solid #ccc; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s;">
