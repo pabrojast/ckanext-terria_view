@@ -22,7 +22,6 @@
               classes=['control-full', 'control-large']) }}
 
 {# Add time resampling options for CSV files #}
-{% if data.resource_format and data.resource_format.lower() == 'csv' %}
   {{ form.select('time_resample',
                 label=_('Time Resampling'),
                 options=[{'value': '', 'text': _('No resampling (show raw data)')},
@@ -32,7 +31,6 @@
                          {'value': 'year', 'text': _('Yearly average')}],
                 selected=data.time_resample,
                 error=errors.time_resample) }}
-{% endif %}
 
 <div style="margin-bottom: 10px; position: relative; display: inline-block;">
 <span style="cursor: pointer;">{{ _('Custom Config Example') }}</span>
