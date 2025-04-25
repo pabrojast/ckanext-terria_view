@@ -313,8 +313,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             elif filters_param:
                 # Si no hay resampling pero sí hay filtros, añadir los filtros a la URL normal
                 datastore_url += f"?{filters_param}"
-            
-            uploaded_url = datastore_url
+            #fix temporal
+            #uploaded_url = datastore_url
             print(f"CSV URL: {uploaded_url}")
 
             # Configurar CSV con time properties correctamente y estilo por defecto
