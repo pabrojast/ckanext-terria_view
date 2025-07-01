@@ -136,6 +136,20 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     def update_config(self, config_):
         toolkit.add_template_directory(config_, 'templates')
         toolkit.add_public_directory(config_,'public')
+    
+    plugins.implements(plugins.ITemplateHelpers)
+    def get_helpers(self):
+        return {
+            'terria_get_sld_files': self.terria_get_sld_files
+        }
+    
+    def terria_get_sld_files(self, package_id):
+        """Helper para obtener archivos SLD desde el template"""
+        try:
+            return get_sld_files_from_dataset(self.site_url, package_id)
+        except Exception as e:
+            print(f"Error in terria_get_sld_files helper: {e}")
+            return []
 
     plugins.implements(plugins.IConfigurable, inherit=True)
     def configure(self, config):
@@ -160,6 +174,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "style": [],
                 "style_option": [ignore_missing],
                 "style_custom_input": [ignore_missing],
+                "available_sld_files": [ignore_missing],
                 'show_fields': [ignore_missing],
                 'filterable': [default(True), boolean_validator],
             }
@@ -825,8 +840,17 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             print(f"DEBUG form_template: Site URL: {self.site_url}")
             
             sld_files = get_sld_files_from_dataset(self.site_url, package_id)
+            
+            # Intentar múltiples enfoques para pasar los datos
             data_dict['available_sld_files'] = sld_files
+            context['available_sld_files'] = sld_files  # También en context
+            
+            # Agregar a las variables globales del template 
+            if 'c' in context:
+                context['c'].available_sld_files = sld_files
+            
             print(f"DEBUG form_template: SLD files passed to template: {len(sld_files)}")
+            print(f"DEBUG form_template: Data dict keys: {list(data_dict.keys())}")
         else:
             print("DEBUG form_template: No package found in data_dict")
             data_dict['available_sld_files'] = []

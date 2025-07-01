@@ -1,5 +1,21 @@
 {% import 'macros/form.html' as form %}
 
+{# Obtener archivos SLD directamente en el template #}
+{% set sld_files = [] %}
+{% if data.package_id %}
+  {% set package_data = h.call_action('package_show', {'id': data.package_id}) %}
+  {% for resource in package_data.resources %}
+    {% if resource.format and resource.format.lower() == 'sld' %}
+      {% do sld_files.append({
+        'id': resource.id,
+        'name': resource.name or 'SLD file',
+        'url': resource.url,
+        'description': resource.description or ''
+      }) %}
+    {% endif %}
+  {% endfor %}
+{% endif %}
+
 {{ form.input('terria_instance_url',
               label=_('URL of TerriaJS Instance'),
               value=data.terria_instance_url,
@@ -20,26 +36,32 @@
   <div class="controls">
     {# DEBUG: Mostrar información de debugging #}
     {% if True %}
+      {% set sld_files_helper = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
+      
       <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc;">
         <strong>DEBUG INFO:</strong><br>
-        Available SLD files count: {{ data.available_sld_files|length if data.available_sld_files else 'None' }}<br>
+        Available SLD files count (original): {{ data.available_sld_files|length if data.available_sld_files else 'None' }}<br>
+        Available SLD files count (helper): {{ sld_files_helper|length }}<br>
         Data keys: {{ data.keys()|list }}<br>
-        {% if data.available_sld_files %}
-          SLD files: 
-          {% for sld in data.available_sld_files %}
+        Package ID: {{ data.package_id or 'None' }}<br>
+        {% if sld_files_helper %}
+          SLD files (helper): 
+          {% for sld in sld_files_helper %}
             <br>- {{ sld.name }} ({{ sld.url }})
           {% endfor %}
         {% endif %}
       </div>
     {% endif %}
     
-    {% if data.available_sld_files and data.available_sld_files|length > 0 %}
+    {% set available_sld_files = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
+    
+    {% if available_sld_files and available_sld_files|length > 0 %}
       {# Mostrar archivos SLD disponibles #}
       <div style="margin-bottom: 10px;">
         <label><strong>{{ _('Available SLD files:') }}</strong></label>
       </div>
       
-      {% for sld_file in data.available_sld_files %}
+      {% for sld_file in available_sld_files %}
         <div style="margin-bottom: 8px;">
           <label class="radio">
             <input type="radio" name="style_option" value="sld_file" 
@@ -57,7 +79,7 @@
       <div style="margin-bottom: 8px; margin-top: 15px;">
         <label class="radio">
           <input type="radio" name="style_option" value="custom_url"
-                 {% if data.style and data.style != 'NA' and data.style not in data.available_sld_files|map(attribute='url') %}checked{% endif %}>
+                 {% if data.style and data.style != 'NA' and data.style not in available_sld_files|map(attribute='url') %}checked{% endif %}>
           {{ _('Custom URL') }}
         </label>
       </div>
@@ -97,7 +119,7 @@
     {% endif %}
     
     {# Campo de texto para URL personalizada #}
-    <div id="custom-style-url" style="margin-top: 10px; {% if not data.style or data.style == 'NA' or (data.available_sld_files and data.style in data.available_sld_files|map(attribute='url')) %}display: none;{% endif %}">
+    <div id="custom-style-url" style="margin-top: 10px; {% if not data.style or data.style == 'NA' or (available_sld_files and data.style in available_sld_files|map(attribute='url')) %}display: none;{% endif %}">
       <input type="text" id="style-custom-input" name="style_custom_input" 
              value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% endif %}"
              placeholder="{{ _('e.g. https://example.com/style.sld') }}"
