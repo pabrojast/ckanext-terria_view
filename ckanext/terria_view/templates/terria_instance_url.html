@@ -84,7 +84,8 @@
     {% endif %}
     
     {# Campo de texto para URL personalizada #}
-    <div id="custom-style-url" style="margin-top: 10px; {% if not data.style or data.style == 'NA' or (available_sld_files and data.style in available_sld_files|map(attribute='url')) %}display: none;{% endif %}">
+    {% set show_custom_url = data.style and data.style != 'NA' and (not available_sld_files or data.style not in available_sld_files|map(attribute='url')) %}
+    <div id="custom-style-url" style="margin-top: 10px;{% if not show_custom_url %} display: none;{% endif %}">
       <input type="text" id="style-custom-input" name="style_custom_input" 
              value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% endif %}"
              placeholder="{{ _('e.g. https://example.com/style.sld') }}"
@@ -98,17 +99,29 @@
 </div>
 
 
-<div style="margin-bottom: 10px; position: relative; display: inline-block;">
-<span style="cursor: pointer;">{{ _('Custom Config Example') }}</span>
-<div class="gif-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 1px solid #ccc; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1); position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s;">
-    <img src="/help/custom_config.gif" alt="Descripción del GIF" style="width: 100%;">
-</div>
+<div class="custom-config-help" style="margin-bottom: 15px; padding: 8px 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; position: relative; display: inline-block;">
+  <i class="fa fa-question-circle" style="color: #007bff; margin-right: 5px;"></i>
+  <span style="cursor: pointer; color: #007bff; text-decoration: underline;">
+    {{ _('¿Cómo usar Custom Config? (Ver ejemplo)') }}
+  </span>
+  <div class="help-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 2px solid #007bff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); position: absolute; z-index: 1000; bottom: 125%; left: 50%; margin-left: -400px; opacity: 0; transition: opacity 0.3s; padding: 10px;">
+    <div style="background-color: #007bff; color: white; padding: 8px 12px; margin: -10px -10px 10px -10px; border-radius: 6px 6px 0 0; font-weight: bold; text-align: center;">
+      {{ _('Ejemplo de uso de Custom Config') }}
+    </div>
+    <img src="/help/custom_config.gif" alt="Tutorial de Custom Config" style="width: 100%; border-radius: 4px;">
+    <div style="margin-top: 8px; font-size: 12px; color: #666; text-align: center;">
+      {{ _('Haz clic para cerrar') }}
+    </div>
+  </div>
 </div>
 
 <style>
-.form-group + div:hover .gif-tooltip {
+.custom-config-help:hover .help-tooltip {
     visibility: visible !important;
     opacity: 1 !important;
+}
+.custom-config-help:hover {
+    background-color: #e7f3ff;
 }
 </style>
 
