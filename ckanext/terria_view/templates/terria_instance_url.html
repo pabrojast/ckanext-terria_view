@@ -14,12 +14,86 @@
               error=errors.custom_config,
               classes=['control-full', 'control-large']) }}
 
-{{ form.input('style',
-              label=_('Style'),
-              value=data.style,
-              placeholder=_('e.g. //ihp-wins.unesco.org/terria/'),
-              error=errors.style,
-              classes=['control-full', 'control-large']) }}
+{# Campo de estilo con opciones de archivos SLD #}
+<div class="control-group">
+  <label class="control-label" for="style">{{ _('Style') }}</label>
+  <div class="controls">
+    {% if data.available_sld_files and data.available_sld_files|length > 0 %}
+      {# Mostrar archivos SLD disponibles #}
+      <div style="margin-bottom: 10px;">
+        <label><strong>{{ _('Available SLD files:') }}</strong></label>
+      </div>
+      
+      {% for sld_file in data.available_sld_files %}
+        <div style="margin-bottom: 8px;">
+          <label class="radio">
+            <input type="radio" name="style_option" value="sld_file" 
+                   data-sld-url="{{ sld_file.url }}"
+                   {% if data.style == sld_file.url %}checked{% endif %}>
+            <strong>{{ sld_file.name }}</strong>
+            {% if sld_file.description %}
+              <br><small style="color: #666; margin-left: 20px;">{{ sld_file.description }}</small>
+            {% endif %}
+          </label>
+        </div>
+      {% endfor %}
+      
+      {# Opción para URL personalizada #}
+      <div style="margin-bottom: 8px; margin-top: 15px;">
+        <label class="radio">
+          <input type="radio" name="style_option" value="custom_url"
+                 {% if data.style and data.style != 'NA' and data.style not in data.available_sld_files|map(attribute='url') %}checked{% endif %}>
+          {{ _('Custom URL') }}
+        </label>
+      </div>
+      
+      {# Opción para sin estilo #}
+      <div style="margin-bottom: 8px;">
+        <label class="radio">
+          <input type="radio" name="style_option" value="none"
+                 {% if not data.style or data.style == 'NA' %}checked{% endif %}>
+          {{ _('No style') }}
+        </label>
+      </div>
+    {% else %}
+      {# No hay archivos SLD disponibles #}
+      <div style="margin-bottom: 10px; padding: 10px; background-color: #f5f5f5; border-radius: 4px;">
+        <p style="margin: 0; color: #666;">
+          <i class="fa fa-info-circle"></i> 
+          {{ _('No SLD files found in this dataset.') }}
+        </p>
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <label class="radio">
+          <input type="radio" name="style_option" value="custom_url"
+                 {% if data.style and data.style != 'NA' %}checked{% endif %}>
+          {{ _('Enter SLD file URL') }}
+        </label>
+      </div>
+      
+      <div style="margin-bottom: 8px;">
+        <label class="radio">
+          <input type="radio" name="style_option" value="none"
+                 {% if not data.style or data.style == 'NA' %}checked{% endif %}>
+          {{ _('No style') }}
+        </label>
+      </div>
+    {% endif %}
+    
+    {# Campo de texto para URL personalizada #}
+    <div id="custom-style-url" style="margin-top: 10px; {% if not data.style or data.style == 'NA' or (data.available_sld_files and data.style in data.available_sld_files|map(attribute='url')) %}display: none;{% endif %}">
+      <input type="text" id="style-custom-input" name="style_custom_input" 
+             value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% endif %}"
+             placeholder="{{ _('e.g. https://example.com/style.sld') }}"
+             class="control-full control-large" />
+    </div>
+    
+    {# Campo oculto para almacenar el valor final #}
+    <input type="hidden" id="style" name="style" 
+           value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% else %}NA{% endif %}" />
+  </div>
+</div>
 
 {# Add time resampling options for CSV files #}
   {{ form.select('time_resample',
@@ -45,3 +119,52 @@
     opacity: 1 !important;
 }
 </style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var styleOptions = document.querySelectorAll('input[name="style_option"]');
+    var customUrlDiv = document.getElementById('custom-style-url');
+    var styleCustomInput = document.getElementById('style-custom-input');
+    var styleHidden = document.getElementById('style');
+    
+    // Function to update the style field
+    function updateStyleField() {
+        var selectedOption = document.querySelector('input[name="style_option"]:checked');
+        
+        if (!selectedOption) return;
+        
+        if (selectedOption.value === 'sld_file') {
+            // SLD file selected
+            var sldUrl = selectedOption.getAttribute('data-sld-url');
+            styleHidden.value = sldUrl;
+            customUrlDiv.style.display = 'none';
+        } else if (selectedOption.value === 'custom_url') {
+            // Custom URL
+            customUrlDiv.style.display = 'block';
+            styleHidden.value = styleCustomInput.value || 'NA';
+        } else {
+            // No style
+            styleHidden.value = 'NA';
+            customUrlDiv.style.display = 'none';
+        }
+    }
+    
+    // Add event listeners to radio buttons
+    styleOptions.forEach(function(option) {
+        option.addEventListener('change', updateStyleField);
+    });
+    
+    // Add event listener to custom text field
+    if (styleCustomInput) {
+        styleCustomInput.addEventListener('input', function() {
+            var customRadio = document.querySelector('input[name="style_option"][value="custom_url"]');
+            if (customRadio && customRadio.checked) {
+                styleHidden.value = this.value || 'NA';
+            }
+        });
+    }
+    
+    // Initialize state
+    updateStyleField();
+});
+</script>

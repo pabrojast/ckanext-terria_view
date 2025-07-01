@@ -30,6 +30,37 @@ resource_view_list = get.resource_view_list
 
 PLUGIN_NAME = 'terria_view'
 
+def get_sld_files_from_dataset(site_url, package_id):
+    """
+    Función para obtener archivos SLD de un dataset usando la API de CKAN
+    """
+    try:
+        # Construir la URL de la API
+        api_url = f"{site_url.rstrip('/')}/api/3/action/package_show?id={package_id}"
+        
+        # Hacer la petición a la API
+        with urllib.request.urlopen(api_url) as response:
+            data = json.loads(response.read().decode('utf-8'))
+        
+        if data.get('success') and data.get('result'):
+            package_data = data['result']
+            sld_files = []
+            
+            # Buscar recursos con formato 'sld'
+            for resource in package_data.get('resources', []):
+                if resource.get('format', '').lower() == 'sld':
+                    sld_files.append({
+                        'id': resource.get('id'),
+                        'name': resource.get('name', 'Archivo SLD sin nombre'),
+                        'url': resource.get('url'),
+                        'description': resource.get('description', '')
+                    })
+            
+            return sld_files
+    except Exception as e:
+        print(f"Error obteniendo archivos SLD desde la API: {e}")
+        return []
+
 def new_resource_view_list(plugin, context, data_dict):
 
     try:
@@ -849,6 +880,15 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # Pass resource format to template so we can show/hide resampling options
         if 'resource' in data_dict and 'format' in data_dict['resource']:
             data_dict['resource_format'] = data_dict['resource']['format']
+        
+        # Obtener archivos SLD del dataset si existe el package
+        if 'package' in data_dict:
+            package_id = data_dict['package']['id']
+            sld_files = get_sld_files_from_dataset(self.site_url, package_id)
+            data_dict['available_sld_files'] = sld_files
+        else:
+            data_dict['available_sld_files'] = []
+            
         return 'terria_instance_url.html'
 
     plugins.implements(plugins.IActions, inherit=True)
