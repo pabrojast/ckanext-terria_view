@@ -1,21 +1,5 @@
 {% import 'macros/form.html' as form %}
 
-{# Obtener archivos SLD directamente en el template #}
-{% set sld_files = [] %}
-{% if data.package_id %}
-  {% set package_data = h.call_action('package_show', {'id': data.package_id}) %}
-  {% for resource in package_data.resources %}
-    {% if resource.format and resource.format.lower() == 'sld' %}
-      {% do sld_files.append({
-        'id': resource.id,
-        'name': resource.name or 'SLD file',
-        'url': resource.url,
-        'description': resource.description or ''
-      }) %}
-    {% endif %}
-  {% endfor %}
-{% endif %}
-
 {{ form.input('terria_instance_url',
               label=_('URL of TerriaJS Instance'),
               value=data.terria_instance_url,
@@ -131,7 +115,6 @@
            value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% else %}NA{% endif %}" />
   </div>
 </div>
-
 
 
 <div style="margin-bottom: 10px; position: relative; display: inline-block;">
