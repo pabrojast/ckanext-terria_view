@@ -99,18 +99,18 @@
 </div>
 
 
-<div class="custom-config-help" style="margin-bottom: 15px; padding: 8px 12px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; position: relative; display: inline-block;">
-  <i class="fa fa-question-circle" style="color: #007bff; margin-right: 5px;"></i>
-  <span style="cursor: pointer; color: #007bff; text-decoration: underline;">
-    {{ _('¿Cómo usar Custom Config? (Ver ejemplo)') }}
+<div class="custom-config-help" style="margin-bottom: 10px; position: relative; display: inline-block;">
+  <i class="fa fa-question-circle" style="color: #666; margin-right: 5px;"></i>
+  <span style="cursor: pointer; color: #666; text-decoration: underline;">
+    How to use Custom Config? (View example)
   </span>
-  <div class="help-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 2px solid #007bff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15); position: absolute; z-index: 1000; bottom: 125%; left: 50%; margin-left: -400px; opacity: 0; transition: opacity 0.3s; padding: 10px;">
-    <div style="background-color: #007bff; color: white; padding: 8px 12px; margin: -10px -10px 10px -10px; border-radius: 6px 6px 0 0; font-weight: bold; text-align: center;">
-      {{ _('Ejemplo de uso de Custom Config') }}
+  <div class="help-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); position: absolute; z-index: 1000; bottom: 125%; left: 50%; margin-left: -400px; opacity: 0; transition: opacity 0.3s; padding: 10px;">
+    <div style="background-color: #f5f5f5; color: #333; padding: 8px 12px; margin: -10px -10px 10px -10px; border-radius: 4px 4px 0 0; font-weight: bold; text-align: center; border-bottom: 1px solid #ddd;">
+      Custom Config Usage Example
     </div>
-    <img src="/help/custom_config.gif" alt="Tutorial de Custom Config" style="width: 100%; border-radius: 4px;">
-    <div style="margin-top: 8px; font-size: 12px; color: #666; text-align: center;">
-      {{ _('Haz clic para cerrar') }}
+    <img src="/help/custom_config.gif" alt="Custom Config Tutorial" style="width: 100%; border-radius: 4px;">
+    <div style="margin-top: 8px; font-size: 12px; color: #999; text-align: center;">
+      Hover to view - Click anywhere to close
     </div>
   </div>
 </div>
@@ -120,8 +120,8 @@
     visibility: visible !important;
     opacity: 1 !important;
 }
-.custom-config-help:hover {
-    background-color: #e7f3ff;
+.custom-config-help:hover span {
+    color: #333;
 }
 </style>
 
