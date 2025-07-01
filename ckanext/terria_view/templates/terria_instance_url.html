@@ -18,6 +18,21 @@
 <div class="control-group">
   <label class="control-label" for="style">{{ _('Style') }}</label>
   <div class="controls">
+    {# DEBUG: Mostrar información de debugging #}
+    {% if True %}
+      <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc;">
+        <strong>DEBUG INFO:</strong><br>
+        Available SLD files count: {{ data.available_sld_files|length if data.available_sld_files else 'None' }}<br>
+        Data keys: {{ data.keys()|list }}<br>
+        {% if data.available_sld_files %}
+          SLD files: 
+          {% for sld in data.available_sld_files %}
+            <br>- {{ sld.name }} ({{ sld.url }})
+          {% endfor %}
+        {% endif %}
+      </div>
+    {% endif %}
+    
     {% if data.available_sld_files and data.available_sld_files|length > 0 %}
       {# Mostrar archivos SLD disponibles #}
       <div style="margin-bottom: 10px;">

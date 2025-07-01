@@ -37,28 +37,44 @@ def get_sld_files_from_dataset(site_url, package_id):
     try:
         # Construir la URL de la API
         api_url = f"{site_url.rstrip('/')}/api/3/action/package_show?id={package_id}"
+        print(f"DEBUG: Consultando API: {api_url}")
         
         # Hacer la petición a la API
         with urllib.request.urlopen(api_url) as response:
             data = json.loads(response.read().decode('utf-8'))
         
+        print(f"DEBUG: API response success: {data.get('success')}")
+        
         if data.get('success') and data.get('result'):
             package_data = data['result']
             sld_files = []
+            resources = package_data.get('resources', [])
+            print(f"DEBUG: Total resources found: {len(resources)}")
             
             # Buscar recursos con formato 'sld'
-            for resource in package_data.get('resources', []):
-                if resource.get('format', '').lower() == 'sld':
-                    sld_files.append({
+            for resource in resources:
+                resource_format = resource.get('format', '').lower()
+                print(f"DEBUG: Resource {resource.get('name', 'sin nombre')}: format='{resource_format}'")
+                
+                if resource_format == 'sld':
+                    sld_file = {
                         'id': resource.get('id'),
                         'name': resource.get('name', 'Archivo SLD sin nombre'),
                         'url': resource.get('url'),
                         'description': resource.get('description', '')
-                    })
+                    }
+                    sld_files.append(sld_file)
+                    print(f"DEBUG: SLD file found: {sld_file}")
             
+            print(f"DEBUG: Total SLD files found: {len(sld_files)}")
             return sld_files
+        else:
+            print(f"DEBUG: API call failed or no result")
+            return []
     except Exception as e:
         print(f"Error obteniendo archivos SLD desde la API: {e}")
+        import traceback
+        traceback.print_exc()
         return []
 
 def new_resource_view_list(plugin, context, data_dict):
@@ -804,9 +820,15 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # Obtener archivos SLD del dataset si existe el package
         if 'package' in data_dict:
             package_id = data_dict['package']['id']
+            package_name = data_dict['package'].get('name', 'unknown')
+            print(f"DEBUG form_template: Package ID: {package_id}, Name: {package_name}")
+            print(f"DEBUG form_template: Site URL: {self.site_url}")
+            
             sld_files = get_sld_files_from_dataset(self.site_url, package_id)
             data_dict['available_sld_files'] = sld_files
+            print(f"DEBUG form_template: SLD files passed to template: {len(sld_files)}")
         else:
+            print("DEBUG form_template: No package found in data_dict")
             data_dict['available_sld_files'] = []
             
         return 'terria_instance_url.html'
