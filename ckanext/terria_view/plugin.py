@@ -130,6 +130,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.default_instance_url)
         
+        # Fix para recursos sin nombre - generar nombre por defecto
+        def get_safe_resource_name(resource):
+            name = resource.get('name', '').strip()
+            if not name or name.lower() in ['', 'none', 'null', 'undefined', 'Unnamed resource']:
+                # Usar el ID del recurso o un nombre genérico
+                fallback_name = resource.get('id', f"Recurso_{hash(resource.get('url', 'sin_url')) % 10000}")
+                return fallback_name
+            return name
+        
+        # Obtener el nombre seguro del recurso
+        safe_resource_name = get_safe_resource_name(resource)
+        
         # Si terria_instance_url contiene una URL completa de TerriaJS, usarla directamente
         if view_terria_instance_url and '#' in view_terria_instance_url:
             return {
@@ -319,9 +331,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
             # Configurar CSV con time properties correctamente y estilo por defecto
             catalog_item = {
-                "name": resource["name"],
+                "name": safe_resource_name,
                 "type": "csv",
-                "id": resource["name"],
+                "id": safe_resource_name,
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
@@ -354,7 +366,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "west": float(xmin)
                     },
                     "stratum": "user",
-                    "workbench": [resource["name"]],
+                    "workbench": [safe_resource_name],
                     "viewerMode": "3D",
                     "focusWorkbenchItems": True,
                     "baseMaps": {
@@ -407,9 +419,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         legend_items = []
 
             catalog_item = {
-                "name": resource["name"],
+                "name": safe_resource_name,
                 "type": "cog",
-                "id": resource["name"],
+                "id": safe_resource_name,
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
@@ -450,7 +462,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                             "west": float(xmin)
                         },
                         "stratum": "user",
-                        "workbench": [resource["name"]],
+                        "workbench": [safe_resource_name],
                         "viewerMode": "3D",
                         "focusWorkbenchItems": True,
                         "baseMaps": {
@@ -519,9 +531,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         enum_colors = []
 
             catalog_item = {
-                "name": resource["name"],
+                "name": safe_resource_name,
                 "type": "shp",
-                "id": resource["name"],
+                "id": safe_resource_name,
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
@@ -562,7 +574,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         "west": float(xmin)
                     },
                     "stratum": "user",
-                    "workbench": [resource["name"]],
+                    "workbench": [safe_resource_name],
                     "viewerMode": "3D",
                     "focusWorkbenchItems": True,
                     "baseMaps": {
@@ -580,13 +592,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     {{
                         "catalog": [
                             {{
-                                "name": "{resource["name"]}",
+                                "name": "{safe_resource_name}",
                                 "type": "group",
                                 "isOpen": true,
                                 "members": [
                                     {{
-                                        "id": "{resource["name"]}",
-                                        "name": "{resource["name"]}",
+                                        "id": "{safe_resource_name}",
+                                        "name": "{safe_resource_name}",
                                         "type": "{resource["format"].lower()}",
                                         "url": "{uploaded_url}",
                                         "cacheDuration": "5m",
@@ -609,18 +621,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         }},
                         "stratum": "user",
                         "models": {{
-                            "//{resource["name"]}": {{
+                            "//{safe_resource_name}": {{
                                 "isOpen": true,
                                 "knownContainerUniqueIds": [
                                     "/"
                                 ],
                                 "type": "group"
                             }},
-                            "{resource["name"]}": {{
+                            "{safe_resource_name}": {{
                                 "show": true,
                                 "isOpenInWorkbench": true,
                                 "knownContainerUniqueIds": [
-                                    "//{resource["name"]}"
+                                    "//{safe_resource_name}"
                                 ],
                                 "type": "{resource["format"].lower()}"
                             }},
@@ -629,7 +641,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                             }}
                         }},
                         "workbench": [
-                            "{resource["name"]}"
+                            "{safe_resource_name}"
                         ],
                         "viewerMode": "3dSmooth",
                         "focusWorkbenchItems": true,
