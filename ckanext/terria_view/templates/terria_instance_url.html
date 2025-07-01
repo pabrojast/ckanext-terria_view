@@ -18,25 +18,6 @@
 <div class="control-group">
   <label class="control-label" for="style">{{ _('Style') }}</label>
   <div class="controls">
-    {# DEBUG: Mostrar información de debugging #}
-    {% if True %}
-      {% set sld_files_helper = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
-      
-      <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; border: 1px solid #ccc;">
-        <strong>DEBUG INFO:</strong><br>
-        Available SLD files count (original): {{ data.available_sld_files|length if data.available_sld_files else 'None' }}<br>
-        Available SLD files count (helper): {{ sld_files_helper|length }}<br>
-        Data keys: {{ data.keys()|list }}<br>
-        Package ID: {{ data.package_id or 'None' }}<br>
-        {% if sld_files_helper %}
-          SLD files (helper): 
-          {% for sld in sld_files_helper %}
-            <br>- {{ sld.name }} ({{ sld.url }})
-          {% endfor %}
-        {% endif %}
-      </div>
-    {% endif %}
-    
     {% set available_sld_files = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
     
     {% if available_sld_files and available_sld_files|length > 0 %}
