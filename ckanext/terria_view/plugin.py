@@ -142,6 +142,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "terria_instance_url": [],
                 "custom_config": [],
                 "style": [],
+                "style_option": [ignore_missing],
+                "style_custom_input": [ignore_missing],
                 'show_fields': [ignore_missing],
                 'filterable': [default(True), boolean_validator],
             }
