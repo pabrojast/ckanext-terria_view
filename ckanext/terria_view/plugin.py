@@ -144,7 +144,6 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "style": [],
                 'show_fields': [ignore_missing],
                 'filterable': [default(True), boolean_validator],
-                'time_resample': [ignore_missing],
             }
         }
 
@@ -277,87 +276,6 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             return any(resource_format == format for format in accepted_formats)
         
         if is_csv(resource):
-            # Construir la URL base del datastore
-            base_url = self.site_url.rstrip('/')
-            resource_id = resource['id']
-            
-            time_resample = view.get('time_resample', '')
-            
-            # Inicialmente, usar la URL normal del datastore
-            datastore_url = f"{base_url}/datastore/dump/{resource_id}"
-            
-            filters = view.get('filters', {})
-            filters_param = ""
-            
-            if filters:
-                # Convertir los filtros a formato JSON
-                filters_json = json.dumps(filters)
-                # Codificar los filtros para la URL
-                encoded_filters = urllib.parse.quote(filters_json)
-                # Configurar parámetro de filtros
-                filters_param = f"filters={encoded_filters}"
-            
-            # Si hay resampling configurado, usar SQL query
-            if time_resample and time_resample in ['day', 'week', 'month', 'year']:
-                # Construir SQL query para resampling
-                sql_query = f"""
-                SELECT 
-                    "Latitude", 
-                    "Longitude",
-                    DATE_TRUNC('{time_resample}', "time") AS time,
-                    "Parameter Code",
-                    AVG("Value") AS "Value",
-                    MAX("Unit") AS "Unit",
-                    COUNT(*) AS "Count"
-                FROM "{resource_id}"
-                """
-                
-                # Agregar WHERE si hay filtros (simplificado para el ejemplo)
-                if filters and 'Parameter Code' in filters:
-                    param_values = filters['Parameter Code']
-                    if isinstance(param_values, list) and len(param_values) > 0:
-                        param_list = "', '".join(param_values)
-                        sql_query += f" WHERE \"Parameter Code\" IN ('{param_list}')"
-                
-                # Agregar GROUP BY y ORDER BY
-                sql_query += f"""
-                GROUP BY "Latitude", "Longitude", DATE_TRUNC('{time_resample}', "time"), "Parameter Code"
-                ORDER BY time ASC
-                """
-                
-                # Usar directamente datastore_search_sql con formato CSV
-                encoded_sql = urllib.parse.quote(sql_query)
-                
-                # Dos opciones para intentar obtener CSV:
-                # 1. Usar el endpoint SQL con parámetro de formato CSV
-                datastore_url = f"{base_url}/api/3/action/datastore_search_sql?sql={encoded_sql}&format=csv"
-                
-                try:
-                    # Verificar si el endpoint con format=csv funciona
-                    response = urllib.request.urlopen(datastore_url)
-                    content_type = response.info().get_content_type()
-                    
-                    # Si la respuesta no es CSV, volver a la URL sin format=csv
-                    if 'csv' not in content_type.lower():
-                        print(f"Warning: Expected CSV response but got {content_type}")
-                        # Intentar opción alternativa - guardar en variable de sesión y crear endpoint
-                        # temporal para servir CSV
-                        
-                        # En producción: implementar solución más robusta aquí
-                        datastore_url = f"{base_url}/api/3/action/datastore_search_sql?sql={encoded_sql}"
-                        
-                except Exception as e:
-                    print(f"Error testing SQL endpoint: {e}")
-                    # Fallback a la URL normal con filtros
-                    if filters_param:
-                        datastore_url = f"{base_url}/datastore/dump/{resource_id}?{filters_param}"
-                    else:
-                        datastore_url = f"{base_url}/datastore/dump/{resource_id}"
-            elif filters_param:
-                # Si no hay resampling pero sí hay filtros, añadir los filtros a la URL normal
-                datastore_url += f"?{filters_param}"
-            #fix temporal
-            #uploaded_url = datastore_url
             print(f"CSV URL: {uploaded_url}")
 
             # Configurar CSV con time properties correctamente y estilo por defecto
@@ -877,7 +795,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         return 'terria.html'
 
     def form_template(self, context, data_dict):
-        # Pass resource format to template so we can show/hide resampling options
+        # Pass resource format to template
         if 'resource' in data_dict and 'format' in data_dict['resource']:
             data_dict['resource_format'] = data_dict['resource']['format']
         

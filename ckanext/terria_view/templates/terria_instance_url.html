@@ -95,16 +95,7 @@
   </div>
 </div>
 
-{# Add time resampling options for CSV files #}
-  {{ form.select('time_resample',
-                label=_('Time Resampling'),
-                options=[{'value': '', 'text': _('No resampling (show raw data)')},
-                         {'value': 'day', 'text': _('Daily average')},
-                         {'value': 'week', 'text': _('Weekly average')},
-                         {'value': 'month', 'text': _('Monthly average')},
-                         {'value': 'year', 'text': _('Yearly average')}],
-                selected=data.time_resample,
-                error=errors.time_resample) }}
+
 
 <div style="margin-bottom: 10px; position: relative; display: inline-block;">
 <span style="cursor: pointer;">{{ _('Custom Config Example') }}</span>
