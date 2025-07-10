@@ -509,7 +509,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 "url": uploaded_url,
                 "cacheDuration": "5m",
                 "isOpenInWorkbench": True,
-                "opacity": 0.8
+                "opacity": 0.8,
+                "clampToGround": False,
+                "forceCesiumPrimitives": True
             }
 
             if legend_items:
