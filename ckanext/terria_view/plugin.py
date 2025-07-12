@@ -87,7 +87,7 @@ def new_resource_view_list(plugin_instance, context, data_dict):
 class Terria_ViewPlugin(plugins.SingletonPlugin):
     """Plugin principal para Terria View - Versión refactorizada."""
     
-    def __init__(self):
+    def __init__(self, name=None):
         """Inicializa el plugin con los módulos refactorizados."""
         super().__init__()
         
