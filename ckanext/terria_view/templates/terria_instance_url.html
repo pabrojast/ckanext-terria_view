@@ -54,14 +54,14 @@
   </div>
 </div>
 
-{# Campo de estilo con opciones de archivos SLD #}
+{# Style field with SLD file options #}
 <div class="control-group">
   <label class="control-label" for="style">{{ _('Style') }}</label>
   <div class="controls">
     {% set available_sld_files = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
     
     {% if available_sld_files and available_sld_files|length > 0 %}
-      {# Mostrar archivos SLD disponibles #}
+      {# Show available SLD files #}
       <div style="margin-bottom: 10px;">
         <label><strong>{{ _('Available SLD files:') }}</strong></label>
       </div>
@@ -80,7 +80,7 @@
         </div>
       {% endfor %}
       
-      {# Opción para URL personalizada #}
+      {# Option for custom URL #}
       <div style="margin-bottom: 8px; margin-top: 15px;">
         <label class="radio">
           <input type="radio" name="style_option" value="custom_url"
@@ -89,7 +89,7 @@
         </label>
       </div>
       
-      {# Opción para sin estilo #}
+      {# Option for no style #}
       <div style="margin-bottom: 8px;">
         <label class="radio">
           <input type="radio" name="style_option" value="none"
@@ -98,7 +98,7 @@
         </label>
       </div>
     {% else %}
-      {# No hay archivos SLD disponibles #}
+      {# No SLD files available #}
       <div style="margin-bottom: 10px; padding: 10px; background-color: #f5f5f5; border-radius: 4px;">
         <p style="margin: 0; color: #666;">
           <i class="fa fa-info-circle"></i> 
@@ -123,7 +123,7 @@
       </div>
     {% endif %}
     
-    {# Campo de texto para URL personalizada #}
+    {# Text field for custom URL #}
     {% set show_custom_url = data.style and data.style != 'NA' and (not available_sld_files or data.style not in available_sld_files|map(attribute='url')) %}
     <div id="custom-style-url" style="margin-top: 10px;{% if not show_custom_url %} display: none;{% endif %}">
       <input type="text" id="style-custom-input" name="style_custom_input" 
@@ -132,7 +132,7 @@
              class="control-full control-large" />
     </div>
     
-    {# Campo oculto para almacenar el valor final #}
+    {# Hidden field to store final value #}
     <input type="hidden" id="style" name="style" 
            value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% else %}NA{% endif %}" />
   </div>
@@ -201,36 +201,36 @@ function toggleExample() {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    // Elementos del formulario de configuración personalizada
+    // Custom configuration form elements
     var customConfigOptions = document.querySelectorAll('input[name="custom_config_option"]');
     var customConfigInputDiv = document.getElementById('custom-config-input');
     var customConfigUrlInput = document.getElementById('custom-config-url');
     var customConfigHidden = document.getElementById('custom_config');
     
-    // Elementos del formulario de estilo
+    // Style form elements
     var styleOptions = document.querySelectorAll('input[name="style_option"]');
     var customUrlDiv = document.getElementById('custom-style-url');
     var styleCustomInput = document.getElementById('style-custom-input');
     var styleHidden = document.getElementById('style');
     
-    // Función para actualizar el campo de configuración personalizada
+    // Function to update custom configuration field
     function updateCustomConfigField() {
         var selectedOption = document.querySelector('input[name="custom_config_option"]:checked');
         
         if (!selectedOption) return;
         
         if (selectedOption.value === 'automatic') {
-            // Configuración automática
+            // Automatic configuration
             customConfigHidden.value = 'NA';
             customConfigInputDiv.style.display = 'none';
         } else if (selectedOption.value === 'custom') {
-            // Configuración personalizada
+            // Custom configuration
             customConfigInputDiv.style.display = 'block';
             customConfigHidden.value = customConfigUrlInput.value || 'NA';
         }
     }
     
-    // Función para actualizar el campo de estilo
+    // Function to update style field
     function updateStyleField() {
         var selectedOption = document.querySelector('input[name="style_option"]:checked');
         
@@ -252,12 +252,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Event listeners para configuración personalizada
+    // Event listeners for custom configuration
     customConfigOptions.forEach(function(option) {
         option.addEventListener('change', updateCustomConfigField);
     });
     
-    // Event listener para el campo de texto de configuración personalizada
+    // Event listener for custom configuration text field
     if (customConfigUrlInput) {
         customConfigUrlInput.addEventListener('input', function() {
             var customRadio = document.querySelector('input[name="custom_config_option"][value="custom"]');
@@ -267,12 +267,12 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Event listeners para opciones de estilo
+    // Event listeners for style options
     styleOptions.forEach(function(option) {
         option.addEventListener('change', updateStyleField);
     });
     
-    // Event listener para el campo de texto de estilo personalizado
+    // Event listener for custom style text field
     if (styleCustomInput) {
         styleCustomInput.addEventListener('input', function() {
             var customRadio = document.querySelector('input[name="style_option"][value="custom_url"]');
@@ -282,7 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Inicializar estados
+    // Initialize states
     updateCustomConfigField();
     updateStyleField();
 });
