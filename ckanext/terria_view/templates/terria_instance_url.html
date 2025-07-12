@@ -7,12 +7,52 @@
               error=errors.terria_instance_url,
               classes=['control-full', 'control-large']) }}
 
-{{ form.input('custom_config',
-              label=_('Custom Config'),
-              value=data.custom_config,
-              placeholder=_('e.g. //ihp-wins.unesco.org/terria/'),
-              error=errors.custom_config,
-              classes=['control-full', 'control-large']) }}
+{# Custom configuration field with clearer options #}
+<div class="control-group">
+  <label class="control-label" for="custom_config_option">{{ _('Configuration Type') }}</label>
+  <div class="controls">
+    
+    {# Automatic option (default) #}
+    <div style="margin-bottom: 8px;">
+      <label class="radio">
+        <input type="radio" name="custom_config_option" value="automatic"
+               {% if not data.custom_config or data.custom_config == 'NA' %}checked{% endif %}>
+        <strong>{{ _('Automatic Configuration') }}</strong> ({{ _('Recommended') }})
+        <br><small style="color: #666; margin-left: 20px;">
+          {{ _('The system will automatically generate the best TerriaJS configuration based on your data format and properties.') }}
+        </small>
+      </label>
+    </div>
+    
+    {# Custom configuration option #}
+    <div style="margin-bottom: 8px;">
+      <label class="radio">
+        <input type="radio" name="custom_config_option" value="custom"
+               {% if data.custom_config and data.custom_config != 'NA' %}checked{% endif %}>
+        <strong>{{ _('Custom TerriaJS Configuration') }}</strong>
+        <br><small style="color: #666; margin-left: 20px;">
+          {{ _('Provide a custom TerriaJS URL with configuration. The system will process this URL and adapt it to your data.') }}
+        </small>
+      </label>
+    </div>
+    
+    {# Input field for custom configuration #}
+    {% set show_custom_input = data.custom_config and data.custom_config != 'NA' %}
+    <div id="custom-config-input" style="margin-top: 10px;{% if not show_custom_input %} display: none;{% endif %}">
+      <input type="text" id="custom-config-url" name="custom_config_url" 
+             value="{% if data.custom_config and data.custom_config != 'NA' %}{{ data.custom_config }}{% endif %}"
+             placeholder="{{ _('e.g. https://ihp-wins.unesco.org/terria/#share=g-abc123 or https://example.com/terria/#start=...') }}"
+             class="control-full control-large" />
+      <small style="color: #666; display: block; margin-top: 5px;">
+        {{ _('Enter a TerriaJS URL containing your custom configuration. The system will extract and adapt the configuration for your data.') }}
+      </small>
+    </div>
+    
+    {# Hidden field to store final value #}
+    <input type="hidden" id="custom_config" name="custom_config" 
+           value="{% if data.custom_config and data.custom_config != 'NA' %}{{ data.custom_config }}{% else %}NA{% endif %}" />
+  </div>
+</div>
 
 {# Campo de estilo con opciones de archivos SLD #}
 <div class="control-group">
@@ -99,40 +139,98 @@
 </div>
 
 
-<div class="custom-config-help" style="margin-bottom: 10px; position: relative; display: inline-block;">
-  <i class="fa fa-question-circle" style="color: #666; margin-right: 5px;"></i>
-  <span style="cursor: pointer; color: #666; text-decoration: underline;">
-    How to use Custom Config? (View example)
-  </span>
-  <div class="help-tooltip" style="visibility: hidden; width: 800px; background-color: #fff; border: 1px solid #ccc; border-radius: 4px; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1); position: absolute; z-index: 1000; bottom: 125%; left: 50%; margin-left: -400px; opacity: 0; transition: opacity 0.3s; padding: 10px;">
-    <div style="background-color: #f5f5f5; color: #333; padding: 8px 12px; margin: -10px -10px 10px -10px; border-radius: 4px 4px 0 0; font-weight: bold; text-align: center; border-bottom: 1px solid #ddd;">
-      Custom Config Usage Example
+<div class="config-help-section" style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 6px; border-left: 4px solid #007cba;">
+  <div style="display: flex; align-items: flex-start; gap: 10px;">
+    <i class="fa fa-info-circle" style="color: #007cba; margin-top: 2px; font-size: 16px;"></i>
+    <div style="flex: 1;">
+      <h4 style="margin: 0 0 8px 0; color: #333; font-size: 14px;">
+        {{ _('How does the Custom Configuration work?') }}
+      </h4>
+      <p style="margin: 0 0 10px 0; color: #666; font-size: 13px; line-height: 1.4;">
+        {{ _('The system processes your custom TerriaJS URL and adapts it to work with your data:') }}
+      </p>
+      <ul style="margin: 0; padding-left: 18px; color: #666; font-size: 13px; line-height: 1.3;">
+        <li style="margin-bottom: 4px;">
+          {{ _('Takes your TerriaJS URL with configuration (e.g., from a shared map)') }}
+        </li>
+        <li style="margin-bottom: 4px;">
+          {{ _('Extracts the configuration settings (camera position, layers, styling, etc.)') }}
+        </li>
+        <li style="margin-bottom: 4px;">
+          {{ _('Automatically replaces data URLs with your resource URL') }}
+        </li>
+        <li style="margin-bottom: 4px;">
+          {{ _('Applies any selected SLD styling from this dataset') }}
+        </li>
+        <li>
+          {{ _('Generates a viewer that maintains your custom settings but displays your data') }}
+        </li>
+      </ul>
     </div>
-    <img src="/help/custom_config.gif" alt="Custom Config Tutorial" style="width: 100%; border-radius: 4px;">
-    <div style="margin-top: 8px; font-size: 12px; color: #999; text-align: center;">
-      Hover to view - Click anywhere to close
+  </div>
+  
+  <div class="custom-config-help" style="margin-top: 15px; position: relative; display: inline-block;">
+    <div style="display: flex; align-items: center; gap: 8px; cursor: pointer; color: #007cba; font-weight: 500;" 
+         onclick="toggleExample()">
+      <i class="fa fa-play-circle" id="example-icon" style="font-size: 14px;"></i>
+      <span>{{ _('View step-by-step example') }}</span>
+    </div>
+    <div id="help-example" style="display: none; margin-top: 12px; padding: 12px; background-color: #fff; border-radius: 4px; border: 1px solid #ddd;">
+      <img src="/help/custom_config.gif" alt="Custom Config Tutorial" style="width: 100%; max-width: 600px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+      <div style="margin-top: 8px; font-size: 12px; color: #999; text-align: center;">
+        {{ _('Example: Using a custom TerriaJS configuration with your data') }}
+      </div>
     </div>
   </div>
 </div>
 
-<style>
-.custom-config-help:hover .help-tooltip {
-    visibility: visible !important;
-    opacity: 1 !important;
+<script>
+function toggleExample() {
+  var example = document.getElementById('help-example');
+  var icon = document.getElementById('example-icon');
+  
+  if (example.style.display === 'none') {
+    example.style.display = 'block';
+    icon.className = 'fa fa-pause-circle';
+  } else {
+    example.style.display = 'none';
+    icon.className = 'fa fa-play-circle';
+  }
 }
-.custom-config-help:hover span {
-    color: #333;
-}
-</style>
+</script>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Elementos del formulario de configuración personalizada
+    var customConfigOptions = document.querySelectorAll('input[name="custom_config_option"]');
+    var customConfigInputDiv = document.getElementById('custom-config-input');
+    var customConfigUrlInput = document.getElementById('custom-config-url');
+    var customConfigHidden = document.getElementById('custom_config');
+    
+    // Elementos del formulario de estilo
     var styleOptions = document.querySelectorAll('input[name="style_option"]');
     var customUrlDiv = document.getElementById('custom-style-url');
     var styleCustomInput = document.getElementById('style-custom-input');
     var styleHidden = document.getElementById('style');
     
-    // Function to update the style field
+    // Función para actualizar el campo de configuración personalizada
+    function updateCustomConfigField() {
+        var selectedOption = document.querySelector('input[name="custom_config_option"]:checked');
+        
+        if (!selectedOption) return;
+        
+        if (selectedOption.value === 'automatic') {
+            // Configuración automática
+            customConfigHidden.value = 'NA';
+            customConfigInputDiv.style.display = 'none';
+        } else if (selectedOption.value === 'custom') {
+            // Configuración personalizada
+            customConfigInputDiv.style.display = 'block';
+            customConfigHidden.value = customConfigUrlInput.value || 'NA';
+        }
+    }
+    
+    // Función para actualizar el campo de estilo
     function updateStyleField() {
         var selectedOption = document.querySelector('input[name="style_option"]:checked');
         
@@ -154,12 +252,27 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
     
-    // Add event listeners to radio buttons
+    // Event listeners para configuración personalizada
+    customConfigOptions.forEach(function(option) {
+        option.addEventListener('change', updateCustomConfigField);
+    });
+    
+    // Event listener para el campo de texto de configuración personalizada
+    if (customConfigUrlInput) {
+        customConfigUrlInput.addEventListener('input', function() {
+            var customRadio = document.querySelector('input[name="custom_config_option"][value="custom"]');
+            if (customRadio && customRadio.checked) {
+                customConfigHidden.value = this.value || 'NA';
+            }
+        });
+    }
+    
+    // Event listeners para opciones de estilo
     styleOptions.forEach(function(option) {
         option.addEventListener('change', updateStyleField);
     });
     
-    // Add event listener to custom text field
+    // Event listener para el campo de texto de estilo personalizado
     if (styleCustomInput) {
         styleCustomInput.addEventListener('input', function() {
             var customRadio = document.querySelector('input[name="style_option"][value="custom_url"]');
@@ -169,7 +282,8 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Initialize state
+    // Inicializar estados
+    updateCustomConfigField();
     updateStyleField();
 });
 </script>
