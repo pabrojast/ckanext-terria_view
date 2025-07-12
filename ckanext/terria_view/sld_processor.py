@@ -195,8 +195,7 @@ class SLDProcessor:
             result["styles"] = [{
                 "id": valid_property_name,
                 "color": {
-                    "enumColors": enum_colors,
-                    "colorPalette": "HighContrast"
+                    "enumColors": enum_colors
                 }
             }]
             result["activeStyle"] = valid_property_name
