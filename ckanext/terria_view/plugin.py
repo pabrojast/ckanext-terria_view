@@ -183,6 +183,80 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         """
         return self.config_manager.can_view_resource(data_dict['resource'])
     
+    def before_create(self, context, data_dict):
+        """
+        Procesa los datos antes de crear la vista de recurso.
+        
+        Args:
+            context: Contexto de la vista
+            data_dict: Diccionario con datos de la vista
+            
+        Returns:
+            Diccionario con datos procesados
+        """
+        return self._process_form_data(data_dict)
+    
+    def before_update(self, context, data_dict):
+        """
+        Procesa los datos antes de actualizar la vista de recurso.
+        
+        Args:
+            context: Contexto de la vista
+            data_dict: Diccionario con datos de la vista
+            
+        Returns:
+            Diccionario con datos procesados
+        """
+        return self._process_form_data(data_dict)
+    
+    def _process_form_data(self, data_dict):
+        """
+        Procesa los datos del formulario para convertir campos temporales a campos finales.
+        
+        Args:
+            data_dict: Diccionario con datos del formulario
+            
+        Returns:
+            Diccionario con datos procesados
+        """
+        # Procesar configuración personalizada
+        custom_config_option = data_dict.get('custom_config_option', 'automatic')
+        custom_config_url = data_dict.get('custom_config_url', '')
+        
+        if custom_config_option == 'custom' and custom_config_url:
+            data_dict['custom_config'] = custom_config_url
+        else:
+            data_dict['custom_config'] = 'NA'
+        
+        # Procesar estilo
+        style_option = data_dict.get('style_option', 'none')
+        style_custom_input = data_dict.get('style_custom_input', '')
+        
+        if style_option == 'custom_url' and style_custom_input:
+            data_dict['style'] = style_custom_input
+        elif style_option == 'sld_file':
+            # El JavaScript del formulario ya debería haber puesto la URL del SLD en style_custom_input
+            # pero también podemos buscar en los radio buttons
+            sld_radios = [k for k in data_dict.keys() if k.startswith('style_option') and 'data-sld-url' in str(data_dict.get(k, ''))]
+            if style_custom_input:
+                data_dict['style'] = style_custom_input
+            else:
+                data_dict['style'] = 'NA'
+        else:
+            data_dict['style'] = 'NA'
+        
+        # Limpiar campos temporales del formulario
+        fields_to_remove = [
+            'custom_config_option', 'custom_config_url', 
+            'style_option', 'style_custom_input',
+            'available_sld_files', 'package_id'
+        ]
+        
+        for field in fields_to_remove:
+            data_dict.pop(field, None)
+        
+        return data_dict
+    
     def setup_template_variables(self, context, data_dict):
         """
         Configura las variables del template para la vista.

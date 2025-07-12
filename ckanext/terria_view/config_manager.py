@@ -176,12 +176,10 @@ class ConfigManager:
         default = toolkit.get_validator('default')
         
         return {
-            "terria_instance_url": [],
-            "custom_config": [],
-            "style": [],
-            "style_option": [ignore_missing],
-            "style_custom_input": [ignore_missing],
-            "available_sld_files": [ignore_missing],
+            "terria_instance_url": [ignore_missing],
+            "custom_config": [ignore_missing],
+            "style": [ignore_missing],
             'show_fields': [ignore_missing],
             'filterable': [default(True), boolean_validator],
+            '__extras': [ignore_missing],
         } 
