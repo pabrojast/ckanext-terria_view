@@ -1,6 +1,6 @@
 # encoding: utf-8
 """
-Plugin principal para Terria View - Refactorizado para mejor mantenimiento.
+Main plugin for Terria View - Refactored for better maintainability.
 """
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
@@ -10,13 +10,13 @@ import functools
 from flask import request
 import ckan.logic.action.get as get
 
-# Importar módulos refactorizados
+# Import refactored modules
 from .config_manager import ConfigManager
 from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import TerriaConfigBuilder
 
-# Obtener el callback original
+# Get the original callback
 resource_view_list = get.resource_view_list
 
 PLUGIN_NAME = 'terria_view'
@@ -24,20 +24,20 @@ PLUGIN_NAME = 'terria_view'
 
 def new_resource_view_list(plugin_instance, context, data_dict):
     """
-    Función para crear automáticamente vistas de recursos TerriaJS.
+    Function to automatically create TerriaJS resource views.
     
     Args:
-        plugin_instance: Instancia del plugin
-        context: Contexto de la acción
-        data_dict: Diccionario con datos de la acción
+        plugin_instance: Plugin instance
+        context: Action context
+        data_dict: Dictionary with action data
         
     Returns:
-        Lista de vistas de recursos
+        List of resource views
     """
     try:
         resource_id = data_dict.get('id')
         
-        # Verificar si hay un activity_id en la URL, así no intenta crear nada
+        # Check if there's an activity_id in the URL, so it doesn't try to create anything
         if 'activity_id' in request.args:
             print("Activity ID detected, skipping resource view creation.")
             return []
@@ -53,7 +53,7 @@ def new_resource_view_list(plugin_instance, context, data_dict):
         print(f"Error retrieving resource view list: {e}")
         ret = []
     
-    # Verificar si ya existe una vista del plugin
+    # Check if a plugin view already exists
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
     
     if not has_plugin:
@@ -85,43 +85,43 @@ def new_resource_view_list(plugin_instance, context, data_dict):
 
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
-    """Plugin principal para Terria View - Versión refactorizada."""
+    """Main plugin for Terria View - Refactored version."""
     
     def __init__(self, name=None):
-        """Inicializa el plugin con los módulos refactorizados."""
+        """Initialize the plugin with refactored modules."""
         super().__init__()
         
-        # Inicializar módulos
+        # Initialize modules
         self.config_manager = ConfigManager()
         self.sld_processor = SLDProcessor()
         self.resource_utils = ResourceUtils(self.config_manager)
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
         
-        # Callback para resource_view_list
+        # Callback for resource_view_list
         self.resource_view_list_callback = None
     
     plugins.implements(plugins.IConfigurer)
     def update_config(self, config_):
-        """Actualiza la configuración del plugin."""
+        """Update plugin configuration."""
         toolkit.add_template_directory(config_, 'templates')
         toolkit.add_public_directory(config_, 'public')
     
     plugins.implements(plugins.ITemplateHelpers)
     def get_helpers(self):
-        """Registra helpers del template."""
+        """Register template helpers."""
         return {
             'terria_get_sld_files': self.terria_get_sld_files
         }
     
     def terria_get_sld_files(self, package_id):
         """
-        Helper para obtener archivos SLD desde el template.
+        Helper to get SLD files from template.
         
         Args:
-            package_id: ID del paquete
+            package_id: Package ID
             
         Returns:
-            Lista de archivos SLD
+            List of SLD files
         """
         try:
             return self.resource_utils.get_sld_files_from_dataset(
@@ -134,12 +134,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IConfigurable, inherit=True)
     def configure(self, config):
         """
-        Configura el plugin con los valores del archivo de configuración.
+        Configure the plugin with values from configuration file.
         
         Args:
-            config: Diccionario de configuración
+            config: Configuration dictionary
         """
-        # Actualizar configuración en el config_manager
+        # Update configuration in config_manager
         self.config_manager.site_url = config.get('ckan.site_url', '')
         self.config_manager.default_title = config.get(
             f'ckanext.{PLUGIN_NAME}.default_title', 'Terria Viewer'
@@ -149,16 +149,16 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'https://ihp-wins.unesco.org/terria/'
         )
         
-        # Configurar callback
+        # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
     
     plugins.implements(plugins.IResourceView, inherit=True)
     def info(self):
         """
-        Proporciona información sobre el plugin.
+        Provide information about the plugin.
         
         Returns:
-            Diccionario con información del plugin
+            Dictionary with plugin information
         """
         return {
             'name': PLUGIN_NAME,
@@ -173,53 +173,53 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     
     def can_view(self, data_dict):
         """
-        Determina si un recurso puede ser visualizado.
+        Determine if a resource can be visualized.
         
         Args:
-            data_dict: Diccionario con datos del recurso
+            data_dict: Dictionary with resource data
             
         Returns:
-            True si puede ser visualizado, False en caso contrario
+            True if it can be visualized, False otherwise
         """
         return self.config_manager.can_view_resource(data_dict['resource'])
     
     def before_create(self, context, data_dict):
         """
-        Procesa los datos antes de crear la vista de recurso.
+        Process data before creating resource view.
         
         Args:
-            context: Contexto de la vista
-            data_dict: Diccionario con datos de la vista
+            context: View context
+            data_dict: Dictionary with view data
             
         Returns:
-            Diccionario con datos procesados
+            Dictionary with processed data
         """
         return self._process_form_data(data_dict)
     
     def before_update(self, context, data_dict):
         """
-        Procesa los datos antes de actualizar la vista de recurso.
+        Process data before updating resource view.
         
         Args:
-            context: Contexto de la vista
-            data_dict: Diccionario con datos de la vista
+            context: View context
+            data_dict: Dictionary with view data
             
         Returns:
-            Diccionario con datos procesados
+            Dictionary with processed data
         """
         return self._process_form_data(data_dict)
     
     def _process_form_data(self, data_dict):
         """
-        Procesa los datos del formulario para convertir campos temporales a campos finales.
+        Process form data to convert temporary fields to final fields.
         
         Args:
-            data_dict: Diccionario con datos del formulario
+            data_dict: Dictionary with form data
             
         Returns:
-            Diccionario con datos procesados
+            Dictionary with processed data
         """
-        # Procesar configuración personalizada
+        # Process custom configuration
         custom_config_option = data_dict.get('custom_config_option', 'automatic')
         custom_config_url = data_dict.get('custom_config_url', '')
         
@@ -228,15 +228,15 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             data_dict['custom_config'] = 'NA'
         
-        # Procesar estilo
+        # Process style
         style_option = data_dict.get('style_option', 'none')
         style_custom_input = data_dict.get('style_custom_input', '')
         
         if style_option == 'custom_url' and style_custom_input:
             data_dict['style'] = style_custom_input
         elif style_option == 'sld_file':
-            # El JavaScript del formulario ya debería haber puesto la URL del SLD en style_custom_input
-            # pero también podemos buscar en los radio buttons
+            # JavaScript in the form should have already put the SLD URL in style_custom_input
+            # but we can also look for radio buttons
             sld_radios = [k for k in data_dict.keys() if k.startswith('style_option') and 'data-sld-url' in str(data_dict.get(k, ''))]
             if style_custom_input:
                 data_dict['style'] = style_custom_input
@@ -245,7 +245,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             data_dict['style'] = 'NA'
         
-        # Limpiar campos temporales del formulario
+        # Clean temporary form fields
         fields_to_remove = [
             'custom_config_option', 'custom_config_url', 
             'style_option', 'style_custom_input',
@@ -259,14 +259,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     
     def setup_template_variables(self, context, data_dict):
         """
-        Configura las variables del template para la vista.
+        Configure template variables for the view.
         
         Args:
-            context: Contexto de la vista
-            data_dict: Diccionario con datos de la vista
+            context: View context
+            data_dict: Dictionary with view data
             
         Returns:
-            Diccionario con variables para el template
+            Dictionary with variables for the template
         """
         package = data_dict['package']
         resource = data_dict['resource']
@@ -275,7 +275,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_title = view.get('title', self.config_manager.default_title)
         view_terria_instance_url = view.get('terria_instance_url', self.config_manager.default_instance_url)
         
-        # Si terria_instance_url contiene una URL completa de TerriaJS, usarla directamente
+        # If terria_instance_url contains a complete TerriaJS URL, use it directly
         if view_terria_instance_url and '#' in view_terria_instance_url:
             return {
                 'title': view_title,
@@ -283,7 +283,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 'direct_url': True
             }
         
-        # Si el formato es JSON, solo necesitamos pasar la URL de TerriaJS
+        # If format is JSON, we only need to pass the TerriaJS URL
         if resource.get('format', '').lower() == 'json':
             return {
                 'title': view_title,
@@ -291,41 +291,41 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 'resource': resource
             }
         
-        # Obtener nombre seguro del recurso
+        # Get safe resource name
         safe_resource_name = self.config_manager.get_safe_resource_name(resource)
         
-        # Obtener configuraciones de la vista
+        # Get view configurations
         view_custom_config = view.get('custom_config', 'NA')
         view_style = view.get('style', 'NA')
         
-        # Contexto del usuario
+        # User context
         user_context = {
             'user': toolkit.g.user,
             'auth_user_obj': toolkit.g.userobj
         }
         
-        # Obtener URL del recurso
+        # Get resource URL
         resource_url = self.resource_utils.get_resource_url(resource, package, user_context)
         
-        # Obtener bounds del package
+        # Get package bounds
         bounds = self.resource_utils.get_resource_bounds(package)
         
-        # Generar configuración
+        # Generate configuration
         if view_custom_config == 'NA' or view_custom_config == '':
-            # Configuración estándar
+            # Standard configuration
             config = self.terria_config_builder.create_config_for_resource(
                 resource, safe_resource_name, resource_url, bounds, view_style
             )
             encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
-            # Configuración personalizada
+            # Custom configuration
             custom_config = self.terria_config_builder.process_custom_config(
                 view_custom_config, resource_url, resource.get('format', ''), view_style
             )
             if custom_config:
                 encoded_config = urllib.parse.quote(custom_config)
             else:
-                # Fallback a configuración estándar
+                # Fallback to standard configuration
                 config = self.terria_config_builder.create_config_for_resource(
                     resource, safe_resource_name, resource_url, bounds, view_style
                 )
@@ -341,44 +341,44 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     
     def view_template(self, context, data_dict):
         """
-        Especifica el template para la vista.
+        Specify the template for the view.
         
         Args:
-            context: Contexto de la vista
-            data_dict: Diccionario con datos de la vista
+            context: View context
+            data_dict: Dictionary with view data
             
         Returns:
-            Nombre del template
+            Template name
         """
         return 'terria.html'
     
     def form_template(self, context, data_dict):
         """
-        Especifica el template para el formulario de configuración.
+        Specify the template for the configuration form.
         
         Args:
-            context: Contexto del formulario
-            data_dict: Diccionario con datos del formulario
+            context: Form context
+            data_dict: Dictionary with form data
             
         Returns:
-            Nombre del template
+            Template name
         """
-        # Pasar formato del recurso al template
+        # Pass resource format to template
         if 'resource' in data_dict and 'format' in data_dict['resource']:
             data_dict['resource_format'] = data_dict['resource']['format']
         
-        # Obtener archivos SLD del dataset si existe el package
+        # Get SLD files from dataset if package exists
         if 'package' in data_dict:
             package_id = data_dict['package']['id']
             sld_files = self.resource_utils.get_sld_files_from_dataset(
                 self.config_manager.site_url, package_id
             )
             
-            # Pasar archivos SLD al template
+            # Pass SLD files to template
             data_dict['available_sld_files'] = sld_files
             context['available_sld_files'] = sld_files
             
-            # Agregar a las variables globales del template
+            # Add to global template variables
             if 'c' in context:
                 context['c'].available_sld_files = sld_files
         else:
@@ -389,10 +389,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     plugins.implements(plugins.IActions, inherit=True)
     def get_actions(self):
         """
-        Registra acciones adicionales del plugin.
+        Register additional plugin actions.
         
         Returns:
-            Diccionario con acciones del plugin
+            Dictionary with plugin actions
         """
         return {
             'resource_view_list': self.resource_view_list_callback

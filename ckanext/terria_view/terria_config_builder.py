@@ -118,7 +118,7 @@ class TerriaConfigBuilder:
             "opacity": 0.8
         }
         
-        # Aplicar estilos SLD si están disponibles
+        # Apply SLD styles if available
         if sld_url:
             sld_styles = self.sld_processor.process_cog_sld(sld_url)
             catalog_item.update(sld_styles)

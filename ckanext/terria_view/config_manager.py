@@ -1,6 +1,6 @@
 # encoding: utf-8
 """
-Módulo para manejar configuraciones del plugin Terria View.
+Module for managing Terria View plugin configurations.
 """
 import os
 import re
@@ -8,21 +8,21 @@ from typing import Dict, List, Optional, Union
 
 
 class ConfigManager:
-    """Maneja las configuraciones del plugin Terria View."""
+    """Manages Terria View plugin configurations."""
     
-    # Formatos soportados por el plugin
+    # Formats supported by the plugin
     SUPPORTED_FORMATS = [
         'shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 
         'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv', 'json'
     ]
     
-    # Filtro de expresión para búsquedas
+    # Filter expression for searches
     SUPPORTED_FILTER_EXPR = 'fq=(' + ' OR '.join(['res_format:' + s for s in SUPPORTED_FORMATS]) + ')'
     
-    # Regex para validar formatos
+    # Regex to validate formats
     SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) + ')$'
     
-    # URLs y dominios válidos
+    # Valid URLs and domains
     VALID_DOMAINS = [
         'https://data.dev-wins.com',
         'https://ihp-wins.unesco.org/'
@@ -31,12 +31,12 @@ class ConfigManager:
     def __init__(self, site_url: str = '', default_title: str = 'Terria Viewer', 
                  default_instance_url: str = 'https://ihp-wins.unesco.org/terria/'):
         """
-        Inicializa el gestor de configuraciones.
+        Initialize the configuration manager.
         
         Args:
-            site_url: URL base del sitio CKAN
-            default_title: Título por defecto para las vistas
-            default_instance_url: URL por defecto de la instancia Terria
+            site_url: Base URL of the CKAN site
+            default_title: Default title for views
+            default_instance_url: Default URL of the Terria instance
         """
         self.site_url = site_url
         self.default_title = default_title
@@ -44,10 +44,10 @@ class ConfigManager:
     
     def can_view_resource(self, resource: Dict) -> bool:
         """
-        Determina si un recurso puede ser visualizado por el plugin.
+        Determine if a resource can be visualized by the plugin.
         
         Args:
-            resource: Diccionario con datos del recurso
+            resource: Dictionary with resource data
             
         Returns:
             True si el recurso puede ser visualizado, False en caso contrario
@@ -164,10 +164,10 @@ class ConfigManager:
     
     def get_schema_info(self) -> Dict:
         """
-        Obtiene la información del esquema del plugin.
+        Get plugin schema information.
         
         Returns:
-            Diccionario con información del esquema
+            Dictionary with schema information
         """
         from ckan.plugins import toolkit
         
