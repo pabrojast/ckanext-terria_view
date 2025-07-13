@@ -37,7 +37,7 @@ class ResourceUtils:
             # Construir la URL de la API
             api_url = f"{site_url.rstrip('/')}/api/3/action/package_show?id={package_id}"
             
-            # Hacer la petición a la API
+            # Make the API request
             with urllib.request.urlopen(api_url) as response:
                 data = json.loads(response.read().decode('utf-8'))
             
@@ -136,7 +136,7 @@ class ResourceUtils:
         """
         resource_url = resource.get("url", "")
         
-        # Verificar si es un dominio válido y formato aceptado
+        # Check if it's a valid domain and accepted format
         if self.config_manager.is_valid_domain(resource_url):
             if self.config_manager.is_accepted_format(resource):
                 # Fix para datasets privados
@@ -169,7 +169,7 @@ class ResourceUtils:
                 new_key = urllib.parse.unquote_plus(key) if '+' in key else key
                 
                 if isinstance(value, dict):
-                    # Si hay campos específicos que contienen nombres
+                    # If there are specific fields that contain names
                     if 'name' in value:
                         value['name'] = urllib.parse.unquote_plus(value['name'])
                     if 'title' in value:
@@ -204,7 +204,7 @@ class ResourceUtils:
             Diccionario con datos de configuración parseados, None en caso de error
         """
         try:
-            # Extraer el parámetro 'start' o 'share' de la URL
+            # Extract the 'start' or 'share' parameter from the URL
             parsed_url = urllib.parse.urlparse(custom_config_url)
             fragment = parsed_url.fragment
             

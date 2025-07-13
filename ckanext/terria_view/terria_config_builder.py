@@ -154,7 +154,7 @@ class TerriaConfigBuilder:
             "forceCesiumPrimitives": True
         }
         
-        # Aplicar estilos SLD si están disponibles
+        # Apply SLD styles if available
         if sld_url:
             sld_styles = self.sld_processor.process_shp_sld(sld_url)
             catalog_item.update(sld_styles)
@@ -291,7 +291,7 @@ class TerriaConfigBuilder:
             Configuración procesada como string JSON, None en caso de error
         """
         try:
-            # Parsear la configuración personalizada
+            # Parse custom configuration
             parsed_url = urllib.parse.urlparse(custom_config)
             fragment = parsed_url.fragment
             
@@ -313,15 +313,15 @@ class TerriaConfigBuilder:
             # Parsear el JSON
             start_data = json.loads(decoded_param)
             
-            # Decodificar nombres
+            # Decode names
             start_data = self._decode_names_in_object(start_data)
             
-            # Obtener estilos SLD si están disponibles
+            # Get SLD styles if available
             sld_styles = None
             if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
             
-            # Actualizar URLs y aplicar estilos
+            # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
                     for model_key, model_value in init_source['models'].items():
@@ -329,7 +329,7 @@ class TerriaConfigBuilder:
                             # Actualizar la URL
                             model_value['url'] = resource_url
                             
-                            # Aplicar estilos SLD si están disponibles
+                            # Apply SLD styles if available
                             if sld_styles:
                                 model_value.update(sld_styles)
             
@@ -352,11 +352,11 @@ class TerriaConfigBuilder:
         if isinstance(obj, dict):
             new_dict = {}
             for key, value in obj.items():
-                # Decodificar el key si contiene '+'
+                # Decode the key if it contains '+'
                 new_key = urllib.parse.unquote_plus(key) if '+' in key else key
                 
                 if isinstance(value, dict):
-                    # Si hay campos específicos que contienen nombres
+                    # If there are specific fields that contain names
                     if 'name' in value:
                         value['name'] = urllib.parse.unquote_plus(value['name'])
                     if 'title' in value:
