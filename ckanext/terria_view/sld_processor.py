@@ -78,23 +78,19 @@ class SLDProcessor:
             except ValueError:
                 pass
         
-        # If all else fails, return black
-        return "#000000"
-        
-        # Handle rgb() and rgba() formats
+        # Handle rgb() and rgba() formats with regex
         rgb_match = re.match(r'rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)', color)
         if rgb_match:
             r, g, b = map(int, rgb_match.groups())
             return f"#{r:02X}{g:02X}{b:02X}"
         
-        # For other formats, return as-is (named colors, etc.)
-        return color
+        # If all else fails, return black
+        return "#000000"
     
     def _convert_color_to_rgba(self, color: str, opacity: float = 1.0) -> str:
         """
         Convert any color format to rgba format for TerriaJS.
-        This is a more comprehensive version of _convert_hex_to_rgba
-        that handles more input formats.
+        Simplified version that works like the original code.
         
         Args:
             color: Color string in any format (hex, rgb, rgba, named)
@@ -104,24 +100,55 @@ class SLDProcessor:
             RGBA color string formatted specifically for TerriaJS
         """
         try:
-            # Extract RGB/A values using our enhanced function
-            rgb_values = self._extract_rgb_values(color)
-            
-            if rgb_values:
-                if len(rgb_values) >= 4:  # RGBA
-                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{rgb_values[3]})"
-                else:  # RGB
-                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{opacity})"
-            
-            # If extraction failed, try with normalized color
+            # Normalize color first
             normalized_color = self._normalize_color(color)
-            rgb_values = self._extract_rgb_values(normalized_color)
             
-            if rgb_values:
-                if len(rgb_values) >= 4:  # RGBA
-                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{rgb_values[3]})"
-                else:  # RGB
-                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{opacity})"
+            # If it's already in rgba format, return as-is
+            if normalized_color.startswith('rgba('):
+                return normalized_color
+            
+            # If it's in rgb format, convert to rgba
+            if normalized_color.startswith('rgb('):
+                # Extract RGB values and add opacity
+                rgb_match = re.match(r'rgb\((\d+),\s*(\d+),\s*(\d+)\)', normalized_color)
+                if rgb_match:
+                    r, g, b = map(int, rgb_match.groups())
+                    return f"rgba({r},{g},{b},{opacity})"
+            
+            # For hex colors, convert directly like the original code
+            if normalized_color.startswith('#'):
+                hex_color = normalized_color.lstrip('#')
+                if len(hex_color) == 6:
+                    r = int(hex_color[0:2], 16)
+                    g = int(hex_color[2:4], 16)
+                    b = int(hex_color[4:6], 16)
+                    return f"rgba({r},{g},{b},{opacity})"
+                elif len(hex_color) == 3:
+                    r = int(hex_color[0] + hex_color[0], 16)
+                    g = int(hex_color[1] + hex_color[1], 16)
+                    b = int(hex_color[2] + hex_color[2], 16)
+                    return f"rgba({r},{g},{b},{opacity})"
+            
+            # For named colors, try to convert to hex first
+            if not normalized_color.startswith('#') and not normalized_color.startswith('rgb'):
+                # Try to convert named color to hex
+                named_colors = {
+                    'black': '#000000', 'white': '#FFFFFF', 'red': '#FF0000',
+                    'green': '#00FF00', 'blue': '#0000FF', 'yellow': '#FFFF00',
+                    'cyan': '#00FFFF', 'magenta': '#FF00FF', 'gray': '#808080',
+                    'grey': '#808080', 'orange': '#FFA500', 'purple': '#800080',
+                    'brown': '#A52A2A', 'pink': '#FFC0CB', 'lime': '#00FF00',
+                    'navy': '#000080', 'teal': '#008080', 'silver': '#C0C0C0',
+                    'maroon': '#800000', 'olive': '#808000'
+                }
+                
+                color_lower = normalized_color.lower()
+                if color_lower in named_colors:
+                    hex_color = named_colors[color_lower].lstrip('#')
+                    r = int(hex_color[0:2], 16)
+                    g = int(hex_color[2:4], 16)
+                    b = int(hex_color[4:6], 16)
+                    return f"rgba({r},{g},{b},{opacity})"
             
             # Last resort fallback
             return f"rgba(0,0,0,{opacity})"

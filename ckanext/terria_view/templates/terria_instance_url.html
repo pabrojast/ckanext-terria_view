@@ -1,5 +1,11 @@
 {% import 'macros/form.html' as form %}
 
+<style>
+.hidden {
+  display: none !important;
+}
+</style>
+
 {{ form.input('terria_instance_url',
               label=_('URL of TerriaJS Instance'),
               value=data.terria_instance_url,
@@ -38,7 +44,7 @@
     
     {# Input field for custom configuration #}
     {% set show_custom_input = data.custom_config and data.custom_config != 'NA' %}
-    <div id="custom-config-input" style="margin-top: 10px;{% if not show_custom_input %} display: none;{% endif %}">
+    <div id="custom-config-input" class="{% if not show_custom_input %}hidden{% endif %}" style="margin-top: 10px;">
       <input type="text" id="custom-config-url" name="custom_config_url" 
              value="{% if data.custom_config and data.custom_config != 'NA' %}{{ data.custom_config }}{% endif %}"
              placeholder="{{ _('e.g. https://ihp-wins.unesco.org/terria/#share=g-abc123 or https://example.com/terria/#start=...') }}"
@@ -125,7 +131,7 @@
     
     {# Text field for custom URL #}
     {% set show_custom_url = data.style and data.style != 'NA' and (not available_sld_files or data.style not in available_sld_files|map(attribute='url')) %}
-    <div id="custom-style-url" style="margin-top: 10px;{% if not show_custom_url %} display: none;{% endif %}">
+    <div id="custom-style-url" class="{% if not show_custom_url %}hidden{% endif %}" style="margin-top: 10px;">
       <input type="text" id="style-custom-input" name="style_custom_input" 
              value="{% if data.style and data.style != 'NA' %}{{ data.style }}{% endif %}"
              placeholder="{{ _('e.g. https://example.com/style.sld') }}"
@@ -189,11 +195,11 @@ function toggleExample() {
   var example = document.getElementById('help-example');
   var icon = document.getElementById('example-icon');
   
-  if (example.style.display === 'none') {
-    example.style.display = 'block';
+  if (example.classList.contains('hidden')) {
+    example.classList.remove('hidden');
     icon.className = 'fa fa-pause-circle';
   } else {
-    example.style.display = 'none';
+    example.classList.add('hidden');
     icon.className = 'fa fa-play-circle';
   }
 }
@@ -222,10 +228,10 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedOption.value === 'automatic') {
             // Automatic configuration
             customConfigHidden.value = 'NA';
-            customConfigInputDiv.style.display = 'none';
+            customConfigInputDiv.classList.add('hidden'); // Use classList.add/remove
         } else if (selectedOption.value === 'custom') {
             // Custom configuration
-            customConfigInputDiv.style.display = 'block';
+            customConfigInputDiv.classList.remove('hidden'); // Use classList.add/remove
             customConfigHidden.value = customConfigUrlInput.value || 'NA';
         }
     }
@@ -240,15 +246,15 @@ document.addEventListener('DOMContentLoaded', function() {
             // SLD file selected
             var sldUrl = selectedOption.getAttribute('data-sld-url');
             styleHidden.value = sldUrl;
-            customUrlDiv.style.display = 'none';
+            customUrlDiv.classList.add('hidden');
         } else if (selectedOption.value === 'custom_url') {
             // Custom URL
-            customUrlDiv.style.display = 'block';
+            customUrlDiv.classList.remove('hidden');
             styleHidden.value = styleCustomInput.value || 'NA';
         } else {
             // No style
             styleHidden.value = 'NA';
-            customUrlDiv.style.display = 'none';
+            customUrlDiv.classList.add('hidden');
         }
     }
     

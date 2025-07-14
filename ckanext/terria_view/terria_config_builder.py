@@ -319,7 +319,9 @@ class TerriaConfigBuilder:
             # Get SLD styles if available
             sld_styles = None
             if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
+                print(f"Processing SLD for resource format: {resource_format}")
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
+                print(f"SLD styles result: {sld_styles}")
             
             # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
@@ -328,21 +330,26 @@ class TerriaConfigBuilder:
                         if isinstance(model_value, dict) and 'url' in model_value:
                             # Actualizar la URL
                             model_value['url'] = resource_url
+                            print(f"Updated URL for model {model_key}: {resource_url}")
                             
-                            # Apply SLD styles if available, but preserve existing properties
+                            # Apply SLD styles if available
                             if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff']:
-                                # Si ya existe una configuración de estilos, no la sobrescribimos
-                                # Solo agregamos leyendas si no existen
-                                if 'legends' not in model_value and 'legends' in sld_styles:
+                                print(f"Applying SLD styles to model {model_key}")
+                                # Always apply legends if available
+                                if 'legends' in sld_styles:
                                     model_value['legends'] = sld_styles['legends']
+                                    print(f"Applied legends to model {model_key}")
                                 
-                                # Solo para recursos sin estilo definido
-                                if resource_format.lower() == 'shp' and 'styles' not in model_value and 'styles' in sld_styles:
+                                # Apply styles for SHP resources
+                                if resource_format.lower() == 'shp' and 'styles' in sld_styles:
                                     model_value['styles'] = sld_styles['styles']
                                     model_value['activeStyle'] = sld_styles['activeStyle']
+                                    print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
                                     
-                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' not in model_value and 'renderOptions' in sld_styles:
+                                # Apply renderOptions for COG resources
+                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:
                                     model_value['renderOptions'] = sld_styles['renderOptions']
+                                    print(f"Applied renderOptions to model {model_key}")
             
             return json.dumps(start_data)
             
