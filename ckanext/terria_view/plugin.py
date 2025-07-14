@@ -744,6 +744,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                         "id": valid_property_name,
                                         "color": {
                                             "enumColors": enum_colors,
+                                            "colorPalette": "Reds"
                                         }
                                     }]
                                     sld_styles["activeStyle"] = valid_property_name
