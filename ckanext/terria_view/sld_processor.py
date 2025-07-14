@@ -359,8 +359,15 @@ class SLDProcessor:
                         property_name.text.strip() and property_value is not None):
                         valid_property_name = property_name.text.strip()
                         
-                        # Convert to RGBA for TerriaJS
-                        rgba_color = self._convert_hex_to_rgba(normalized_color)
+                        # Convert hex color to RGBA for TerriaJS compatibility
+                        if normalized_color.startswith('#'):
+                            hex_color = normalized_color.lstrip('#')
+                            r = int(hex_color[0:2], 16)
+                            g = int(hex_color[2:4], 16)
+                            b = int(hex_color[4:6], 16)
+                            rgba_color = f"rgba({r},{g},{b},1)"
+                        else:
+                            rgba_color = normalized_color
                         
                         enum_colors.append({
                             "value": property_value.text,
@@ -387,6 +394,7 @@ class SLDProcessor:
                 "id": valid_property_name,
                 "color": {
                     "enumColors": sorted_enum_colors
+                    # Removed colorPalette: "HighContrast" as it's not supported by TerriaJS
                 }
             }]
             result["activeStyle"] = valid_property_name
