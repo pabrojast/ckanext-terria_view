@@ -90,6 +90,45 @@ class SLDProcessor:
         # For other formats, return as-is (named colors, etc.)
         return color
     
+    def _convert_color_to_rgba(self, color: str, opacity: float = 1.0) -> str:
+        """
+        Convert any color format to rgba format for TerriaJS.
+        This is a more comprehensive version of _convert_hex_to_rgba
+        that handles more input formats.
+        
+        Args:
+            color: Color string in any format (hex, rgb, rgba, named)
+            opacity: Default opacity value if not specified in the color
+            
+        Returns:
+            RGBA color string formatted specifically for TerriaJS
+        """
+        try:
+            # Extract RGB/A values using our enhanced function
+            rgb_values = self._extract_rgb_values(color)
+            
+            if rgb_values:
+                if len(rgb_values) >= 4:  # RGBA
+                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{rgb_values[3]})"
+                else:  # RGB
+                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{opacity})"
+            
+            # If extraction failed, try with normalized color
+            normalized_color = self._normalize_color(color)
+            rgb_values = self._extract_rgb_values(normalized_color)
+            
+            if rgb_values:
+                if len(rgb_values) >= 4:  # RGBA
+                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{rgb_values[3]})"
+                else:  # RGB
+                    return f"rgba({int(rgb_values[0])},{int(rgb_values[1])},{int(rgb_values[2])},{opacity})"
+            
+            # Last resort fallback
+            return f"rgba(0,0,0,{opacity})"
+        except Exception as e:
+            print(f"Error converting color to RGBA: {e}")
+            return f"rgba(0,0,0,{opacity})"
+    
     def _convert_hex_to_rgba(self, color: str, opacity: float = 1.0) -> str:
         """
         Convert hex color to rgba format for TerriaJS.
@@ -102,25 +141,8 @@ class SLDProcessor:
         Returns:
             RGBA color string
         """
-        normalized_color = self._normalize_color(color)
-        if normalized_color.startswith('#'):
-            hex_color = normalized_color.lstrip('#')
-            # Asegurar que tenemos un formato de 6 dígitos
-            if len(hex_color) == 3:
-                hex_color = ''.join([c*2 for c in hex_color])
-            
-            # Convertir a valores RGB
-            rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
-            
-            # Formato exacto como TerriaJS espera
-            return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{opacity})"
-        
-        # Si ya es un formato rgba o rgb, devolverlo tal cual
-        elif normalized_color.startswith(('rgb(', 'rgba(')):
-            return normalized_color
-            
-        # Para otros formatos, intentar convertir
-        return color
+        # For backward compatibility, delegate to the more comprehensive function
+        return self._convert_color_to_rgba(color, opacity)
     
     def _extract_numeric_value(self, value_str: str) -> Optional[float]:
         """
@@ -373,22 +395,13 @@ class SLDProcessor:
                     legend_items.append({
                         "title": label,
                         "color": normalized_color
-                    })
-                    
-                    # Only process if property_name has a non-empty value
+                    })                        # Only process if property_name has a non-empty value
                     if (property_name is not None and property_name.text and 
                         property_name.text.strip() and property_value is not None):
                         valid_property_name = property_name.text.strip()
                         
-                        # Convert hex color to RGBA for TerriaJS compatibility
-                        if normalized_color.startswith('#'):
-                            hex_color = normalized_color.lstrip('#')
-                            r = int(hex_color[0:2], 16)
-                            g = int(hex_color[2:4], 16)
-                            b = int(hex_color[4:6], 16)
-                            rgba_color = f"rgba({r},{g},{b},1)"
-                        else:
-                            rgba_color = normalized_color
+                        # Convert any color format to RGBA for TerriaJS compatibility
+                        rgba_color = self._convert_color_to_rgba(normalized_color)
                         
                         # Mantener el formato exacto del valor numérico sin redondeo
                         prop_value = property_value.text
@@ -430,7 +443,8 @@ class SLDProcessor:
             style_config = {
                 "id": valid_property_name,
                 "color": {
-                    "enumColors": sorted_enum_colors
+                    "enumColors": sorted_enum_colors,
+                    "colorPalette": "HighContrast"
                 }
             }
             
@@ -626,13 +640,33 @@ class SLDProcessor:
             elif color.startswith('#'):
                 # Convert hex to RGB
                 hex_color = color.lstrip('#')
-                if len(hex_color) == 6:
+                
+                # Handle different hex formats
+                if len(hex_color) == 6:  # #RRGGBB format
                     r = int(hex_color[0:2], 16)
                     g = int(hex_color[2:4], 16)
                     b = int(hex_color[4:6], 16)
                     return [r, g, b]
+                elif len(hex_color) == 8:  # #RRGGBBAA format
+                    r = int(hex_color[0:2], 16)
+                    g = int(hex_color[2:4], 16)
+                    b = int(hex_color[4:6], 16)
+                    a = int(hex_color[6:8], 16) / 255.0
+                    return [r, g, b, a]
+                elif len(hex_color) == 3:  # #RGB format
+                    r = int(hex_color[0] + hex_color[0], 16)
+                    g = int(hex_color[1] + hex_color[1], 16)
+                    b = int(hex_color[2] + hex_color[2], 16)
+                    return [r, g, b]
+                elif len(hex_color) == 4:  # #RGBA format
+                    r = int(hex_color[0] + hex_color[0], 16)
+                    g = int(hex_color[1] + hex_color[1], 16)
+                    b = int(hex_color[2] + hex_color[2], 16)
+                    a = int(hex_color[3] + hex_color[3], 16) / 255.0
+                    return [r, g, b, a]
                     
-        except Exception:
+        except Exception as e:
+            print(f"Error extracting RGB values: {e}")
             pass
             
         return None
