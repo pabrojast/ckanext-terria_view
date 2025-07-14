@@ -93,6 +93,7 @@ class SLDProcessor:
     def _convert_hex_to_rgba(self, color: str, opacity: float = 1.0) -> str:
         """
         Convert hex color to rgba format for TerriaJS.
+        Ensures proper format for TerriaJS compatibility.
         
         Args:
             color: Hex color string
@@ -104,13 +105,27 @@ class SLDProcessor:
         normalized_color = self._normalize_color(color)
         if normalized_color.startswith('#'):
             hex_color = normalized_color.lstrip('#')
+            # Asegurar que tenemos un formato de 6 dígitos
+            if len(hex_color) == 3:
+                hex_color = ''.join([c*2 for c in hex_color])
+            
+            # Convertir a valores RGB
             rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+            
+            # Formato exacto como TerriaJS espera
             return f"rgba({rgb[0]},{rgb[1]},{rgb[2]},{opacity})"
+        
+        # Si ya es un formato rgba o rgb, devolverlo tal cual
+        elif normalized_color.startswith(('rgb(', 'rgba(')):
+            return normalized_color
+            
+        # Para otros formatos, intentar convertir
         return color
     
     def _extract_numeric_value(self, value_str: str) -> Optional[float]:
         """
         Extract numeric value from property value, handling different formats.
+        Handles scientific notation and long decimal numbers properly.
         
         Args:
             value_str: String containing numeric value
@@ -122,11 +137,13 @@ class SLDProcessor:
             return None
         
         try:
-            # Try direct conversion
+            # Try direct conversion with high precision
+            # Esto manejará correctamente valores como "0.20000000000000001"
             return float(value_str)
         except ValueError:
             # Try to extract numeric part from string
-            numeric_match = re.search(r'[\d.]+', value_str)
+            # Mejorado para manejar notación científica y decimales largos
+            numeric_match = re.search(r'-?\d*\.?\d+(?:[eE][-+]?\d+)?', value_str)
             if numeric_match:
                 try:
                     return float(numeric_match.group())
@@ -138,6 +155,7 @@ class SLDProcessor:
     def _sort_enum_colors_by_value(self, enum_colors: List[Dict]) -> List[Dict]:
         """
         Sort enum colors by numeric value for better TerriaJS rendering.
+        Preserves the exact string representation of values.
         
         Args:
             enum_colors: List of enum color dictionaries
@@ -146,10 +164,13 @@ class SLDProcessor:
             Sorted list of enum colors
         """
         def sort_key(item):
+            # Extraer valor numérico para ordenamiento, pero preservar el valor original
             value = self._extract_numeric_value(item.get('value', ''))
             return value if value is not None else float('inf')
         
-        return sorted(enum_colors, key=sort_key)
+        # Crear una copia para no modificar los valores originales
+        sorted_colors = sorted(enum_colors, key=sort_key)
+        return sorted_colors
     
     def fetch_sld_content(self, sld_url: str) -> Optional[bytes]:
         """
@@ -369,8 +390,18 @@ class SLDProcessor:
                         else:
                             rgba_color = normalized_color
                         
+                        # Mantener el formato exacto del valor numérico sin redondeo
+                        prop_value = property_value.text
+                        # Tratar de preservar formatos numéricos exactos (como "0.20000000000000001")
+                        try:
+                            # Solo convertir a float para ordenamiento posterior
+                            float(prop_value)
+                        except ValueError:
+                            # Si no es un número, dejarlo como texto
+                            pass
+                            
                         enum_colors.append({
-                            "value": property_value.text,
+                            "value": prop_value,
                             "color": rgba_color
                         })
         
@@ -390,13 +421,20 @@ class SLDProcessor:
             # Sort enum colors for better rendering
             sorted_enum_colors = self._sort_enum_colors_by_value(enum_colors)
             
-            result["styles"] = [{
+            # Verificar si hay algún valor no numérico en los enum_colors
+            has_non_numeric = any(
+                not re.match(r'^-?\d*\.?\d+(?:[eE][-+]?\d+)?$', item.get('value', '')) 
+                for item in sorted_enum_colors
+            )
+            
+            style_config = {
                 "id": valid_property_name,
                 "color": {
                     "enumColors": sorted_enum_colors
-                    # Removed colorPalette: "HighContrast" as it's not supported by TerriaJS
                 }
-            }]
+            }
+            
+            result["styles"] = [style_config]
             result["activeStyle"] = valid_property_name
         
         return result

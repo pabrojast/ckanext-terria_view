@@ -329,9 +329,20 @@ class TerriaConfigBuilder:
                             # Actualizar la URL
                             model_value['url'] = resource_url
                             
-                            # Apply SLD styles if available
-                            if sld_styles:
-                                model_value.update(sld_styles)
+                            # Apply SLD styles if available, but preserve existing properties
+                            if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff']:
+                                # Si ya existe una configuración de estilos, no la sobrescribimos
+                                # Solo agregamos leyendas si no existen
+                                if 'legends' not in model_value and 'legends' in sld_styles:
+                                    model_value['legends'] = sld_styles['legends']
+                                
+                                # Solo para recursos sin estilo definido
+                                if resource_format.lower() == 'shp' and 'styles' not in model_value and 'styles' in sld_styles:
+                                    model_value['styles'] = sld_styles['styles']
+                                    model_value['activeStyle'] = sld_styles['activeStyle']
+                                    
+                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' not in model_value and 'renderOptions' in sld_styles:
+                                    model_value['renderOptions'] = sld_styles['renderOptions']
             
             return json.dumps(start_data)
             
