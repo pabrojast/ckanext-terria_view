@@ -12,11 +12,25 @@ import re
 class SLDProcessor:
     """SLD file processor for extracting style information with TerriaJS compatibility."""
     
-    # Standard XML namespaces for SLD
+    # Extended XML namespaces for SLD (based on QGIS implementation)
     NAMESPACES = {
         'sld': 'http://www.opengis.net/sld',
-        'se': 'http://www.opengis.net/se',
-        'ogc': 'http://www.opengis.net/ogc'
+        'se': 'http://www.opengis.net/se', 
+        'ogc': 'http://www.opengis.net/ogc',
+        'xlink': 'http://www.w3.org/1999/xlink',
+        'gml': 'http://www.opengis.net/gml',
+        'ows': 'http://www.opengis.net/ows'
+    }
+    
+    # Well-known SLD attribute names for color properties (based on QGIS)
+    COLOR_PROPERTIES = ['fill', 'stroke', 'fill-color', 'stroke-color']
+    
+    # Default values for missing properties (following QGIS defaults)
+    DEFAULTS = {
+        'fill_color': '#808080',  # Gray
+        'stroke_color': '#000000',  # Black
+        'stroke_width': 1.0,
+        'opacity': 1.0
     }
     
     def __init__(self):
@@ -26,6 +40,7 @@ class SLDProcessor:
     def _normalize_color(self, color: str) -> str:
         """
         Normalize color values to ensure TerriaJS compatibility.
+        Enhanced color parsing based on QGIS implementation.
         
         Args:
             color: Color string (hex, rgb, rgba, or named color)
@@ -45,9 +60,86 @@ class SLDProcessor:
             if len(hex_color) == 3:
                 # Convert 3-digit hex to 6-digit
                 hex_color = ''.join([c*2 for c in hex_color])
-            elif len(hex_color) != 6:
+            elif len(hex_color) == 6:
+                return f"#{hex_color.upper()}"
+            elif len(hex_color) == 8:
+                # 8-digit hex with alpha, take first 6 digits
+                return f"#{hex_color[:6].upper()}"
+            else:
                 return "#000000"  # Invalid hex, return black
             return f"#{hex_color.upper()}"
+        
+        # Handle RGB format: rgb(r,g,b) or rgba(r,g,b,a)
+        rgb_match = re.match(r'rgba?\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*[\d.]+)?\s*\)', color.lower())
+        if rgb_match:
+            r, g, b = map(int, rgb_match.groups())
+            # Clamp values to 0-255 range
+            r = max(0, min(255, r))
+            g = max(0, min(255, g))
+            b = max(0, min(255, b))
+            return f"#{r:02X}{g:02X}{b:02X}"
+        
+        # Handle percentage RGB format: rgb(r%,g%,b%)
+        rgb_percent_match = re.match(r'rgba?\s*\(\s*([\d.]+)%\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%(?:\s*,\s*[\d.]+)?\s*\)', color.lower())
+        if rgb_percent_match:
+            r_pct, g_pct, b_pct = map(float, rgb_percent_match.groups())
+            r = int(max(0, min(100, r_pct)) * 2.55)
+            g = int(max(0, min(100, g_pct)) * 2.55)
+            b = int(max(0, min(100, b_pct)) * 2.55)
+            return f"#{r:02X}{g:02X}{b:02X}"
+        
+        # Handle HSL format: hsl(h,s%,l%)
+        hsl_match = re.match(r'hsla?\s*\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%(?:\s*,\s*[\d.]+)?\s*\)', color.lower())
+        if hsl_match:
+            h, s, l = map(float, hsl_match.groups())
+            # Convert HSL to RGB (simplified conversion)
+            h = h / 360.0
+            s = s / 100.0
+            l = l / 100.0
+            
+            def hue_to_rgb(p, q, t):
+                if t < 0: t += 1
+                if t > 1: t -= 1
+                if t < 1/6: return p + (q - p) * 6 * t
+                if t < 1/2: return q
+                if t < 2/3: return p + (q - p) * (2/3 - t) * 6
+                return p
+            
+            if s == 0:
+                r = g = b = l  # achromatic
+            else:
+                q = l * (1 + s) if l < 0.5 else l + s - l * s
+                p = 2 * l - q
+                r = hue_to_rgb(p, q, h + 1/3)
+                g = hue_to_rgb(p, q, h)
+                b = hue_to_rgb(p, q, h - 1/3)
+            
+            r = int(r * 255)
+            g = int(g * 255)
+            b = int(b * 255)
+            return f"#{r:02X}{g:02X}{b:02X}"
+        
+        # Handle named colors (basic set based on QGIS)
+        named_colors = {
+            'black': '#000000',
+            'white': '#FFFFFF',
+            'red': '#FF0000',
+            'green': '#008000',
+            'blue': '#0000FF',
+            'yellow': '#FFFF00',
+            'cyan': '#00FFFF',
+            'magenta': '#FF00FF',
+            'gray': '#808080',
+            'grey': '#808080',
+            'transparent': '#000000'  # Handle transparent as black
+        }
+        
+        lower_color = color.lower()
+        if lower_color in named_colors:
+            return named_colors[lower_color]
+        
+        # If nothing matches, return black as default
+        return "#000000"
         
         # Handle RGB/RGBA format
         if color.startswith(('rgb(', 'rgba(')):
@@ -606,7 +698,7 @@ class SLDProcessor:
     
     def _find_user_styles(self, root) -> List:
         """
-        Find UserStyle elements in SLD following QGIS approach.
+        Find UserStyle elements in SLD following QGIS approach with enhanced detection.
         
         Args:
             root: XML root element
@@ -617,23 +709,78 @@ class SLDProcessor:
         user_styles = []
         
         try:
-            # Try with namespace first
-            user_styles = root.findall('.//sld:UserStyle', self.NAMESPACES)
+            # Primary search patterns following QGIS approach
+            search_patterns = [
+                './/sld:UserStyle',
+                './/se:UserStyle', 
+                './/UserStyle',
+                './/sld:NamedLayer/sld:UserStyle',
+                './/NamedLayer/UserStyle'
+            ]
             
-            # Fallback: try without namespace
-            if not user_styles:
-                user_styles = root.findall('.//UserStyle')
+            for pattern in search_patterns:
+                if pattern.startswith('.//sld:') or pattern.startswith('.//se:'):
+                    user_styles = root.findall(pattern, self.NAMESPACES)
+                else:
+                    user_styles = root.findall(pattern)
+                    
+                if user_styles:
+                    print(f"Found {len(user_styles)} UserStyle elements using pattern: {pattern}")
+                    break
             
-            print(f"Found {len(user_styles)} UserStyle elements")
+            # Additional validation: check if UserStyle elements have valid content
+            if user_styles:
+                valid_styles = []
+                for style in user_styles:
+                    if self._has_valid_symbolizers(style):
+                        valid_styles.append(style)
+                    else:
+                        print(f"UserStyle element found but lacks valid symbolizers")
+                
+                user_styles = valid_styles
+                print(f"After validation: {len(user_styles)} valid UserStyle elements")
             
         except Exception as e:
             print(f"Error finding UserStyle elements: {e}")
         
         return user_styles
     
+    def _has_valid_symbolizers(self, style_element) -> bool:
+        """
+        Check if a style element contains valid symbolizers (based on QGIS hasSldSymbolizer).
+        
+        Args:
+            style_element: Style XML element to check
+            
+        Returns:
+            True if element contains valid symbolizers
+        """
+        try:
+            symbolizer_types = [
+                'PointSymbolizer', 'LineSymbolizer', 'PolygonSymbolizer',
+                'TextSymbolizer', 'RasterSymbolizer'
+            ]
+            
+            for symbolizer in symbolizer_types:
+                # Check with namespace
+                if style_element.findall(f'.//sld:{symbolizer}', self.NAMESPACES):
+                    return True
+                if style_element.findall(f'.//se:{symbolizer}', self.NAMESPACES):
+                    return True
+                    
+                # Check without namespace
+                if style_element.findall(f'.//{symbolizer}'):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error checking for valid symbolizers: {e}")
+            return False
+    
     def _find_feature_type_styles(self, user_style) -> List:
         """
-        Find FeatureTypeStyle elements within a UserStyle.
+        Find FeatureTypeStyle elements within a UserStyle with enhanced detection.
         
         Args:
             user_style: UserStyle XML element
@@ -644,14 +791,38 @@ class SLDProcessor:
         feature_styles = []
         
         try:
-            # Try with namespace first
-            feature_styles = user_style.findall('sld:FeatureTypeStyle', self.NAMESPACES)
+            # Enhanced search patterns based on QGIS approach
+            search_patterns = [
+                'sld:FeatureTypeStyle',
+                'se:FeatureTypeStyle',
+                'FeatureTypeStyle',
+                './sld:FeatureTypeStyle',
+                './se:FeatureTypeStyle',
+                './FeatureTypeStyle'
+            ]
             
-            # Fallback: try without namespace
-            if not feature_styles:
-                feature_styles = user_style.findall('FeatureTypeStyle')
+            for pattern in search_patterns:
+                if pattern.startswith('sld:') or pattern.startswith('se:') or pattern.startswith('./sld:') or pattern.startswith('./se:'):
+                    feature_styles = user_style.findall(pattern, self.NAMESPACES)
+                else:
+                    feature_styles = user_style.findall(pattern)
+                    
+                if feature_styles:
+                    print(f"Found {len(feature_styles)} FeatureTypeStyle elements using pattern: {pattern}")
+                    break
             
-            print(f"Found {len(feature_styles)} FeatureTypeStyle elements in UserStyle")
+            # Validate that FeatureTypeStyles contain rules
+            if feature_styles:
+                valid_styles = []
+                for style in feature_styles:
+                    rules = self._find_rules_in_feature_style(style)
+                    if rules:
+                        valid_styles.append(style)
+                        print(f"FeatureTypeStyle contains {len(rules)} rules")
+                    else:
+                        print("FeatureTypeStyle found but contains no valid rules")
+                
+                feature_styles = valid_styles
             
         except Exception as e:
             print(f"Error finding FeatureTypeStyle elements: {e}")
@@ -1273,7 +1444,8 @@ class SLDProcessor:
     
     def _extract_range_filter_info(self, and_filter) -> Tuple[Optional[str], List[str]]:
         """
-        Extract property information from range-based AND filters.
+        Extract property information from range-based AND filters with enhanced error handling.
+        Based on QGIS approach with support for various filter patterns.
         
         Args:
             and_filter: XML AND filter element
@@ -1287,62 +1459,221 @@ class SLDProcessor:
         try:
             print(f"Processing AND filter with {len(list(and_filter))} children")
             
-            # Get property name from any condition
-            for condition in and_filter.findall('.//ogc:PropertyName', self.NAMESPACES):
-                if condition.text and condition.text.strip():
-                    property_name = condition.text.strip()
-                    break
+            # Enhanced property name extraction with multiple fallbacks
+            property_name = self._extract_property_name_from_filter(and_filter)
             
-            # Fallback: try without namespace
             if not property_name:
-                for condition in and_filter.findall('.//PropertyName'):
-                    if condition.text and condition.text.strip():
-                        property_name = condition.text.strip()
-                        break
+                print("No property name found in AND filter")
+                return None, []
             
-            # Extract range bounds
+            print(f"Found property name: {property_name}")
+            
+            # Extract range bounds with better error handling
+            range_info = self._extract_range_bounds(and_filter)
+            
+            if range_info:
+                min_val, max_val = range_info
+                
+                # Format the range appropriately
+                if min_val is not None and max_val is not None:
+                    # Create range representation
+                    if min_val == max_val:
+                        property_values = [str(min_val)]
+                    else:
+                        # Use max value as the primary value for TerriaJS bins
+                        property_values = [str(max_val)]
+                    
+                    print(f"Extracted range: {min_val} to {max_val}")
+                    print(f"Property values: {property_values}")
+                elif min_val is not None:
+                    property_values = [str(min_val)]
+                    print(f"Extracted minimum value: {min_val}")
+                elif max_val is not None:
+                    property_values = [str(max_val)]
+                    print(f"Extracted maximum value: {max_val}")
+            
+            # Additional pattern matching for edge cases
+            if not property_values:
+                property_values = self._extract_fallback_values(and_filter, property_name)
+            
+        except Exception as e:
+            print(f"Error extracting range filter info: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return property_name, property_values
+    
+    def _extract_property_name_from_filter(self, filter_element) -> Optional[str]:
+        """
+        Extract property name from filter element with multiple search strategies.
+        
+        Args:
+            filter_element: Filter XML element
+            
+        Returns:
+            Property name or None
+        """
+        try:
+            # Strategy 1: Direct PropertyName search with namespaces
+            for ns_prefix in ['ogc', 'se', 'sld']:
+                property_names = filter_element.findall(f'.//{ns_prefix}:PropertyName', self.NAMESPACES)
+                for prop in property_names:
+                    if prop.text and prop.text.strip():
+                        return prop.text.strip()
+            
+            # Strategy 2: Search without namespaces
+            property_names = filter_element.findall('.//PropertyName')
+            for prop in property_names:
+                if prop.text and prop.text.strip():
+                    return prop.text.strip()
+            
+            # Strategy 3: Search in comparison operators
+            comparison_ops = [
+                'PropertyIsEqualTo', 'PropertyIsGreaterThan', 'PropertyIsLessThan',
+                'PropertyIsGreaterThanOrEqualTo', 'PropertyIsLessThanOrEqualTo',
+                'PropertyIsBetween'
+            ]
+            
+            for op in comparison_ops:
+                # With namespaces
+                elements = filter_element.findall(f'.//ogc:{op}', self.NAMESPACES)
+                for elem in elements:
+                    prop_elem = elem.find('ogc:PropertyName', self.NAMESPACES)
+                    if prop_elem is not None and prop_elem.text:
+                        return prop_elem.text.strip()
+                
+                # Without namespaces
+                elements = filter_element.findall(f'.//{op}')
+                for elem in elements:
+                    prop_elem = elem.find('PropertyName')
+                    if prop_elem is not None and prop_elem.text:
+                        return prop_elem.text.strip()
+            
+        except Exception as e:
+            print(f"Error extracting property name: {e}")
+        
+        return None
+    
+    def _extract_range_bounds(self, and_filter) -> Optional[Tuple[Optional[float], Optional[float]]]:
+        """
+        Extract minimum and maximum bounds from AND filter.
+        
+        Args:
+            and_filter: AND filter element
+            
+        Returns:
+            Tuple of (min_val, max_val) or None
+        """
+        try:
             min_val = None
             max_val = None
             
-            # Try with namespaces first
-            greater_than = and_filter.find('.//ogc:PropertyIsGreaterThan/ogc:Literal', self.NAMESPACES)
-            greater_equal = and_filter.find('.//ogc:PropertyIsGreaterThanOrEqualTo/ogc:Literal', self.NAMESPACES)
-            less_than = and_filter.find('.//ogc:PropertyIsLessThan/ogc:Literal', self.NAMESPACES)
-            less_equal = and_filter.find('.//ogc:PropertyIsLessThanOrEqualTo/ogc:Literal', self.NAMESPACES)
+            # Search patterns for different comparison operators
+            patterns = [
+                ('PropertyIsGreaterThan', 'min'),
+                ('PropertyIsGreaterThanOrEqualTo', 'min'),
+                ('PropertyIsLessThan', 'max'),
+                ('PropertyIsLessThanOrEqualTo', 'max')
+            ]
             
-            # Only try fallback if we didn't find anything with namespaces
-            if all(x is None for x in [greater_than, greater_equal, less_than, less_equal]):
-                greater_than = and_filter.find('.//PropertyIsGreaterThan/Literal')
-                greater_equal = and_filter.find('.//PropertyIsGreaterThanOrEqualTo/Literal')
-                less_than = and_filter.find('.//PropertyIsLessThan/Literal')
-                less_equal = and_filter.find('.//PropertyIsLessThanOrEqualTo/Literal')
-            
-            # Extract numeric bounds
-            if greater_than is not None:
-                if greater_than.text is not None:
-                    min_val = self._safe_float_conversion(greater_than.text)
-            elif greater_equal is not None:
-                if greater_equal.text is not None:
-                    min_val = self._safe_float_conversion(greater_equal.text)
-            
-            if less_than is not None:
-                if less_than.text is not None:
-                    max_val = self._safe_float_conversion(less_than.text)
-            elif less_equal is not None:
-                if less_equal.text is not None:
-                    max_val = self._safe_float_conversion(less_equal.text)
-            
-            # Use maximum value for binMaximums (TerriaJS requirement)
-            if max_val is not None:
-                property_values.append(str(max_val))
-            elif min_val is not None:
-                property_values.append(str(min_val))
+            for pattern, bound_type in patterns:
+                # Try with namespaces
+                elements = and_filter.findall(f'.//ogc:{pattern}', self.NAMESPACES)
+                for elem in elements:
+                    literal = elem.find('ogc:Literal', self.NAMESPACES)
+                    if literal is not None and literal.text:
+                        value = self._safe_float_conversion(literal.text)
+                        if value is not None:
+                            if bound_type == 'min':
+                                min_val = value
+                            else:
+                                max_val = value
                 
+                # Try without namespaces if not found
+                if (bound_type == 'min' and min_val is None) or (bound_type == 'max' and max_val is None):
+                    elements = and_filter.findall(f'.//{pattern}')
+                    for elem in elements:
+                        literal = elem.find('Literal')
+                        if literal is not None and literal.text:
+                            value = self._safe_float_conversion(literal.text)
+                            if value is not None:
+                                if bound_type == 'min':
+                                    min_val = value
+                                else:
+                                    max_val = value
+            
+            # Special case: PropertyIsBetween
+            between_elem = and_filter.find('.//ogc:PropertyIsBetween', self.NAMESPACES)
+            if between_elem is None:
+                between_elem = and_filter.find('.//PropertyIsBetween')
+            
+            if between_elem is not None:
+                lower = between_elem.find('.//ogc:LowerBoundary/ogc:Literal', self.NAMESPACES)
+                upper = between_elem.find('.//ogc:UpperBoundary/ogc:Literal', self.NAMESPACES)
+                
+                if lower is None:
+                    lower = between_elem.find('.//LowerBoundary/Literal')
+                if upper is None:
+                    upper = between_elem.find('.//UpperBoundary/Literal')
+                
+                if lower is not None and lower.text:
+                    min_val = self._safe_float_conversion(lower.text)
+                if upper is not None and upper.text:
+                    max_val = self._safe_float_conversion(upper.text)
+            
+            if min_val is not None or max_val is not None:
+                return (min_val, max_val)
+            
         except Exception as e:
-            print(f"Error extracting range filter info: {e}")
+            print(f"Error extracting range bounds: {e}")
         
-        print(f"Final result - property_name: {property_name}, property_values: {property_values}")
-        return property_name, property_values
+        return None
+    
+    def _extract_fallback_values(self, filter_element, property_name: str) -> List[str]:
+        """
+        Extract values using fallback methods when standard range extraction fails.
+        
+        Args:
+            filter_element: Filter XML element
+            property_name: Property name to look for
+            
+        Returns:
+            List of extracted values
+        """
+        values = []
+        
+        try:
+            # Look for any Literal values in the filter
+            literals = filter_element.findall('.//ogc:Literal', self.NAMESPACES)
+            if not literals:
+                literals = filter_element.findall('.//Literal')
+            
+            for literal in literals:
+                if literal.text and literal.text.strip():
+                    # Try to convert to float for validation
+                    value = self._safe_float_conversion(literal.text.strip())
+                    if value is not None:
+                        values.append(str(value))
+                    else:
+                        # Keep non-numeric values too
+                        values.append(literal.text.strip())
+            
+            # Remove duplicates while preserving order
+            seen = set()
+            unique_values = []
+            for value in values:
+                if value not in seen:
+                    seen.add(value)
+                    unique_values.append(value)
+            
+            if unique_values:
+                print(f"Fallback extraction found values: {unique_values}")
+            
+            return unique_values
+            
+        except Exception as e:
+            print(f"Error in fallback value extraction: {e}")
+            return []
     
     def _safe_float_conversion(self, value: str) -> Optional[float]:
         """
@@ -1416,108 +1747,290 @@ class SLDProcessor:
     
     def _create_terria_styles(self, enum_colors: List[Dict], property_name: str) -> Dict[str, Any]:
         """
-        Create TerriaJS-compatible style configuration.
+        Create TerriaJS-compatible style configuration with enhanced validation.
+        Based on QGIS best practices for reliable styling.
         
         Args:
-            enum_colors: List of color mappings
+            enum_colors: List of color/value mappings
             property_name: Property name for styling
             
         Returns:
-            Dictionary with style configuration
+            TerriaJS style configuration
         """
-        result = {}
+        if not enum_colors or not property_name:
+            print("Cannot create TerriaJS styles: missing colors or property name")
+            return {}
         
         try:
-            print(f"Creating styles for property: {property_name}")
-            print(f"Number of enum colors: {len(enum_colors)}")
+            # Validate and sort enum colors
+            valid_colors = self._validate_enum_colors(enum_colors)
+            if not valid_colors:
+                print("No valid colors found after validation")
+                return {}
             
-            if not enum_colors:
-                return result
+            # Sort by numeric value for proper gradient
+            sorted_colors = self._sort_enum_colors(valid_colors)
             
-            # Sort enum colors by their numeric value for better rendering
-            sorted_enum_colors = self._safe_sort_enum_colors(enum_colors)
-            
-            # Remove duplicates while preserving order
-            unique_colors = []
-            seen_values = set()
-            for color_info in sorted_enum_colors:
-                value = color_info.get('value', '')
-                if value not in seen_values:
-                    unique_colors.append(color_info)
-                    seen_values.add(value)
-            
-            if not unique_colors:
-                print("No unique color values found")
-                return result
-            
-            # Create bin configuration for range-based styling
+            # Extract bin maximums and colors for TerriaJS
             bin_maximums = []
-            bin_colors = []
+            colors = []
             
-            for color_info in unique_colors:
+            for item in sorted_colors:
                 try:
-                    value = float(color_info['value'])
-                    if not self._is_reasonable_numeric_value(value):
-                        print(f"Warning: Skipping unreasonable value: {value}")
-                        continue
-                        
-                    bin_maximums.append(value)
-                    bin_colors.append(color_info['color'])
-                except (ValueError, TypeError):
-                    print(f"Warning: Skipping non-numeric value: {color_info.get('value', 'unknown')}")
+                    # Convert value to float for binMaximums
+                    value = self._safe_float_conversion(str(item['value']))
+                    if value is not None:
+                        bin_maximums.append(value)
+                        colors.append(item['color'])
+                    else:
+                        print(f"Skipping invalid numeric value: {item['value']}")
+                except Exception as e:
+                    print(f"Error processing color item {item}: {e}")
                     continue
             
-            if not bin_maximums:
-                print("No valid numeric values found for binning")
-                return result
+            if not bin_maximums or not colors:
+                print("No valid bin maximums or colors after processing")
+                return {}
             
-            # Validate we have matching arrays
-            if len(bin_maximums) != len(bin_colors):
-                print(f"Warning: Mismatched bin arrays - maximums: {len(bin_maximums)}, colors: {len(bin_colors)}")
-                min_length = min(len(bin_maximums), len(bin_colors))
+            # Ensure we have matching arrays
+            if len(bin_maximums) != len(colors):
+                print(f"Mismatch between bin_maximums ({len(bin_maximums)}) and colors ({len(colors)})")
+                min_length = min(len(bin_maximums), len(colors))
                 bin_maximums = bin_maximums[:min_length]
-                bin_colors = bin_colors[:min_length]
+                colors = colors[:min_length]
             
-            # Create style configuration
-            style_config = {
-                "id": self._sanitize_style_id(property_name),
-                "title": f"Style by {property_name}",
-                "color": {
-                    "mapType": "bin",
-                    "colorColumn": property_name,
+            # Create TerriaJS configuration
+            config = {
+                "scale": {
+                    "type": "enum",
                     "binMaximums": bin_maximums,
-                    "binColors": bin_colors
-                }
+                    "binColors": colors,
+                    "nullColor": self.DEFAULTS['fill_color']
+                },
+                "column": property_name,
+                "colorProperty": property_name,
+                "useRealValue": True
             }
             
-            result["styles"] = [style_config]
-            result["activeStyle"] = self._sanitize_style_id(property_name)
-            result["forceCesiumPrimitives"] = True
+            print(f"Created TerriaJS config with {len(bin_maximums)} bins")
+            print(f"Bin maximums: {bin_maximums}")
+            print(f"Colors: {colors}")
             
-            print(f"Created style config with {len(bin_maximums)} bins")
+            return config
             
         except Exception as e:
             print(f"Error creating TerriaJS styles: {e}")
             import traceback
             traceback.print_exc()
+            return {}
+    
+    def _validate_enum_colors(self, enum_colors: List[Dict]) -> List[Dict]:
+        """
+        Validate enum colors for TerriaJS compatibility.
         
-        return result
+        Args:
+            enum_colors: List of color dictionaries
+            
+        Returns:
+            List of validated color dictionaries
+        """
+        valid_colors = []
+        
+        for i, item in enumerate(enum_colors):
+            try:
+                # Validate required fields
+                if not isinstance(item, dict):
+                    print(f"Item {i}: Not a dictionary, skipping")
+                    continue
+                
+                if 'value' not in item or 'color' not in item:
+                    print(f"Item {i}: Missing required fields (value/color), skipping")
+                    continue
+                
+                # Validate value
+                value = item['value']
+                if value is None or str(value).strip() == '':
+                    print(f"Item {i}: Empty value, skipping")
+                    continue
+                
+                # Validate color
+                color = item['color']
+                if not color or not isinstance(color, str):
+                    print(f"Item {i}: Invalid color '{color}', skipping")
+                    continue
+                
+                # Normalize color
+                normalized_color = self._normalize_color(color)
+                if normalized_color == "#000000" and color.lower() not in ['black', '#000000', '#000']:
+                    print(f"Item {i}: Color '{color}' normalized to black, might be invalid")
+                
+                # Create validated item
+                validated_item = {
+                    'value': value,
+                    'color': normalized_color,
+                    'originalColor': color
+                }
+                
+                valid_colors.append(validated_item)
+                
+            except Exception as e:
+                print(f"Error validating item {i}: {e}")
+                continue
+        
+        print(f"Validated {len(valid_colors)} out of {len(enum_colors)} color items")
+        return valid_colors
+    
+    def _detect_sld_version(self, root) -> str:
+        """
+        Detect SLD version from XML root element.
+        
+        Args:
+            root: XML root element
+            
+        Returns:
+            SLD version string
+        """
+        try:
+            # Check version attribute
+            version = root.get('version')
+            if version:
+                return version
+            
+            # Check schema location for version hints
+            schema_location = root.get('{http://www.w3.org/2001/XMLSchema-instance}schemaLocation')
+            if schema_location:
+                if '1.0.0' in schema_location:
+                    return '1.0.0'
+                elif '1.1.0' in schema_location:
+                    return '1.1.0'
+            
+            # Check namespace URIs
+            for prefix, uri in self.NAMESPACES.items():
+                if uri in str(ET.tostring(root, encoding='unicode')[:1000]):
+                    if 'se' in uri:
+                        return '1.1.0'  # SE namespace indicates SLD 1.1
+                    elif 'sld' in uri:
+                        return '1.0.0'  # Traditional SLD namespace
+            
+            # Default fallback
+            return 'unknown'
+            
+        except Exception as e:
+            print(f"Error detecting SLD version: {e}")
+            return 'unknown'
+    
+    def _enhance_error_resilience(self, root) -> bool:
+        """
+        Apply error resilience enhancements based on SLD content analysis.
+        
+        Args:
+            root: XML root element
+            
+        Returns:
+            True if enhancements were applied successfully
+        """
+        try:
+            sld_version = self._detect_sld_version(root)
+            print(f"Detected SLD version: {sld_version}")
+            
+            # Count different symbolizer types
+            symbolizer_counts = self._count_symbolizers(root)
+            print(f"Symbolizers found: {symbolizer_counts}")
+            
+            # Check for complex filters
+            has_complex_filters = self._has_complex_filters(root)
+            if has_complex_filters:
+                print("Complex filters detected - using enhanced processing")
+            
+            # Validate structure integrity
+            structure_valid = self._validate_sld_structure(root)
+            if not structure_valid:
+                print("Warning: SLD structure validation issues detected")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error in error resilience enhancement: {e}")
+            return False
+    
+    def _count_symbolizers(self, root) -> Dict[str, int]:
+        """Count different types of symbolizers in the SLD."""
+        symbolizer_types = [
+            'PointSymbolizer', 'LineSymbolizer', 'PolygonSymbolizer',
+            'TextSymbolizer', 'RasterSymbolizer'
+        ]
+        
+        counts = {}
+        for symbolizer in symbolizer_types:
+            count = 0
+            count += len(root.findall(f'.//sld:{symbolizer}', self.NAMESPACES))
+            count += len(root.findall(f'.//se:{symbolizer}', self.NAMESPACES))
+            count += len(root.findall(f'.//{symbolizer}'))
+            counts[symbolizer] = count
+        
+        return counts
+    
+    def _has_complex_filters(self, root) -> bool:
+        """Check if SLD contains complex filters that need special handling."""
+        try:
+            # Look for AND/OR filters
+            complex_filters = (
+                len(root.findall('.//ogc:And', self.NAMESPACES)) +
+                len(root.findall('.//ogc:Or', self.NAMESPACES)) +
+                len(root.findall('.//And')) +
+                len(root.findall('.//Or'))
+            )
+            
+            return complex_filters > 0
+            
+        except Exception:
+            return False
+    
+    def _validate_sld_structure(self, root) -> bool:
+        """Validate basic SLD structure integrity."""
+        try:
+            # Check for required root element
+            if root.tag not in ['StyledLayerDescriptor', '{http://www.opengis.net/sld}StyledLayerDescriptor']:
+                print("Invalid root element")
+                return False
+            
+            # Check for at least one layer
+            layers = (
+                root.findall('.//sld:NamedLayer', self.NAMESPACES) +
+                root.findall('.//sld:UserLayer', self.NAMESPACES) +
+                root.findall('.//NamedLayer') +
+                root.findall('.//UserLayer')
+            )
+            
+            if not layers:
+                print("No layers found in SLD")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error validating SLD structure: {e}")
+            return False
     
     def _safe_sort_enum_colors(self, enum_colors: List[Dict]) -> List[Dict]:
         """
         Safely sort enum colors by numeric value.
         
         Args:
-            enum_colors: List of color dictionaries
+            enum_colors: List of color mappings
             
         Returns:
-            Sorted list of color dictionaries
+            Sorted list of color mappings
         """
-        try:
-            return sorted(enum_colors, key=lambda x: float(x.get('value', 0)))
-        except (ValueError, TypeError):
-            print("Warning: Could not sort enum colors numerically, using original order")
-            return enum_colors
+        def sort_key(item):
+            # Extraer valor numérico para ordenamiento, pero preservar el valor original
+            value = self._extract_numeric_value(item.get('value', ''))
+            return value if value is not None else float('inf')
+        
+        # Crear una copia para no modificar los valores originales
+        sorted_colors = sorted(enum_colors, key=sort_key)
+        return sorted_colors
     
     def _is_reasonable_numeric_value(self, value: float) -> bool:
         """
@@ -1600,3 +2113,70 @@ class SLDProcessor:
             "opacity": 0.8,
             "clampToGround": False
         }
+    
+    def process_shp_sld_from_content(self, sld_content: str) -> Dict[str, Any]:
+        """
+        Process SLD content directly from string with enhanced error handling.
+        
+        Args:
+            sld_content: SLD XML content as string
+            
+        Returns:
+            Dictionary with style information for Shapefile
+        """
+        if not sld_content or not isinstance(sld_content, str):
+            print("Invalid SLD content provided")
+            return {}
+        
+        try:
+            # Parse XML with enhanced error handling
+            root = self.parse_sld_xml(sld_content.encode('utf-8'))
+            if root is None:
+                print("Failed to parse SLD XML content")
+                return {}
+            
+            # Apply error resilience enhancements
+            if not self._enhance_error_resilience(root):
+                print("Warning: Error resilience enhancements failed")
+            
+            # Process using existing method workflow
+            user_styles = self._find_user_styles(root)
+            if not user_styles:
+                print("No UserStyle elements found in SLD content")
+                return self._create_fallback_result([])
+            
+            # Get the first user style and extract rules
+            user_style = user_styles[0]
+            feature_styles = self._find_feature_type_styles(user_style)
+            
+            if not feature_styles:
+                print("No FeatureTypeStyle found in UserStyle")
+                return self._create_fallback_result([])
+            
+            # Extract rules from the first feature style
+            rules = self._extract_rules_from_feature_style(feature_styles[0])
+            
+            if not rules:
+                print("No rules found in FeatureTypeStyle")
+                return self._create_fallback_result([])
+            
+            # Process rules using existing logic
+            property_name, table_style = self._process_rules_qgis_style(rules)
+            legends = self._create_legend_from_rules(rules, property_name)
+            
+            # Create result following the existing pattern
+            result = {
+                'tableStyle': table_style,
+                'legends': legends
+            }
+            
+            # Add basic styling
+            result.update(self._create_fallback_styling())
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error processing SLD content: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._create_fallback_result([])
