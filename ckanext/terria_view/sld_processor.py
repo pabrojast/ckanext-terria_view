@@ -1830,14 +1830,38 @@ class SLDProcessor:
                 print("No valid enum color traits after processing")
                 return {}
             
-            # TableStyleTraits configuration
+            # For range-based data, use 'bin' mapType with binMaximums
+            # This creates a DiscreteColorMap which handles ranges properly
+            map_type = "bin"
+            print(f"Using map type: {map_type} for {len(enum_color_traits)} color values (range-based data)")
+            
+            # For bin-based mapping, we need binMaximums and binColors
+            bin_maximums = []
+            bin_colors = []
+            
+            for item in enum_color_traits:
+                try:
+                    # Extract the maximum value for this bin
+                    max_value = float(item['value'])
+                    bin_maximums.append(max_value)
+                    bin_colors.append(item['color'])
+                except (ValueError, KeyError) as e:
+                    print(f"Error processing bin item {item}: {e}")
+                    continue
+            
+            if not bin_maximums:
+                print("No valid bin maximums after processing")
+                return {}
+            
+            # TableStyleTraits configuration for bin mapping
             style_config = {
                 "id": "sld-style",
                 "title": "SLD Style",
                 "color": {
-                    "mapType": "enum",
+                    "mapType": map_type,
                     "colorColumn": property_name,
-                    "enumColors": enum_color_traits,
+                    "binMaximums": bin_maximums,
+                    "binColors": bin_colors,
                     "nullColor": self.DEFAULTS['fill_color']
                 }
             }
@@ -1935,6 +1959,70 @@ class SLDProcessor:
         # Create a copy to not modify the original values
         sorted_colors = sorted(enum_colors, key=sort_key)
         return sorted_colors
+    
+    def _detect_map_type(self, enum_color_traits: List[Dict]) -> str:
+        """
+        Detect whether the data should use 'continuous' or 'enum' mapping type.
+        
+        Criteria for continuous:
+        - All values are numeric
+        - Values appear to be range boundaries (like 0.2, 0.5, 0.68, etc.)
+        - Multiple ordered values suggest a gradient
+        
+        Args:
+            enum_color_traits: List of color trait dictionaries
+            
+        Returns:
+            'continuous' for continuous data, 'enum' for categorical data
+        """
+        if not enum_color_traits or len(enum_color_traits) < 2:
+            return "enum"
+        
+        try:
+            # Check if all values are numeric
+            numeric_values = []
+            for item in enum_color_traits:
+                value = item.get('value', '')
+                numeric_value = self._extract_numeric_value(str(value))
+                if numeric_value is None:
+                    # If any value is not numeric, treat as categorical
+                    print(f"Non-numeric value detected: '{value}' - using enum mapping")
+                    return "enum"
+                numeric_values.append(numeric_value)
+            
+            # All values are numeric, check if they form a continuous range
+            numeric_values.sort()
+            
+            # Check for patterns that suggest continuous data:
+            # 1. Values between 0 and 1 (common for normalized data)
+            # 2. Values appear to be range boundaries
+            # 3. Regular intervals or increasing values
+            
+            min_val, max_val = min(numeric_values), max(numeric_values)
+            
+            # Pattern 1: Values between 0 and 1 suggest continuous normalized data
+            if 0 <= min_val <= 1 and 0 <= max_val <= 1:
+                print(f"Values in 0-1 range detected: {numeric_values} - using continuous mapping")
+                return "continuous"
+            
+            # Pattern 2: Multiple ordered values suggest a gradient
+            if len(numeric_values) >= 3 and numeric_values == sorted(numeric_values):
+                print(f"Ordered numeric values detected: {numeric_values} - using continuous mapping")
+                return "continuous"
+            
+            # Pattern 3: Check for decimal values that suggest ranges
+            has_decimals = any('.' in str(item.get('value', '')) for item in enum_color_traits)
+            if has_decimals and len(numeric_values) >= 3:
+                print(f"Decimal range values detected: {numeric_values} - using continuous mapping")
+                return "continuous"
+            
+            # Default to enum for safety
+            print(f"Using enum mapping for values: {numeric_values}")
+            return "enum"
+            
+        except Exception as e:
+            print(f"Error detecting map type: {e} - defaulting to enum")
+            return "enum"
     
     def _detect_sld_version(self, root) -> str:
         """
