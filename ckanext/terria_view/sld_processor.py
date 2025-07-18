@@ -58,7 +58,9 @@ class SLDProcessor:
     
     def __init__(self):
         """Initialize the SLD processor."""
-        print("🔧 SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
+        import os
+        if os.environ.get('TERRIA_DEBUG', '').lower() == 'true':
+            print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
         pass
     
     def _normalize_color(self, color: str) -> str:
@@ -303,11 +305,11 @@ class SLDProcessor:
         
         try:
             # Try direct conversion with high precision
-            # Esto manejará correctamente valores como "0.20000000000000001"
+            # This will handle correctly values like "0.20000000000000001"
             return float(value_str)
         except ValueError:
             # Try to extract numeric part from string
-            # Mejorado para manejar notación científica y decimales largos
+            # Enhanced to handle scientific notation and long decimals
             numeric_match = re.search(r'-?\d*\.?\d+(?:[eE][-+]?\d+)?', value_str)
             if numeric_match:
                 try:
