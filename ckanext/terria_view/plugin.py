@@ -298,6 +298,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_custom_config = view.get('custom_config', 'NA')
         view_style = view.get('style', 'NA')
         
+        print(f"TerriaView: Processing view for resource {resource.get('name', 'unknown')}")
+        print(f"TerriaView: Resource format: {resource.get('format', 'unknown')}")
+        print(f"TerriaView: Style URL: {view_style}")
+        
         # User context
         user_context = {
             'user': toolkit.g.user,

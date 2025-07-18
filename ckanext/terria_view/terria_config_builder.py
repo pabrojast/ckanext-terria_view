@@ -151,13 +151,21 @@ class TerriaConfigBuilder:
             "isOpenInWorkbench": True,
             "opacity": 0.8,
             "clampToGround": False,
-            "forceCesiumPrimitives": True
+            "forceCesiumPrimitives": True,  # Essential for SLD styling to work
+            "enableManualRegionMapping": False  # Ensure we use point/feature rendering
         }
         
         # Apply SLD styles if available
         if sld_url:
+            print(f"Processing SLD for shapefile: {sld_url}")
             sld_styles = self.sld_processor.process_shp_sld(sld_url)
-            catalog_item.update(sld_styles)
+            print(f"SLD processing result: {sld_styles}")
+            
+            if sld_styles:
+                # Apply all SLD style properties
+                for key, value in sld_styles.items():
+                    catalog_item[key] = value
+                    print(f"Applied SLD property {key}: {value}")
         
         config_dict = self.create_base_config(resource_name, bounds)
         config_dict["initSources"][0]["catalog"] = [catalog_item]
@@ -343,8 +351,13 @@ class TerriaConfigBuilder:
                                 # Apply styles for SHP resources
                                 if resource_format.lower() == 'shp' and 'styles' in sld_styles:
                                     model_value['styles'] = sld_styles['styles']
-                                    model_value['activeStyle'] = sld_styles['activeStyle']
+                                    if 'activeStyle' in sld_styles:
+                                        model_value['activeStyle'] = sld_styles['activeStyle']
+                                    if 'forceCesiumPrimitives' in sld_styles:
+                                        model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
                                     print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
+                                    print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
+                                    print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
                                     
                                 # Apply renderOptions for COG resources
                                 elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:

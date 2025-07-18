@@ -223,7 +223,7 @@ class SLDProcessor:
     
     def fetch_sld_content(self, sld_url: str) -> Optional[bytes]:
         """
-        Download the content of an SLD file from a URL.
+        Download the content of an SLD file from a URL with robust error handling.
         
         Args:
             sld_url: URL of the SLD file
@@ -231,20 +231,95 @@ class SLDProcessor:
         Returns:
             SLD file content as bytes, None in case of error
         """
+        if not sld_url or not isinstance(sld_url, str):
+            print(f"Invalid SLD URL provided: {sld_url}")
+            return None
+        
+        # Clean and validate URL
+        sld_url = sld_url.strip()
+        if not sld_url:
+            print("Empty SLD URL provided")
+            return None
+        
+        # Handle different URL schemes
+        if sld_url.startswith(('http://', 'https://')):
+            return self._fetch_http_content(sld_url)
+        elif sld_url.startswith('file://'):
+            return self._fetch_file_content(sld_url)
+        elif sld_url.startswith('/') or (':\\' in sld_url and len(sld_url) > 3):
+            # Local file path
+            return self._fetch_local_file_content(sld_url)
+        else:
+            print(f"Unsupported URL scheme in: {sld_url}")
+            return None
+    
+    def _fetch_http_content(self, url: str) -> Optional[bytes]:
+        """Fetch content from HTTP/HTTPS URL."""
         try:
-            # Add timeout and better error handling
-            request = urllib.request.Request(sld_url)
+            request = urllib.request.Request(url)
             request.add_header('User-Agent', 'CKAN-TerriaView/1.0')
+            request.add_header('Accept', 'application/xml, text/xml, */*')
             
             with urllib.request.urlopen(request, timeout=30) as response:
-                return response.read()
+                content = response.read()
+                
+                # Validate content size (prevent extremely large files)
+                if len(content) > 10 * 1024 * 1024:  # 10MB limit
+                    print(f"SLD file too large: {len(content)} bytes")
+                    return None
+                
+                return content
+                
+        except urllib.error.HTTPError as e:
+            print(f"HTTP error fetching SLD from {url}: {e.code} {e.reason}")
+            return None
+        except urllib.error.URLError as e:
+            print(f"URL error fetching SLD from {url}: {e.reason}")
+            return None
         except Exception as e:
-            print(f"Error fetching SLD file from {sld_url}: {e}")
+            print(f"Unexpected error fetching SLD from {url}: {e}")
+            return None
+    
+    def _fetch_file_content(self, file_url: str) -> Optional[bytes]:
+        """Fetch content from file:// URL."""
+        try:
+            import os
+            # Remove file:// prefix and decode path
+            file_path = urllib.parse.unquote(file_url[7:])
+            return self._fetch_local_file_content(file_path)
+        except Exception as e:
+            print(f"Error fetching file from {file_url}: {e}")
+            return None
+    
+    def _fetch_local_file_content(self, file_path: str) -> Optional[bytes]:
+        """Fetch content from local file path."""
+        try:
+            import os
+            
+            if not os.path.exists(file_path):
+                print(f"SLD file not found: {file_path}")
+                return None
+            
+            if not os.path.isfile(file_path):
+                print(f"SLD path is not a file: {file_path}")
+                return None
+            
+            # Check file size
+            file_size = os.path.getsize(file_path)
+            if file_size > 10 * 1024 * 1024:  # 10MB limit
+                print(f"SLD file too large: {file_size} bytes")
+                return None
+            
+            with open(file_path, 'rb') as f:
+                return f.read()
+                
+        except Exception as e:
+            print(f"Error reading local SLD file {file_path}: {e}")
             return None
     
     def parse_sld_xml(self, sld_content: bytes) -> Optional[ET.Element]:
         """
-        Parse the XML content of an SLD file.
+        Parse the XML content of an SLD file with robust error handling.
         
         Args:
             sld_content: SLD file content as bytes
@@ -252,17 +327,99 @@ class SLDProcessor:
         Returns:
             Root element of the parsed XML, None in case of error
         """
+        if not sld_content:
+            print("No SLD content provided for parsing")
+            return None
+        
         try:
-            # Remove XML declaration and encoding issues
-            content_str = sld_content.decode('utf-8', errors='ignore')
+            # Validate content is not empty
+            if len(sld_content.strip()) == 0:
+                print("SLD content is empty")
+                return None
+            
+            # Try different decoding approaches
+            content_str = None
+            
+            # Try UTF-8 first
+            try:
+                content_str = sld_content.decode('utf-8', errors='ignore')
+            except UnicodeDecodeError:
+                # Try other common encodings
+                for encoding in ['latin-1', 'iso-8859-1', 'cp1252']:
+                    try:
+                        content_str = sld_content.decode(encoding, errors='ignore')
+                        print(f"Successfully decoded SLD using {encoding}")
+                        break
+                    except UnicodeDecodeError:
+                        continue
+            
+            if not content_str:
+                print("Failed to decode SLD content")
+                return None
+            
             # Remove BOM if present
             if content_str.startswith('\ufeff'):
                 content_str = content_str[1:]
             
-            return ET.fromstring(content_str.encode('utf-8'))
+            # Basic XML validation
+            if not content_str.strip().startswith('<?xml') and not content_str.strip().startswith('<'):
+                print("Content does not appear to be XML")
+                return None
+            
+            # Check for SLD-specific elements
+            if 'StyledLayerDescriptor' not in content_str:
+                print("Content does not appear to be an SLD file (missing StyledLayerDescriptor)")
+                return None
+            
+            # Parse XML with error recovery
+            try:
+                return ET.fromstring(content_str.encode('utf-8'))
+            except ET.ParseError as e:
+                print(f"XML parsing error: {e}")
+                # Try to clean common XML issues and retry
+                cleaned_content = self._clean_xml_content(content_str)
+                if cleaned_content != content_str:
+                    try:
+                        print("Retrying with cleaned XML content")
+                        return ET.fromstring(cleaned_content.encode('utf-8'))
+                    except ET.ParseError as e2:
+                        print(f"XML parsing failed even after cleaning: {e2}")
+                return None
+                
         except Exception as e:
-            print(f"Error parsing SLD XML: {e}")
+            print(f"Unexpected error parsing SLD XML: {e}")
+            import traceback
+            traceback.print_exc()
             return None
+    
+    def _clean_xml_content(self, content: str) -> str:
+        """
+        Clean common XML issues that might prevent parsing.
+        
+        Args:
+            content: XML content string
+            
+        Returns:
+            Cleaned XML content
+        """
+        try:
+            # Remove null bytes
+            content = content.replace('\x00', '')
+            
+            # Fix common namespace issues
+            content = re.sub(r'xmlns:(\w+)="([^"]*)"', lambda m: f'xmlns:{m.group(1)}="{m.group(2).strip()}"', content)
+            
+            # Remove control characters except whitespace
+            content = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', content)
+            
+            # Fix unclosed tags (basic attempt)
+            # This is a simplified fix, might need enhancement for complex cases
+            
+            return content
+            
+        except Exception as e:
+            print(f"Error cleaning XML content: {e}")
+            return content
     
     def process_cog_sld(self, sld_url: str) -> Dict[str, Any]:
         """
@@ -381,7 +538,7 @@ class SLDProcessor:
     
     def process_shp_sld(self, sld_url: str) -> Dict[str, Any]:
         """
-        Process an SLD file for Shapefile resources with enhanced TerriaJS compatibility.
+        Process an SLD file for Shapefile resources following QGIS approach with enhanced TerriaJS compatibility.
         
         Args:
             sld_url: URL of the SLD file
@@ -389,96 +546,466 @@ class SLDProcessor:
         Returns:
             Dictionary with style information for Shapefile
         """
+        # Input validation
+        if not sld_url or not isinstance(sld_url, str):
+            print(f"Invalid SLD URL provided: {sld_url}")
+            return {}
+        
+        sld_url = sld_url.strip()
+        if not sld_url or sld_url.lower() in ['na', 'none', 'null']:
+            print("No valid SLD URL provided")
+            return {}
+        
+        # Fetch and parse SLD content
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
+            print(f"Failed to fetch SLD content from: {sld_url}")
             return {}
         
         root = self.parse_sld_xml(sld_content)
         if root is None:
+            print(f"Failed to parse SLD XML from: {sld_url}")
             return {}
         
+        try:
+            # Follow QGIS approach: find UserStyle elements first
+            user_styles = self._find_user_styles(root)
+            if not user_styles:
+                print("No UserStyle elements found in SLD")
+                return {}
+            
+            # Process all UserStyle elements and merge rules
+            all_rules = []
+            for user_style in user_styles:
+                feature_type_styles = self._find_feature_type_styles(user_style)
+                for feat_style in feature_type_styles:
+                    rules = self._find_rules_in_feature_style(feat_style)
+                    all_rules.extend(rules)
+            
+            if not all_rules:
+                print("No valid rules found in any FeatureTypeStyle")
+                return {}
+            
+            print(f"Found {len(all_rules)} total rules from all UserStyle/FeatureTypeStyle elements")
+            
+            # Process rules and determine renderer type
+            renderer_type, processed_data = self._process_rules_qgis_style(all_rules)
+            
+            if not processed_data:
+                print("No valid styling data extracted from rules")
+                return {}
+            
+            # Build TerriaJS result based on renderer type
+            return self._build_terria_result(renderer_type, processed_data)
+            
+        except Exception as e:
+            print(f"Error processing SHP SLD: {e}")
+            import traceback
+            traceback.print_exc()
+            return self._create_fallback_result([])
+    
+    def _find_user_styles(self, root) -> List:
+        """
+        Find UserStyle elements in SLD following QGIS approach.
+        
+        Args:
+            root: XML root element
+            
+        Returns:
+            List of UserStyle elements
+        """
+        user_styles = []
+        
+        try:
+            # Try with namespace first
+            user_styles = root.findall('.//sld:UserStyle', self.NAMESPACES)
+            
+            # Fallback: try without namespace
+            if not user_styles:
+                user_styles = root.findall('.//UserStyle')
+            
+            print(f"Found {len(user_styles)} UserStyle elements")
+            
+        except Exception as e:
+            print(f"Error finding UserStyle elements: {e}")
+        
+        return user_styles
+    
+    def _find_feature_type_styles(self, user_style) -> List:
+        """
+        Find FeatureTypeStyle elements within a UserStyle.
+        
+        Args:
+            user_style: UserStyle XML element
+            
+        Returns:
+            List of FeatureTypeStyle elements
+        """
+        feature_styles = []
+        
+        try:
+            # Try with namespace first
+            feature_styles = user_style.findall('sld:FeatureTypeStyle', self.NAMESPACES)
+            
+            # Fallback: try without namespace
+            if not feature_styles:
+                feature_styles = user_style.findall('FeatureTypeStyle')
+            
+            print(f"Found {len(feature_styles)} FeatureTypeStyle elements in UserStyle")
+            
+        except Exception as e:
+            print(f"Error finding FeatureTypeStyle elements: {e}")
+        
+        return feature_styles
+    
+    def _find_rules_in_feature_style(self, feature_style) -> List:
+        """
+        Find Rule elements within a FeatureTypeStyle following QGIS validation.
+        
+        Args:
+            feature_style: FeatureTypeStyle XML element
+            
+        Returns:
+            List of valid Rule elements
+        """
+        rules = []
+        
+        try:
+            # Try with namespace first
+            rule_elements = feature_style.findall('se:Rule', self.NAMESPACES)
+            
+            # Fallback: try without namespace
+            if not rule_elements:
+                rule_elements = feature_style.findall('Rule')
+            
+            # Validate rules like QGIS does
+            for rule in rule_elements:
+                if self._is_valid_renderer_rule(rule):
+                    rules.append(rule)
+                else:
+                    print(f"Skipping rule without valid renderer symbolizer")
+            
+            print(f"Found {len(rules)} valid rules in FeatureTypeStyle")
+            
+        except Exception as e:
+            print(f"Error finding rules in FeatureTypeStyle: {e}")
+        
+        return rules
+    
+    def _is_valid_renderer_rule(self, rule) -> bool:
+        """
+        Check if a rule has valid renderer symbolizers (following QGIS approach).
+        
+        Args:
+            rule: Rule XML element
+            
+        Returns:
+            True if rule has valid renderer symbolizers
+        """
+        try:
+            # Get all child elements of the rule
+            rule_children = list(rule)
+            
+            for child in rule_children:
+                local_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                
+                # Check if it's a symbolizer but not a TextSymbolizer (like QGIS)
+                if (local_name.endswith('Symbolizer') and 
+                    local_name != 'TextSymbolizer'):
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error validating rule: {e}")
+            return False
+    
+    def _process_rules_qgis_style(self, rules: List) -> Tuple[str, Dict]:
+        """
+        Process rules following QGIS approach to determine renderer type and extract data.
+        
+        Args:
+            rules: List of rule elements
+            
+        Returns:
+            Tuple of (renderer_type, processed_data)
+        """
         legend_items = []
         enum_colors = []
         valid_property_name = None
+        need_rule_renderer = False
+        rule_count = 0
         
         try:
-            rules = root.findall('.//se:Rule', self.NAMESPACES)
-            
-            for rule in rules:
-                name = rule.find('se:Name', self.NAMESPACES)
-                title = rule.find('.//se:Title', self.NAMESPACES)
-                fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
-                property_name = rule.find('.//ogc:PropertyName', self.NAMESPACES)
-                property_value = rule.find('.//ogc:Literal', self.NAMESPACES)
+            for i, rule in enumerate(rules):
+                # Check if rule needs RuleRenderer (has filters or scale denominators)
+                has_rule_renderer_features = self._rule_needs_rule_renderer(rule)
+                if has_rule_renderer_features:
+                    need_rule_renderer = True
+                    print(f"Rule {i+1}: Found Filter/Scale elements - needs RuleRenderer")
                 
-                if fill is not None and (name is not None or title is not None):
-                    color = fill.text
-                    label = (title.text if title is not None else name.text) if name is not None else "No label"
+                # Extract rule information
+                rule_info = self._extract_rule_info(rule, i+1)
+                if not rule_info:
+                    continue
+                
+                name, title, color, property_name, property_values = rule_info
+                
+                # Validate color
+                if not color:
+                    print(f"Rule {i+1}: No color found, skipping")
+                    continue
+                
+                normalized_color = self._normalize_color(color)
+                if not normalized_color or normalized_color == "#000000":
+                    print(f"Rule {i+1}: Invalid color '{color}', using default")
+                    normalized_color = "#808080"
+                
+                # Count valid rules
+                rule_count += 1
+                
+                # Generate label
+                label = self._generate_rule_label(name, title, i+1)
+                
+                # Add to legend
+                legend_items.append({
+                    "title": label,
+                    "color": normalized_color
+                })
+                
+                # Process for styling
+                if property_name and property_values:
+                    if not valid_property_name:
+                        valid_property_name = property_name
+                    elif valid_property_name != property_name:
+                        print(f"Warning: Multiple property names: {valid_property_name} vs {property_name}")
                     
-                    # Normalize color
-                    normalized_color = self._normalize_color(color)
-                    
-                    # Add to legend
-                    legend_items.append({
-                        "title": label,
-                        "color": normalized_color
-                    })                        # Only process if property_name has a non-empty value
-                    if (property_name is not None and property_name.text and 
-                        property_name.text.strip() and property_value is not None):
-                        valid_property_name = property_name.text.strip()
-                        
-                        # Convert any color format to RGBA for TerriaJS compatibility
-                        rgba_color = self._convert_color_to_rgba(normalized_color)
-                        
-                        # Mantener el formato exacto del valor numérico sin redondeo
-                        prop_value = property_value.text
-                        # Tratar de preservar formatos numéricos exactos (como "0.20000000000000001")
-                        try:
-                            # Solo convertir a float para ordenamiento posterior
-                            float(prop_value)
-                        except ValueError:
-                            # Si no es un número, dejarlo como texto
-                            pass
-                            
-                        enum_colors.append({
-                            "value": prop_value,
-                            "color": rgba_color
-                        })
-        
+                    for prop_value in property_values:
+                        if self._is_valid_numeric_value(prop_value):
+                            enum_colors.append({
+                                "value": str(prop_value),
+                                "color": normalized_color
+                            })
+                        else:
+                            print(f"Warning: Invalid numeric value: '{prop_value}'")
+            
+            # Determine renderer type (like QGIS)
+            if rule_count > 1:
+                need_rule_renderer = True
+                print(f"Multiple rules found ({rule_count}) - needs RuleRenderer")
+            
+            renderer_type = "RuleRenderer" if need_rule_renderer else "singleSymbol"
+            print(f"Determined renderer type: {renderer_type}")
+            
+            processed_data = {
+                "legend_items": legend_items,
+                "enum_colors": enum_colors,
+                "property_name": valid_property_name,
+                "rule_count": rule_count
+            }
+            
+            return renderer_type, processed_data
+            
         except Exception as e:
-            print(f"Error processing SHP SLD: {e}")
-            return {}
+            print(f"Error processing rules QGIS style: {e}")
+            return "singleSymbol", {}
+    
+    def _rule_needs_rule_renderer(self, rule) -> bool:
+        """
+        Check if a rule needs RuleRenderer based on QGIS criteria.
         
+        Args:
+            rule: Rule XML element
+            
+        Returns:
+            True if rule needs RuleRenderer
+        """
+        try:
+            rule_children = list(rule)
+            
+            for child in rule_children:
+                local_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+                
+                # Check for elements that require RuleRenderer (like QGIS)
+                if local_name in ['Filter', 'ElseFilter', 'MinScaleDenominator', 'MaxScaleDenominator']:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            print(f"Error checking rule renderer requirements: {e}")
+            return False
+    
+    def _build_terria_result(self, renderer_type: str, processed_data: Dict) -> Dict[str, Any]:
+        """
+        Build TerriaJS result based on renderer type and processed data.
+        
+        Args:
+            renderer_type: Type of renderer ("RuleRenderer" or "singleSymbol")
+            processed_data: Processed styling data
+            
+        Returns:
+            TerriaJS-compatible result dictionary
+        """
         result = {}
-        if legend_items:
-            result["legends"] = [{
-                "title": "Legend",
-                "items": legend_items
-            }]
         
-        # Only add styles if we have a valid property_name and enum_colors
-        if enum_colors and valid_property_name:
-            # Sort enum colors for better rendering
-            sorted_enum_colors = self._sort_enum_colors_by_value(enum_colors)
+        try:
+            legend_items = processed_data.get("legend_items", [])
+            enum_colors = processed_data.get("enum_colors", [])
+            property_name = processed_data.get("property_name")
+            rule_count = processed_data.get("rule_count", 0)
             
-            # Verificar si hay algún valor no numérico en los enum_colors
-            has_non_numeric = any(
-                not re.match(r'^-?\d*\.?\d+(?:[eE][-+]?\d+)?$', item.get('value', '')) 
-                for item in sorted_enum_colors
-            )
+            # Always include legends if available
+            if legend_items:
+                result["legends"] = [{
+                    "title": "Legend",
+                    "items": legend_items
+                }]
             
-            style_config = {
-                "id": valid_property_name,
-                "color": {
-                    "enumColors": sorted_enum_colors,
-                    "colorPalette": "HighContrast"
+            # Create styles based on renderer type
+            if renderer_type == "RuleRenderer" and enum_colors and property_name:
+                # Multi-rule styling
+                style_result = self._create_terria_styles(enum_colors, property_name)
+                result.update(style_result)
+                print(f"Created RuleRenderer styles for {len(enum_colors)} rules")
+                
+            elif renderer_type == "singleSymbol" and legend_items:
+                # Single symbol styling
+                result.update(self._create_single_symbol_styling(legend_items[0]))
+                print("Created singleSymbol styling")
+                
+            else:
+                # Fallback styling
+                print(f"Using fallback styling for renderer_type: {renderer_type}")
+                result.update(self._create_fallback_styling())
+            
+            # Always ensure we have basic TerriaJS settings
+            if "forceCesiumPrimitives" not in result:
+                result["forceCesiumPrimitives"] = True
+            
+            print(f"Built TerriaJS result with renderer type: {renderer_type}")
+            
+        except Exception as e:
+            print(f"Error building TerriaJS result: {e}")
+            result = self._create_fallback_result(processed_data.get("legend_items", []))
+        
+        return result
+    
+    def _create_single_symbol_styling(self, first_legend_item: Dict) -> Dict[str, Any]:
+        """
+        Create single symbol styling for simple cases.
+        
+        Args:
+            first_legend_item: First legend item to use for styling
+            
+        Returns:
+            Single symbol styling configuration
+        """
+        try:
+            color = first_legend_item.get("color", "#808080")
+            
+            return {
+                "forceCesiumPrimitives": True,
+                "opacity": 0.8,
+                "clampToGround": False,
+                "fill": {
+                    "color": color
+                },
+                "stroke": {
+                    "color": color,
+                    "width": 1
                 }
             }
             
-            result["styles"] = [style_config]
-            result["activeStyle"] = valid_property_name
+        except Exception as e:
+            print(f"Error creating single symbol styling: {e}")
+            return self._create_fallback_styling()
+    
+    def _extract_rule_info(self, rule, rule_number: int) -> Optional[Tuple[Any, Any, str, str, List[str]]]:
+        """
+        Extract information from a single SLD rule with robust error handling.
         
-        return result
+        Args:
+            rule: XML rule element
+            rule_number: Rule number for logging
+            
+        Returns:
+            Tuple of (name, title, color, property_name, property_values) or None if extraction fails
+        """
+        try:
+            # Extract basic rule elements
+            name = rule.find('se:Name', self.NAMESPACES)
+            title = rule.find('.//se:Title', self.NAMESPACES)
+            
+            # Try multiple ways to find fill color
+            fill = None
+            color = None
+            
+            # Primary: PointSymbolizer fill
+            fill = rule.find('.//se:PointSymbolizer/se:Graphic/se:Mark/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Secondary: Any Fill element
+                fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Tertiary: PolygonSymbolizer fill
+                fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Fallback: stroke color
+                fill = rule.find('.//se:Stroke/se:SvgParameter[@name="stroke"]', self.NAMESPACES)
+            
+            if fill is not None and fill.text:
+                color = fill.text.strip()
+            
+            # Extract property information
+            property_name, property_values = self._extract_property_info(rule)
+            
+            return (name, title, color, property_name, property_values)
+            
+        except Exception as e:
+            print(f"Error extracting rule {rule_number} info: {e}")
+            return None
+        """
+        Extract information from a single SLD rule with robust error handling.
+        
+        Args:
+            rule: XML rule element
+            rule_number: Rule number for logging
+            
+        Returns:
+            Tuple of (name, title, color, property_name, property_values) or None if extraction fails
+        """
+        try:
+            # Extract basic rule elements
+            name = rule.find('se:Name', self.NAMESPACES)
+            title = rule.find('.//se:Title', self.NAMESPACES)
+            
+            # Try multiple ways to find fill color
+            fill = None
+            color = None
+            
+            # Primary: PointSymbolizer fill
+            fill = rule.find('.//se:PointSymbolizer/se:Graphic/se:Mark/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Secondary: Any Fill element
+                fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Tertiary: PolygonSymbolizer fill
+                fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            if fill is None:
+                # Fallback: stroke color
+                fill = rule.find('.//se:Stroke/se:SvgParameter[@name="stroke"]', self.NAMESPACES)
+            
+            if fill is not None and fill.text:
+                color = fill.text.strip()
+            
+            # Extract property information
+            property_name, property_values = self._extract_property_info(rule)
+            
+            return (name, title, color, property_name, property_values)
+            
+        except Exception as e:
+            print(f"Error extracting rule {rule_number} info: {e}")
+            return None
     
     def process_sld_for_resource(self, sld_url: str, resource_format: str) -> Dict[str, Any]:
         """
@@ -697,3 +1224,379 @@ class SLDProcessor:
             pass
             
         return None
+    
+    def _extract_property_info(self, rule) -> Tuple[Optional[str], List[str]]:
+        """
+        Extract property name and values from rule filters.
+        
+        Args:
+            rule: XML rule element
+            
+        Returns:
+            Tuple of (property_name, property_values)
+        """
+        property_name = None
+        property_values = []
+        
+        try:
+            # Look for complex AND filters first
+            and_filter = rule.find('.//ogc:And', self.NAMESPACES)
+            
+            if and_filter is not None:
+                property_name, property_values = self._extract_range_filter_info(and_filter)
+            
+            # Fallback to simple property conditions
+            if not property_name:
+                property_name_elem = rule.find('.//ogc:PropertyName', self.NAMESPACES)
+                property_value_elem = rule.find('.//ogc:Literal', self.NAMESPACES)
+                
+                if property_name_elem is not None and property_name_elem.text:
+                    property_name = property_name_elem.text.strip()
+                    
+                if property_value_elem is not None and property_value_elem.text:
+                    property_values.append(property_value_elem.text.strip())
+            
+            # Try without namespaces as fallback
+            if not property_name:
+                property_name_elem = rule.find('.//PropertyName')
+                if property_name_elem is not None and property_name_elem.text:
+                    property_name = property_name_elem.text.strip()
+                    
+                    property_value_elem = rule.find('.//Literal')
+                    if property_value_elem is not None and property_value_elem.text:
+                        property_values.append(property_value_elem.text.strip())
+            
+        except Exception as e:
+            print(f"Error extracting property info: {e}")
+        
+        return property_name, property_values
+    
+    def _extract_range_filter_info(self, and_filter) -> Tuple[Optional[str], List[str]]:
+        """
+        Extract property information from range-based AND filters.
+        
+        Args:
+            and_filter: XML AND filter element
+            
+        Returns:
+            Tuple of (property_name, property_values)
+        """
+        property_name = None
+        property_values = []
+        
+        try:
+            print(f"Processing AND filter with {len(list(and_filter))} children")
+            
+            # Get property name from any condition
+            for condition in and_filter.findall('.//ogc:PropertyName', self.NAMESPACES):
+                if condition.text and condition.text.strip():
+                    property_name = condition.text.strip()
+                    break
+            
+            # Fallback: try without namespace
+            if not property_name:
+                for condition in and_filter.findall('.//PropertyName'):
+                    if condition.text and condition.text.strip():
+                        property_name = condition.text.strip()
+                        break
+            
+            # Extract range bounds
+            min_val = None
+            max_val = None
+            
+            # Try with namespaces first
+            greater_than = and_filter.find('.//ogc:PropertyIsGreaterThan/ogc:Literal', self.NAMESPACES)
+            greater_equal = and_filter.find('.//ogc:PropertyIsGreaterThanOrEqualTo/ogc:Literal', self.NAMESPACES)
+            less_than = and_filter.find('.//ogc:PropertyIsLessThan/ogc:Literal', self.NAMESPACES)
+            less_equal = and_filter.find('.//ogc:PropertyIsLessThanOrEqualTo/ogc:Literal', self.NAMESPACES)
+            
+            # Only try fallback if we didn't find anything with namespaces
+            if all(x is None for x in [greater_than, greater_equal, less_than, less_equal]):
+                greater_than = and_filter.find('.//PropertyIsGreaterThan/Literal')
+                greater_equal = and_filter.find('.//PropertyIsGreaterThanOrEqualTo/Literal')
+                less_than = and_filter.find('.//PropertyIsLessThan/Literal')
+                less_equal = and_filter.find('.//PropertyIsLessThanOrEqualTo/Literal')
+            
+            # Extract numeric bounds
+            if greater_than is not None:
+                if greater_than.text is not None:
+                    min_val = self._safe_float_conversion(greater_than.text)
+            elif greater_equal is not None:
+                if greater_equal.text is not None:
+                    min_val = self._safe_float_conversion(greater_equal.text)
+            
+            if less_than is not None:
+                if less_than.text is not None:
+                    max_val = self._safe_float_conversion(less_than.text)
+            elif less_equal is not None:
+                if less_equal.text is not None:
+                    max_val = self._safe_float_conversion(less_equal.text)
+            
+            # Use maximum value for binMaximums (TerriaJS requirement)
+            if max_val is not None:
+                property_values.append(str(max_val))
+            elif min_val is not None:
+                property_values.append(str(min_val))
+                
+        except Exception as e:
+            print(f"Error extracting range filter info: {e}")
+        
+        print(f"Final result - property_name: {property_name}, property_values: {property_values}")
+        return property_name, property_values
+    
+    def _safe_float_conversion(self, value: str) -> Optional[float]:
+        """
+        Safely convert string to float with error handling.
+        
+        Args:
+            value: String value to convert
+            
+        Returns:
+            Float value or None if conversion fails
+        """
+        if not value:
+            return None
+        
+        try:
+            # Clean the value
+            cleaned_value = value.strip()
+            if not cleaned_value:
+                return None
+            
+            # Handle scientific notation and very long decimals
+            return float(cleaned_value)
+            
+        except (ValueError, OverflowError) as e:
+            print(f"Warning: Could not convert '{value}' to float: {e}")
+            return None
+    
+    def _is_valid_numeric_value(self, value: str) -> bool:
+        """
+        Check if a string represents a valid numeric value.
+        
+        Args:
+            value: String to check
+            
+        Returns:
+            True if value is numeric, False otherwise
+        """
+        if not value or not isinstance(value, str):
+            return False
+        
+        return self._safe_float_conversion(value) is not None
+    
+    def _generate_rule_label(self, name, title, rule_number: int) -> str:
+        """
+        Generate a meaningful label for a rule.
+        
+        Args:
+            name: Rule name element
+            title: Rule title element
+            rule_number: Rule number for fallback
+            
+        Returns:
+            Generated label string
+        """
+        label = ""
+        
+        if title is not None and title.text and title.text.strip():
+            label = title.text.strip()
+        elif name is not None and name.text and name.text.strip():
+            label = name.text.strip()
+        else:
+            label = f"Style {rule_number}"
+        
+        # Ensure label is not empty and reasonable length
+        if not label or len(label.strip()) == 0:
+            label = f"Style {rule_number}"
+        elif len(label) > 100:
+            label = label[:97] + "..."
+        
+        return label
+    
+    def _create_terria_styles(self, enum_colors: List[Dict], property_name: str) -> Dict[str, Any]:
+        """
+        Create TerriaJS-compatible style configuration.
+        
+        Args:
+            enum_colors: List of color mappings
+            property_name: Property name for styling
+            
+        Returns:
+            Dictionary with style configuration
+        """
+        result = {}
+        
+        try:
+            print(f"Creating styles for property: {property_name}")
+            print(f"Number of enum colors: {len(enum_colors)}")
+            
+            if not enum_colors:
+                return result
+            
+            # Sort enum colors by their numeric value for better rendering
+            sorted_enum_colors = self._safe_sort_enum_colors(enum_colors)
+            
+            # Remove duplicates while preserving order
+            unique_colors = []
+            seen_values = set()
+            for color_info in sorted_enum_colors:
+                value = color_info.get('value', '')
+                if value not in seen_values:
+                    unique_colors.append(color_info)
+                    seen_values.add(value)
+            
+            if not unique_colors:
+                print("No unique color values found")
+                return result
+            
+            # Create bin configuration for range-based styling
+            bin_maximums = []
+            bin_colors = []
+            
+            for color_info in unique_colors:
+                try:
+                    value = float(color_info['value'])
+                    if not self._is_reasonable_numeric_value(value):
+                        print(f"Warning: Skipping unreasonable value: {value}")
+                        continue
+                        
+                    bin_maximums.append(value)
+                    bin_colors.append(color_info['color'])
+                except (ValueError, TypeError):
+                    print(f"Warning: Skipping non-numeric value: {color_info.get('value', 'unknown')}")
+                    continue
+            
+            if not bin_maximums:
+                print("No valid numeric values found for binning")
+                return result
+            
+            # Validate we have matching arrays
+            if len(bin_maximums) != len(bin_colors):
+                print(f"Warning: Mismatched bin arrays - maximums: {len(bin_maximums)}, colors: {len(bin_colors)}")
+                min_length = min(len(bin_maximums), len(bin_colors))
+                bin_maximums = bin_maximums[:min_length]
+                bin_colors = bin_colors[:min_length]
+            
+            # Create style configuration
+            style_config = {
+                "id": self._sanitize_style_id(property_name),
+                "title": f"Style by {property_name}",
+                "color": {
+                    "mapType": "bin",
+                    "colorColumn": property_name,
+                    "binMaximums": bin_maximums,
+                    "binColors": bin_colors
+                }
+            }
+            
+            result["styles"] = [style_config]
+            result["activeStyle"] = self._sanitize_style_id(property_name)
+            result["forceCesiumPrimitives"] = True
+            
+            print(f"Created style config with {len(bin_maximums)} bins")
+            
+        except Exception as e:
+            print(f"Error creating TerriaJS styles: {e}")
+            import traceback
+            traceback.print_exc()
+        
+        return result
+    
+    def _safe_sort_enum_colors(self, enum_colors: List[Dict]) -> List[Dict]:
+        """
+        Safely sort enum colors by numeric value.
+        
+        Args:
+            enum_colors: List of color dictionaries
+            
+        Returns:
+            Sorted list of color dictionaries
+        """
+        try:
+            return sorted(enum_colors, key=lambda x: float(x.get('value', 0)))
+        except (ValueError, TypeError):
+            print("Warning: Could not sort enum colors numerically, using original order")
+            return enum_colors
+    
+    def _is_reasonable_numeric_value(self, value: float) -> bool:
+        """
+        Check if a numeric value is reasonable for styling.
+        
+        Args:
+            value: Numeric value to check
+            
+        Returns:
+            True if value is reasonable, False otherwise
+        """
+        if not isinstance(value, (int, float)):
+            return False
+        
+        # Check for infinity and NaN
+        if not isinstance(value, bool) and (value != value or abs(value) == float('inf')):
+            return False
+        
+        # Check for extremely large or small values
+        if abs(value) > 1e10 or (value != 0 and abs(value) < 1e-10):
+            return False
+        
+        return True
+    
+    def _sanitize_style_id(self, style_id: str) -> str:
+        """
+        Sanitize style ID to ensure it's valid for TerriaJS.
+        
+        Args:
+            style_id: Original style ID
+            
+        Returns:
+            Sanitized style ID
+        """
+        if not style_id:
+            return "default_style"
+        
+        # Remove invalid characters and limit length
+        sanitized = re.sub(r'[^a-zA-Z0-9_-]', '_', str(style_id))
+        sanitized = sanitized[:50]  # Limit length
+        
+        # Ensure it doesn't start with a number
+        if sanitized and sanitized[0].isdigit():
+            sanitized = f"style_{sanitized}"
+        
+        return sanitized if sanitized else "default_style"
+    
+    def _create_fallback_result(self, legend_items: List[Dict]) -> Dict[str, Any]:
+        """
+        Create a fallback result when main processing fails.
+        
+        Args:
+            legend_items: List of legend items
+            
+        Returns:
+            Fallback result dictionary
+        """
+        result = {}
+        
+        if legend_items:
+            result["legends"] = [{
+                "title": "Legend",
+                "items": legend_items
+            }]
+        
+        # Add basic styling to ensure something is displayed
+        result.update(self._create_fallback_styling())
+        
+        return result
+    
+    def _create_fallback_styling(self) -> Dict[str, Any]:
+        """
+        Create fallback styling when specific styling fails.
+        
+        Returns:
+            Basic styling configuration
+        """
+        return {
+            "forceCesiumPrimitives": True,
+            "opacity": 0.8,
+            "clampToGround": False
+        }
