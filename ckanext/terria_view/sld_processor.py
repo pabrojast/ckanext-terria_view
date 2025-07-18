@@ -10,7 +10,30 @@ import re
 
 
 class SLDProcessor:
-    """SLD file processor for extracting style information with TerriaJS compatibility."""
+    """
+    SLD file processor for extracting style information with TerriaJS compatibility.
+    
+    This processor generates configuration compatible with TerriaJS ShapefileCatalogItem
+    and follows the documented trait structure:
+    
+    Implemented TerriaJS Traits:
+    - GeoJsonTraits: forceCesiumPrimitives, clampToGround, style
+    - StyleTraits: fill, fill-opacity, stroke, stroke-opacity, stroke-width (simplestyle-spec)
+    - TableTraits: styles, defaultStyle, activeStyle
+    - TableStyleTraits: id, title, color
+    - TableColorStyleTraits: mapType, colorColumn, enumColors, nullColor  
+    - EnumColorTraits: value, color
+    - LegendOwnerTraits: legends
+    - LegendTraits: title, items
+    - LegendItemTraits: title, color
+    - OpacityTraits: opacity
+    
+    For COG/Raster data:
+    - Uses renderOptions.single.colors for color mapping
+    - Compatible with TerriaJS raster rendering
+    
+    The processor follows QGIS SLD parsing approach for robustness and compatibility.
+    """
     
     # Extended XML namespaces for SLD (based on QGIS implementation)
     NAMESPACES = {
@@ -35,6 +58,7 @@ class SLDProcessor:
     
     def __init__(self):
         """Initialize the SLD processor."""
+        print("🔧 SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
         pass
     
     def _normalize_color(self, color: str) -> str:
@@ -619,6 +643,8 @@ class SLDProcessor:
             }]
         
         if colors:
+            # For COG/raster data, TerriaJS uses renderOptions for color mapping
+            # This is different from vector data which uses TableTraits
             result["renderOptions"] = {
                 "single": {
                     "colors": colors,
@@ -842,10 +868,17 @@ class SLDProcessor:
         rules = []
         
         try:
-            # Try with namespace first
+            # Try multiple namespace patterns for rules
+            rule_elements = []
+            
+            # Try SE namespace first
             rule_elements = feature_style.findall('se:Rule', self.NAMESPACES)
             
-            # Fallback: try without namespace
+            # Try SLD namespace
+            if not rule_elements:
+                rule_elements = feature_style.findall('sld:Rule', self.NAMESPACES)
+            
+            # Try without namespace
             if not rule_elements:
                 rule_elements = feature_style.findall('Rule')
             
@@ -1010,6 +1043,7 @@ class SLDProcessor:
     def _build_terria_result(self, renderer_type: str, processed_data: Dict) -> Dict[str, Any]:
         """
         Build TerriaJS result based on renderer type and processed data.
+        Following ShapefileCatalogItem and GeoJsonTraits documentation.
         
         Args:
             renderer_type: Type of renderer ("RuleRenderer" or "singleSymbol")
@@ -1026,23 +1060,27 @@ class SLDProcessor:
             property_name = processed_data.get("property_name")
             rule_count = processed_data.get("rule_count", 0)
             
-            # Always include legends if available
+            # GeoJsonTraits - Core shapefile rendering settings
+            result["forceCesiumPrimitives"] = True
+            result["clampToGround"] = True
+            
+            # LegendOwnerTraits - Always include legends if available
             if legend_items:
                 result["legends"] = [{
                     "title": "Legend",
                     "items": legend_items
                 }]
             
-            # Create styles based on renderer type
+            # Create styles based on renderer type using TableTraits approach
             if renderer_type == "RuleRenderer" and enum_colors and property_name:
-                # Multi-rule styling
-                style_result = self._create_terria_styles(enum_colors, property_name)
+                # Multi-rule styling using TableStyleTraits
+                style_result = self._create_table_styles(enum_colors, property_name)
                 result.update(style_result)
                 print(f"Created RuleRenderer styles for {len(enum_colors)} rules")
                 
             elif renderer_type == "singleSymbol" and legend_items:
-                # Single symbol styling
-                result.update(self._create_single_symbol_styling(legend_items[0]))
+                # Single symbol styling using StyleTraits (simplestyle-spec)
+                result.update(self._create_simple_style_styling(legend_items[0]))
                 print("Created singleSymbol styling")
                 
             else:
@@ -1050,9 +1088,9 @@ class SLDProcessor:
                 print(f"Using fallback styling for renderer_type: {renderer_type}")
                 result.update(self._create_fallback_styling())
             
-            # Always ensure we have basic TerriaJS settings
-            if "forceCesiumPrimitives" not in result:
-                result["forceCesiumPrimitives"] = True
+            # OpacityTraits
+            if "opacity" not in result:
+                result["opacity"] = 0.8
             
             print(f"Built TerriaJS result with renderer type: {renderer_type}")
             
@@ -1062,34 +1100,37 @@ class SLDProcessor:
         
         return result
     
-    def _create_single_symbol_styling(self, first_legend_item: Dict) -> Dict[str, Any]:
+    def _create_simple_style_styling(self, first_legend_item: Dict) -> Dict[str, Any]:
         """
-        Create single symbol styling for simple cases.
+        Create simple style using StyleTraits (simplestyle-spec) for single symbol.
+        Following GeoJsonTraits.style documentation.
         
         Args:
             first_legend_item: First legend item to use for styling
             
         Returns:
-            Single symbol styling configuration
+            StyleTraits-compatible styling configuration
         """
         try:
             color = first_legend_item.get("color", "#808080")
             
+            # StyleTraits - Following simplestyle-spec
+            style_config = {
+                "fill": color,
+                "fill-opacity": 0.8,
+                "stroke": color,
+                "stroke-opacity": 1.0,
+                "stroke-width": 1
+            }
+            
             return {
+                "style": style_config,
                 "forceCesiumPrimitives": True,
-                "opacity": 0.8,
-                "clampToGround": False,
-                "fill": {
-                    "color": color
-                },
-                "stroke": {
-                    "color": color,
-                    "width": 1
-                }
+                "clampToGround": True
             }
             
         except Exception as e:
-            print(f"Error creating single symbol styling: {e}")
+            print(f"Error creating simple style styling: {e}")
             return self._create_fallback_styling()
     
     def _extract_rule_info(self, rule, rule_number: int) -> Optional[Tuple[Any, Any, str, str, List[str]]]:
@@ -1745,20 +1786,20 @@ class SLDProcessor:
         
         return label
     
-    def _create_terria_styles(self, enum_colors: List[Dict], property_name: str) -> Dict[str, Any]:
+    def _create_table_styles(self, enum_colors: List[Dict], property_name: str) -> Dict[str, Any]:
         """
-        Create TerriaJS-compatible style configuration with enhanced validation.
-        Based on QGIS best practices for reliable styling.
+        Create TerriaJS-compatible Table style configuration following TableTraits documentation.
+        Uses TableStyleTraits and TableColorStyleTraits for proper styling.
         
         Args:
             enum_colors: List of color/value mappings
             property_name: Property name for styling
             
         Returns:
-            TerriaJS style configuration
+            TerriaJS TableTraits style configuration
         """
         if not enum_colors or not property_name:
-            print("Cannot create TerriaJS styles: missing colors or property name")
+            print("Cannot create Table styles: missing colors or property name")
             return {}
         
         try:
@@ -1768,58 +1809,51 @@ class SLDProcessor:
                 print("No valid colors found after validation")
                 return {}
             
-            # Sort by numeric value for proper gradient
+            # Sort by numeric value for proper styling
             sorted_colors = self._sort_enum_colors(valid_colors)
             
-            # Extract bin maximums and colors for TerriaJS
-            bin_maximums = []
-            colors = []
-            
+            # Create EnumColorTraits for TableColorStyleTraits
+            enum_color_traits = []
             for item in sorted_colors:
                 try:
-                    # Convert value to float for binMaximums
-                    value = self._safe_float_conversion(str(item['value']))
-                    if value is not None:
-                        bin_maximums.append(value)
-                        colors.append(item['color'])
-                    else:
-                        print(f"Skipping invalid numeric value: {item['value']}")
+                    enum_color_traits.append({
+                        "value": str(item['value']),
+                        "color": item['color']
+                    })
                 except Exception as e:
                     print(f"Error processing color item {item}: {e}")
                     continue
             
-            if not bin_maximums or not colors:
-                print("No valid bin maximums or colors after processing")
+            if not enum_color_traits:
+                print("No valid enum color traits after processing")
                 return {}
             
-            # Ensure we have matching arrays
-            if len(bin_maximums) != len(colors):
-                print(f"Mismatch between bin_maximums ({len(bin_maximums)}) and colors ({len(colors)})")
-                min_length = min(len(bin_maximums), len(colors))
-                bin_maximums = bin_maximums[:min_length]
-                colors = colors[:min_length]
-            
-            # Create TerriaJS configuration
-            config = {
-                "scale": {
-                    "type": "enum",
-                    "binMaximums": bin_maximums,
-                    "binColors": colors,
+            # TableStyleTraits configuration
+            style_config = {
+                "id": "sld-style",
+                "title": "SLD Style",
+                "color": {
+                    "mapType": "enum",
+                    "colorColumn": property_name,
+                    "enumColors": enum_color_traits,
                     "nullColor": self.DEFAULTS['fill_color']
-                },
-                "column": property_name,
-                "colorProperty": property_name,
-                "useRealValue": True
+                }
             }
             
-            print(f"Created TerriaJS config with {len(bin_maximums)} bins")
-            print(f"Bin maximums: {bin_maximums}")
-            print(f"Colors: {colors}")
+            # TableTraits configuration
+            result = {
+                "styles": [style_config],
+                "defaultStyle": style_config,
+                "activeStyle": "sld-style"
+            }
             
-            return config
+            print(f"Created Table styles with {len(enum_color_traits)} enum colors")
+            print(f"Property column: {property_name}")
+            
+            return result
             
         except Exception as e:
-            print(f"Error creating TerriaJS styles: {e}")
+            print(f"Error creating Table styles: {e}")
             import traceback
             traceback.print_exc()
             return {}
@@ -1879,6 +1913,26 @@ class SLDProcessor:
         
         print(f"Validated {len(valid_colors)} out of {len(enum_colors)} color items")
         return valid_colors
+    
+    def _sort_enum_colors(self, enum_colors: List[Dict]) -> List[Dict]:
+        """
+        Sort enum colors by numeric value for better TerriaJS rendering.
+        Preserves the exact string representation of values.
+        
+        Args:
+            enum_colors: List of enum color dictionaries
+            
+        Returns:
+            Sorted list of enum colors
+        """
+        def sort_key(item):
+            # Extract numeric value for sorting, but preserve the original value
+            value = self._extract_numeric_value(str(item.get('value', '')))
+            return value if value is not None else float('inf')
+        
+        # Create a copy to not modify the original values
+        sorted_colors = sorted(enum_colors, key=sort_key)
+        return sorted_colors
     
     def _detect_sld_version(self, root) -> str:
         """
@@ -2104,14 +2158,27 @@ class SLDProcessor:
     def _create_fallback_styling(self) -> Dict[str, Any]:
         """
         Create fallback styling when specific styling fails.
+        Following GeoJsonTraits and StyleTraits documentation.
         
         Returns:
-            Basic styling configuration
+            Basic styling configuration with TerriaJS traits
         """
         return {
+            # GeoJsonTraits
             "forceCesiumPrimitives": True,
-            "opacity": 0.8,
-            "clampToGround": False
+            "clampToGround": True,
+            
+            # StyleTraits - simplestyle-spec compatible
+            "style": {
+                "fill": self.DEFAULTS['fill_color'],
+                "fill-opacity": 0.8,
+                "stroke": self.DEFAULTS['stroke_color'], 
+                "stroke-opacity": 1.0,
+                "stroke-width": self.DEFAULTS['stroke_width']
+            },
+            
+            # OpacityTraits
+            "opacity": 0.8
         }
     
     def process_shp_sld_from_content(self, sld_content: str) -> Dict[str, Any]:
@@ -2153,27 +2220,25 @@ class SLDProcessor:
                 print("No FeatureTypeStyle found in UserStyle")
                 return self._create_fallback_result([])
             
-            # Extract rules from the first feature style
-            rules = self._extract_rules_from_feature_style(feature_styles[0])
+            # Extract rules from all feature styles like the main method
+            all_rules = []
+            for feat_style in feature_styles:
+                rules = self._find_rules_in_feature_style(feat_style)
+                all_rules.extend(rules)
             
-            if not rules:
-                print("No rules found in FeatureTypeStyle")
+            if not all_rules:
+                print("No rules found in any FeatureTypeStyle")
                 return self._create_fallback_result([])
             
             # Process rules using existing logic
-            property_name, table_style = self._process_rules_qgis_style(rules)
-            legends = self._create_legend_from_rules(rules, property_name)
+            renderer_type, processed_data = self._process_rules_qgis_style(all_rules)
             
-            # Create result following the existing pattern
-            result = {
-                'tableStyle': table_style,
-                'legends': legends
-            }
+            if not processed_data:
+                print("No valid styling data extracted from rules")
+                return self._create_fallback_result([])
             
-            # Add basic styling
-            result.update(self._create_fallback_styling())
-            
-            return result
+            # Build TerriaJS result based on renderer type
+            return self._build_terria_result(renderer_type, processed_data)
             
         except Exception as e:
             print(f"Error processing SLD content: {e}")
