@@ -1856,15 +1856,23 @@ class SLDProcessor:
             # TableStyleTraits configuration for bin mapping
             style_config = {
                 "id": "sld-style",
-                "title": "SLD Style",
+                "title": f"SLD Style ({property_name})",  # Include property name for clarity
                 "color": {
                     "mapType": map_type,
-                    "colorColumn": property_name,
+                    "colorColumn": property_name,  # This MUST match the shapefile column name
                     "binMaximums": bin_maximums,
                     "binColors": bin_colors,
                     "nullColor": self.DEFAULTS['fill_color']
                 }
             }
+            
+            print(f"DEBUG: Using colorColumn = '{property_name}' for bin mapping")
+            print(f"DEBUG: This must match exactly the column name in the shapefile")
+            print(f"DEBUG: Common variations to check in shapefile:")
+            print(f"DEBUG:   - {property_name} (exact match)")
+            print(f"DEBUG:   - {property_name.lower()} (lowercase)")
+            print(f"DEBUG:   - {property_name.upper()} (uppercase)")
+            print(f"DEBUG: If none match, check the actual column names in the shapefile")
             
             # TableTraits configuration
             result = {
@@ -1872,6 +1880,33 @@ class SLDProcessor:
                 "defaultStyle": style_config,
                 "activeStyle": "sld-style"
             }
+            
+            # Add alternative configurations for debugging column name issues
+            if property_name:
+                alternative_configs = []
+                
+                # Try common variations of the column name
+                variations = [
+                    property_name,  # Original
+                    property_name.lower(),  # lowercase
+                    property_name.upper(),  # UPPERCASE
+                    property_name.replace('_', ''),  # Remove underscores
+                    property_name.replace(' ', ''),  # Remove spaces
+                ]
+                
+                for variation in set(variations):  # Remove duplicates
+                    if variation != property_name:
+                        alt_style = style_config.copy()
+                        alt_style["color"] = style_config["color"].copy()
+                        alt_style["color"]["colorColumn"] = variation
+                        alt_style["id"] = f"sld-style-{variation.lower()}"
+                        alt_style["title"] = f"SLD Style ({variation})"
+                        alternative_configs.append(alt_style)
+                
+                if alternative_configs:
+                    print(f"DEBUG: Created {len(alternative_configs)} alternative column name configurations")
+                    # Note: We don't add these to the result by default to avoid confusion
+                    # but they could be useful for debugging
             
             print(f"Created Table styles with {len(enum_color_traits)} enum colors")
             print(f"Property column: {property_name}")
