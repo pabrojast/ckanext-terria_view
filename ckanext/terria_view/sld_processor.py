@@ -17,7 +17,6 @@ class SLDProcessor:
     and follows the documented trait structure:
     
     Implemented TerriaJS Traits:
-    - GeoJsonTraits: forceCesiumPrimitives, clampToGround, style
     - StyleTraits: fill, fill-opacity, stroke, stroke-opacity, stroke-width (simplestyle-spec)
     - TableTraits: styles, defaultStyle, activeStyle
     - TableStyleTraits: id, title, color
@@ -1062,10 +1061,6 @@ class SLDProcessor:
             property_name = processed_data.get("property_name")
             rule_count = processed_data.get("rule_count", 0)
             
-            # GeoJsonTraits - Core shapefile rendering settings
-            result["forceCesiumPrimitives"] = True
-            result["clampToGround"] = True
-            
             # LegendOwnerTraits - Always include legends if available
             if legend_items:
                 result["legends"] = [{
@@ -1126,9 +1121,7 @@ class SLDProcessor:
             }
             
             return {
-                "style": style_config,
-                "forceCesiumPrimitives": True,
-                "clampToGround": True
+                "style": style_config
             }
             
         except Exception as e:
@@ -2290,10 +2283,6 @@ class SLDProcessor:
             Basic styling configuration with TerriaJS traits
         """
         return {
-            # GeoJsonTraits
-            "forceCesiumPrimitives": True,
-            "clampToGround": True,
-            
             # StyleTraits - simplestyle-spec compatible
             "style": {
                 "fill": self.DEFAULTS['fill_color'],
