@@ -1155,62 +1155,51 @@ class SLDProcessor:
             fill = None
             color = None
             
-            # Primary: PointSymbolizer fill
-            fill = rule.find('.//se:PointSymbolizer/se:Graphic/se:Mark/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+            # Primary: PolygonSymbolizer fill (más común para shapefiles)
+            fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
             if fill is None:
-                # Secondary: Any Fill element
-                fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+                # Try with sld namespace and CssParameter (SLD 1.0)
+                fill = rule.find('.//sld:PolygonSymbolizer/sld:Fill/sld:CssParameter[@name="fill"]', self.NAMESPACES)
             if fill is None:
-                # Tertiary: PolygonSymbolizer fill
-                fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+                # Try without namespace for PolygonSymbolizer with CssParameter
+                fill = rule.find('.//PolygonSymbolizer/Fill/CssParameter[@name="fill"]')
             if fill is None:
-                # Fallback: stroke color
-                fill = rule.find('.//se:Stroke/se:SvgParameter[@name="stroke"]', self.NAMESPACES)
-            
-            if fill is not None and fill.text:
-                color = fill.text.strip()
-            
-            # Extract property information
-            property_name, property_values = self._extract_property_info(rule)
-            
-            return (name, title, color, property_name, property_values)
-            
-        except Exception as e:
-            print(f"Error extracting rule {rule_number} info: {e}")
-            return None
-        """
-        Extract information from a single SLD rule with robust error handling.
-        
-        Args:
-            rule: XML rule element
-            rule_number: Rule number for logging
-            
-        Returns:
-            Tuple of (name, title, color, property_name, property_values) or None if extraction fails
-        """
-        try:
-            # Extract basic rule elements
-            name = rule.find('se:Name', self.NAMESPACES)
-            title = rule.find('.//se:Title', self.NAMESPACES)
-            
-            # Try multiple ways to find fill color
-            fill = None
-            color = None
-            
-            # Primary: PointSymbolizer fill
-            fill = rule.find('.//se:PointSymbolizer/se:Graphic/se:Mark/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+                # Try se namespace with CssParameter
+                fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:CssParameter[@name="fill"]', self.NAMESPACES)
             if fill is None:
-                # Secondary: Any Fill element
-                fill = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+                # Secondary: Any Fill element with sld namespace
+                fill = rule.find('.//sld:Fill/sld:CssParameter[@name="fill"]', self.NAMESPACES)
             if fill is None:
-                # Tertiary: PolygonSymbolizer fill
-                fill = rule.find('.//se:PolygonSymbolizer/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
+                # Try any Fill with CssParameter (no namespace)
+                fill = rule.find('.//Fill/CssParameter[@name="fill"]')
+            if fill is None:
+                # PointSymbolizer fill
+                fill = rule.find('.//se:PointSymbolizer/se:Graphic/se:Mark/se:Fill/se:SvgParameter[@name="fill"]', self.NAMESPACES)
             if fill is None:
                 # Fallback: stroke color
                 fill = rule.find('.//se:Stroke/se:SvgParameter[@name="stroke"]', self.NAMESPACES)
+            if fill is None:
+                # Last resort: any stroke with CssParameter
+                fill = rule.find('.//Stroke/CssParameter[@name="stroke"]')
             
             if fill is not None and fill.text:
                 color = fill.text.strip()
+                print(f"DEBUG: Found color '{color}' for rule {rule_number}")
+            else:
+                print(f"DEBUG: No color found for rule {rule_number}")
+                # Let's debug what's actually in the rule
+                from xml.etree.ElementTree import tostring
+                rule_xml = tostring(rule, encoding='unicode')
+                print(f"DEBUG: Rule XML preview: {rule_xml[:300]}")
+                
+                # Try to find any element with 'fill' in the name
+                all_elements = rule.findall('.//*')
+                fill_elements = [elem for elem in all_elements if 'fill' in elem.tag.lower()]
+                print(f"DEBUG: Elements with 'fill' in tag: {[elem.tag for elem in fill_elements]}")
+                
+                # Try to find any CssParameter or SvgParameter
+                css_params = rule.findall('.//CssParameter') + rule.findall('.//SvgParameter')
+                print(f"DEBUG: CssParameter/SvgParameter elements: {[(elem.tag, elem.get('name'), elem.text) for elem in css_params]}")
             
             # Extract property information
             property_name, property_values = self._extract_property_info(rule)
@@ -1509,7 +1498,8 @@ class SLDProcessor:
                 print("No property name found in AND filter")
                 return None, []
             
-            print(f"Found property name: {property_name}")
+            print(f"Found property name: '{property_name}' (type: {type(property_name)}, repr: {repr(property_name)})")
+            print(f"Property name preserved exactly as extracted from SLD")
             
             # Extract range bounds with better error handling
             range_info = self._extract_range_bounds(and_filter)
@@ -1562,13 +1552,17 @@ class SLDProcessor:
                 property_names = filter_element.findall(f'.//{ns_prefix}:PropertyName', self.NAMESPACES)
                 for prop in property_names:
                     if prop.text and prop.text.strip():
-                        return prop.text.strip()
+                        extracted_name = prop.text.strip()
+                        print(f"DEBUG: Found property name '{extracted_name}' using namespace {ns_prefix}")
+                        return extracted_name
             
             # Strategy 2: Search without namespaces
             property_names = filter_element.findall('.//PropertyName')
             for prop in property_names:
                 if prop.text and prop.text.strip():
-                    return prop.text.strip()
+                    extracted_name = prop.text.strip()
+                    print(f"DEBUG: Found property name '{extracted_name}' without namespace")
+                    return extracted_name
             
             # Strategy 3: Search in comparison operators
             comparison_ops = [
@@ -1866,13 +1860,20 @@ class SLDProcessor:
                 }
             }
             
+            print(f"DEBUG: ========== COLOR COLUMN MAPPING ==========")
             print(f"DEBUG: Using colorColumn = '{property_name}' for bin mapping")
-            print(f"DEBUG: This must match exactly the column name in the shapefile")
-            print(f"DEBUG: Common variations to check in shapefile:")
-            print(f"DEBUG:   - {property_name} (exact match)")
-            print(f"DEBUG:   - {property_name.lower()} (lowercase)")
-            print(f"DEBUG:   - {property_name.upper()} (uppercase)")
-            print(f"DEBUG: If none match, check the actual column names in the shapefile")
+            print(f"DEBUG: Property name type: {type(property_name)}")
+            print(f"DEBUG: Property name length: {len(property_name) if property_name else 'None'}")
+            print(f"DEBUG: Property name repr: {repr(property_name)}")
+            print(f"DEBUG: This MUST match exactly the column name in the shapefile")
+            print(f"DEBUG: ==========================================")
+            
+            # Log the exact configuration being created
+            print(f"DEBUG: Creating bin configuration with:")
+            print(f"DEBUG:   - binMaximums: {bin_maximums}")
+            print(f"DEBUG:   - binColors: {bin_colors}")
+            print(f"DEBUG:   - colorColumn: '{property_name}'")
+            print(f"DEBUG: ==========================================")
             
             # TableTraits configuration
             result = {
