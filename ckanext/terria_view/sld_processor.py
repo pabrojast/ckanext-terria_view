@@ -3,10 +3,12 @@
 Module for processing SLD (Styled Layer Descriptor) files.
 Enhanced for better TerriaJS compatibility.
 """
+import os
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 import re
+import traceback
 
 
 class SLDProcessor:
@@ -61,6 +63,16 @@ class SLDProcessor:
         if os.environ.get('TERRIA_DEBUG', '').lower() == 'true':
             print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
         pass
+    
+    def _debug_print(self, message: str):
+        """
+        Print debug messages only when TERRIA_DEBUG environment variable is set to 'true'.
+        
+        Args:
+            message: Debug message to print
+        """
+        if os.getenv("TERRIA_DEBUG") == "true":
+            print(message)
     
     def _normalize_color(self, color: str) -> str:
         """
@@ -164,44 +176,6 @@ class SLDProcessor:
             return named_colors[lower_color]
         
         # If nothing matches, return black as default
-        return "#000000"
-        
-        # Handle RGB/RGBA format
-        if color.startswith(('rgb(', 'rgba(')):
-            return color  # Already in correct format
-        
-        # Handle named colors (basic set)
-        named_colors = {
-            'black': '#000000', 'white': '#FFFFFF', 'red': '#FF0000',
-            'green': '#00FF00', 'blue': '#0000FF', 'yellow': '#FFFF00',
-            'cyan': '#00FFFF', 'magenta': '#FF00FF', 'gray': '#808080',
-            'grey': '#808080', 'orange': '#FFA500', 'purple': '#800080',
-            'brown': '#A52A2A', 'pink': '#FFC0CB', 'lime': '#00FF00',
-            'navy': '#000080', 'teal': '#008080', 'silver': '#C0C0C0',
-            'maroon': '#800000', 'olive': '#808000'
-        }
-        
-        color_lower = color.lower()
-        if color_lower in named_colors:
-            return named_colors[color_lower]
-        
-        # Try to parse as decimal RGB values (e.g., "255,0,0")
-        if ',' in color and not color.startswith(('rgb', 'rgba')):
-            try:
-                parts = [float(p.strip()) for p in color.split(',')]
-                if len(parts) == 3:
-                    r, g, b = [int(max(0, min(255, p))) for p in parts]
-                    return f"#{r:02X}{g:02X}{b:02X}"
-            except ValueError:
-                pass
-        
-        # Handle rgb() and rgba() formats with regex
-        rgb_match = re.match(r'rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)', color)
-        if rgb_match:
-            r, g, b = map(int, rgb_match.groups())
-            return f"#{r:02X}{g:02X}{b:02X}"
-        
-        # If all else fails, return black
         return "#000000"
     
     def _convert_color_to_rgba(self, color: str, opacity: float = 1.0) -> str:
@@ -633,10 +607,20 @@ class SLDProcessor:
         result = {}
         if legend_items:
             # Sort legend items by quantity value for logical display
+            # Separate numeric and non-numeric titles to avoid exceptions
             try:
-                legend_items.sort(key=lambda x: float(x['title']) if x['title'].replace('-', '').replace('.', '').isdigit() else float('inf'))
-            except:
-                pass  # If sorting fails, keep original order
+                def safe_sort_key(item):
+                    title = item.get('title', '')
+                    # Try to convert to float, return inf for non-numeric values
+                    try:
+                        return float(title)
+                    except (ValueError, TypeError):
+                        return float('inf')
+                
+                legend_items.sort(key=safe_sort_key)
+            except Exception as e:
+                print(f"Warning: Could not sort legend items: {e}")
+                pass  # If sorting fails completely, keep original order
                 
             result["legends"] = [{
                 "title": "Legend",
@@ -1047,7 +1031,7 @@ class SLDProcessor:
         Following ShapefileCatalogItem and GeoJsonTraits documentation.
         
         Args:
-            renderer_type: Type of renderer ("RuleRenderer" or "singleSymbol")
+            renderer_type: Type of renderer ("RuleRenderer", "continuous", or "singleSymbol")
             processed_data: Processed styling data
             
         Returns:
@@ -1074,6 +1058,12 @@ class SLDProcessor:
                 style_result = self._create_table_styles(enum_colors, property_name)
                 result.update(style_result)
                 print(f"Created RuleRenderer styles for {len(enum_colors)} rules")
+                
+            elif renderer_type == "continuous" and enum_colors and property_name:
+                # Continuous styling using TableColorStyleTraits with continuous mapType
+                style_result = self._create_continuous_styles(enum_colors, property_name)
+                result.update(style_result)
+                print(f"Created continuous styles for {len(enum_colors)} color points")
                 
             elif renderer_type == "singleSymbol" and legend_items:
                 # Single symbol styling using StyleTraits (simplestyle-spec)
@@ -1177,22 +1167,22 @@ class SLDProcessor:
             
             if fill is not None and fill.text:
                 color = fill.text.strip()
-                print(f"DEBUG: Found color '{color}' for rule {rule_number}")
+                self._debug_print(f"DEBUG: Found color '{color}' for rule {rule_number}")
             else:
-                print(f"DEBUG: No color found for rule {rule_number}")
+                self._debug_print(f"DEBUG: No color found for rule {rule_number}")
                 # Let's debug what's actually in the rule
                 from xml.etree.ElementTree import tostring
                 rule_xml = tostring(rule, encoding='unicode')
-                print(f"DEBUG: Rule XML preview: {rule_xml[:300]}")
+                self._debug_print(f"DEBUG: Rule XML preview: {rule_xml[:300]}")
                 
                 # Try to find any element with 'fill' in the name
                 all_elements = rule.findall('.//*')
                 fill_elements = [elem for elem in all_elements if 'fill' in elem.tag.lower()]
-                print(f"DEBUG: Elements with 'fill' in tag: {[elem.tag for elem in fill_elements]}")
+                self._debug_print(f"DEBUG: Elements with 'fill' in tag: {[elem.tag for elem in fill_elements]}")
                 
                 # Try to find any CssParameter or SvgParameter
                 css_params = rule.findall('.//CssParameter') + rule.findall('.//SvgParameter')
-                print(f"DEBUG: CssParameter/SvgParameter elements: {[(elem.tag, elem.get('name'), elem.text) for elem in css_params]}")
+                self._debug_print(f"DEBUG: CssParameter/SvgParameter elements: {[(elem.tag, elem.get('name'), elem.text) for elem in css_params]}")
             
             # Extract property information
             property_name, property_values = self._extract_property_info(rule)
@@ -1546,7 +1536,7 @@ class SLDProcessor:
                 for prop in property_names:
                     if prop.text and prop.text.strip():
                         extracted_name = prop.text.strip()
-                        print(f"DEBUG: Found property name '{extracted_name}' using namespace {ns_prefix}")
+                        self._debug_print(f"DEBUG: Found property name '{extracted_name}' using namespace {ns_prefix}")
                         return extracted_name
             
             # Strategy 2: Search without namespaces
@@ -1554,7 +1544,7 @@ class SLDProcessor:
             for prop in property_names:
                 if prop.text and prop.text.strip():
                     extracted_name = prop.text.strip()
-                    print(f"DEBUG: Found property name '{extracted_name}' without namespace")
+                    self._debug_print(f"DEBUG: Found property name '{extracted_name}' without namespace")
                     return extracted_name
             
             # Strategy 3: Search in comparison operators
@@ -1853,20 +1843,20 @@ class SLDProcessor:
                 }
             }
             
-            print(f"DEBUG: ========== COLOR COLUMN MAPPING ==========")
-            print(f"DEBUG: Using colorColumn = '{property_name}' for bin mapping")
-            print(f"DEBUG: Property name type: {type(property_name)}")
-            print(f"DEBUG: Property name length: {len(property_name) if property_name else 'None'}")
-            print(f"DEBUG: Property name repr: {repr(property_name)}")
-            print(f"DEBUG: This MUST match exactly the column name in the shapefile")
-            print(f"DEBUG: ==========================================")
+            self._debug_print(f"DEBUG: ========== COLOR COLUMN MAPPING ==========")
+            self._debug_print(f"DEBUG: Using colorColumn = '{property_name}' for bin mapping")
+            self._debug_print(f"DEBUG: Property name type: {type(property_name)}")
+            self._debug_print(f"DEBUG: Property name length: {len(property_name) if property_name else 'None'}")
+            self._debug_print(f"DEBUG: Property name repr: {repr(property_name)}")
+            self._debug_print(f"DEBUG: This MUST match exactly the column name in the shapefile")
+            self._debug_print(f"DEBUG: ==========================================")
             
             # Log the exact configuration being created
-            print(f"DEBUG: Creating bin configuration with:")
-            print(f"DEBUG:   - binMaximums: {bin_maximums}")
-            print(f"DEBUG:   - binColors: {bin_colors}")
-            print(f"DEBUG:   - colorColumn: '{property_name}'")
-            print(f"DEBUG: ==========================================")
+            self._debug_print(f"DEBUG: Creating bin configuration with:")
+            self._debug_print(f"DEBUG:   - binMaximums: {bin_maximums}")
+            self._debug_print(f"DEBUG:   - binColors: {bin_colors}")
+            self._debug_print(f"DEBUG:   - colorColumn: '{property_name}'")
+            self._debug_print(f"DEBUG: ==========================================")
             
             # TableTraits configuration
             result = {
@@ -1898,7 +1888,7 @@ class SLDProcessor:
                         alternative_configs.append(alt_style)
                 
                 if alternative_configs:
-                    print(f"DEBUG: Created {len(alternative_configs)} alternative column name configurations")
+                    self._debug_print(f"DEBUG: Created {len(alternative_configs)} alternative column name configurations")
                     # Note: We don't add these to the result by default to avoid confusion
                     # but they could be useful for debugging
             
@@ -1910,6 +1900,82 @@ class SLDProcessor:
         except Exception as e:
             print(f"Error creating Table styles: {e}")
             import traceback
+            traceback.print_exc()
+            return {}
+    
+    def _create_continuous_styles(self, enum_colors: List[Dict], property_name: str) -> Dict[str, Any]:
+        """
+        Create TerriaJS-compatible continuous style configuration following TableColorStyleTraits.
+        Uses continuous mapType for smooth color gradients.
+        
+        Args:
+            enum_colors: List of color/value mappings
+            property_name: Property name for styling
+            
+        Returns:
+            TerriaJS TableTraits style configuration with continuous mapping
+        """
+        if not enum_colors or not property_name:
+            print("Cannot create continuous styles: missing colors or property name")
+            return {}
+        
+        try:
+            # Validate and sort enum colors
+            valid_colors = self._validate_enum_colors(enum_colors)
+            if not valid_colors:
+                print("No valid colors found after validation")
+                return {}
+            
+            # Sort by numeric value for proper continuous gradient
+            sorted_colors = self._sort_enum_colors(valid_colors)
+            
+            # Extract values and colors for continuous mapping
+            color_scale_points = []
+            for item in sorted_colors:
+                try:
+                    color_scale_points.append({
+                        "offset": float(item['value']),
+                        "color": item['color']
+                    })
+                except (ValueError, KeyError) as e:
+                    print(f"Error processing continuous color item {item}: {e}")
+                    continue
+            
+            if not color_scale_points:
+                print("No valid color scale points after processing")
+                return {}
+            
+            # TableStyleTraits configuration for continuous mapping
+            style_config = {
+                "id": "sld-continuous-style",
+                "title": f"SLD Continuous Style ({property_name})",
+                "color": {
+                    "mapType": "continuous",
+                    "colorColumn": property_name,
+                    "colorScale": color_scale_points,
+                    "nullColor": self.DEFAULTS['fill_color']
+                }
+            }
+            
+            self._debug_print(f"DEBUG: Creating continuous configuration with:")
+            self._debug_print(f"DEBUG:   - colorScale points: {len(color_scale_points)}")
+            self._debug_print(f"DEBUG:   - colorColumn: '{property_name}'")
+            self._debug_print(f"DEBUG:   - color scale: {color_scale_points}")
+            
+            # TableTraits configuration
+            result = {
+                "styles": [style_config],
+                "defaultStyle": style_config,
+                "activeStyle": "sld-continuous-style"
+            }
+            
+            print(f"Created continuous styles with {len(color_scale_points)} color scale points")
+            print(f"Property column: {property_name}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"Error creating continuous styles: {e}")
             traceback.print_exc()
             return {}
     
@@ -2185,25 +2251,6 @@ class SLDProcessor:
         except Exception as e:
             print(f"Error validating SLD structure: {e}")
             return False
-    
-    def _safe_sort_enum_colors(self, enum_colors: List[Dict]) -> List[Dict]:
-        """
-        Safely sort enum colors by numeric value.
-        
-        Args:
-            enum_colors: List of color mappings
-            
-        Returns:
-            Sorted list of color mappings
-        """
-        def sort_key(item):
-            # Extraer valor numérico para ordenamiento, pero preservar el valor original
-            value = self._extract_numeric_value(item.get('value', ''))
-            return value if value is not None else float('inf')
-        
-        # Crear una copia para no modificar los valores originales
-        sorted_colors = sorted(enum_colors, key=sort_key)
-        return sorted_colors
     
     def _is_reasonable_numeric_value(self, value: float) -> bool:
         """
