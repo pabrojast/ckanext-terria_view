@@ -22,13 +22,18 @@ def test_debug_functionality():
     print("Testing without TERRIA_DEBUG env var:")
     processor._debug_print("This should NOT appear")
     
-    # Test with TERRIA_DEBUG=true
-    os.environ['TERRIA_DEBUG'] = 'true'
-    print("Testing with TERRIA_DEBUG=true:")
-    processor._debug_print("This SHOULD appear")
-    
-    # Clean up
-    del os.environ['TERRIA_DEBUG']
+    # Test with TERRIA_DEBUG=true using try/finally for cleanup
+    original_debug_value = os.environ.get('TERRIA_DEBUG')
+    try:
+        os.environ['TERRIA_DEBUG'] = 'true'
+        print("Testing with TERRIA_DEBUG=true:")
+        processor._debug_print("This SHOULD appear")
+    finally:
+        # Clean up - restore original value or remove if it didn't exist
+        if original_debug_value is not None:
+            os.environ['TERRIA_DEBUG'] = original_debug_value
+        elif 'TERRIA_DEBUG' in os.environ:
+            del os.environ['TERRIA_DEBUG']
     print("Debug functionality test completed.\n")
 
 
