@@ -69,11 +69,15 @@ def test_terria_traits_compliance():
     print("=== TerriaJS Compliance Test Results ===")
     print(json.dumps(result, indent=2))
     
-    # Check for required TerriaJS traits
+    # Check for required TerriaJS traits (excluding problematic GeoJsonTraits)
     required_traits = {
-        'GeoJsonTraits': ['forceCesiumPrimitives', 'clampToGround'],
         'LegendOwnerTraits': ['legends'],
         'OpacityTraits': ['opacity']
+    }
+    
+    # Check that problematic traits are NOT present
+    problematic_traits = {
+        'ProblematicGeoJsonTraits': ['forceCesiumPrimitives', 'clampToGround']
     }
     
     print("\n=== Trait Compliance Check ===")
@@ -84,6 +88,15 @@ def test_terria_traits_compliance():
                 print(f"  ✓ {trait}: {result[trait]}")
             else:
                 print(f"  ✗ {trait}: MISSING")
+    
+    # Check that problematic traits are absent
+    for trait_group, traits in problematic_traits.items():
+        print(f"\n{trait_group} (should be absent):")
+        for trait in traits:
+            if trait not in result:
+                print(f"  ✓ {trait}: CORRECTLY ABSENT")
+            else:
+                print(f"  ✗ {trait}: PRESENT (problematic)")
     
     # Check TableTraits if styles are present
     if 'styles' in result:
@@ -108,7 +121,7 @@ def test_terria_traits_compliance():
     
     print(f"\n=== Summary ===")
     print(f"Result contains {len(result)} top-level properties")
-    print(f"TerriaJS GeoJsonTraits implemented: {'forceCesiumPrimitives' in result and 'clampToGround' in result}")
+    print(f"Problematic GeoJsonTraits absent: {'forceCesiumPrimitives' not in result and 'clampToGround' not in result}")
     print(f"Legend support: {'legends' in result}")
     print(f"Styling approach: {'Table styles' if 'styles' in result else 'Simple styles' if 'style' in result else 'Fallback'}")
     

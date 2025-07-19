@@ -151,7 +151,7 @@ class TerriaConfigBuilder:
             "isOpenInWorkbench": True,
             "opacity": 0.8,
             "clampToGround": False,
-            "forceCesiumPrimitives": True,  # Essential for SLD styling to work
+            # "forceCesiumPrimitives": True,  # Removed - causes issues with GeoJSON conversion to Cesium primitives
             "enableManualRegionMapping": False  # Ensure we use point/feature rendering
         }
         
@@ -353,11 +353,11 @@ class TerriaConfigBuilder:
                                     model_value['styles'] = sld_styles['styles']
                                     if 'activeStyle' in sld_styles:
                                         model_value['activeStyle'] = sld_styles['activeStyle']
-                                    if 'forceCesiumPrimitives' in sld_styles:
-                                        model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
+                                    # if 'forceCesiumPrimitives' in sld_styles:
+                                    #     model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
                                     print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
                                     print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
-                                    print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
+                                    # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
                                     
                                 # Apply renderOptions for COG resources
                                 elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:

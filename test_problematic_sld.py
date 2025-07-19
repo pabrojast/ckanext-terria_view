@@ -245,13 +245,21 @@ def test_sld_processing():
             else:
                 print(f"  - {key}: {type(value).__name__}")
         
-        # Verificar estructura esperada
-        expected_keys = ['forceCesiumPrimitives', 'clampToGround', 'legends']
+        # Verificar estructura esperada (sin claves problemáticas)
+        expected_keys = ['legends']
         missing_keys = [key for key in expected_keys if key not in result]
         if missing_keys:
             print(f"⚠️  Claves faltantes: {missing_keys}")
         else:
             print("✅ Todas las claves esperadas están presentes")
+        
+        # Verificar que las claves problemáticas NO están presentes
+        problematic_keys = ['forceCesiumPrimitives', 'clampToGround']
+        present_problematic = [key for key in problematic_keys if key in result]
+        if present_problematic:
+            print(f"⚠️  Claves problemáticas presentes (deberían eliminarse): {present_problematic}")
+        else:
+            print("✅ Claves problemáticas correctamente ausentes")
             
         return result
         

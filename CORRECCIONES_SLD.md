@@ -4,8 +4,9 @@
 
 ### 1. **Claves problemáticas `clampToGround` y `forceCesiumPrimitives`**
 - ✅ **Verificado**: El módulo SLDProcessor NO añade estas claves
-- 🔍 **Conclusión**: El problema viene de otra capa (builder de initSource), no del parser SLD
-- 📍 **Ubicación**: Verificar plantillas CKAN, post-procesadores Python o hooks de Terria
+- ✅ **Corregido**: Eliminadas todas las referencias a `forceCesiumPrimitives` en terria_config_builder.py
+- ✅ **Tests actualizados**: Todos los tests ahora verifican que estas claves NO estén presentes
+- 📍 **Ubicación**: terria_config_builder.py líneas 153, 355-359 (comentadas)
 
 ### 2. **Duplicidad de funciones**
 - ✅ **Eliminada** función duplicada `_safe_sort_enum_colors`

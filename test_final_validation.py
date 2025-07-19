@@ -23,12 +23,20 @@ def main():
         print("✅ Procesamiento exitoso")
         
         # Validar estructura TerriaJS
-        required_keys = ['forceCesiumPrimitives', 'clampToGround', 'legends', 'styles', 'defaultStyle', 'activeStyle', 'opacity']
+        required_keys = ['legends', 'styles', 'defaultStyle', 'activeStyle', 'opacity']
         for key in required_keys:
             if key in result:
                 print(f"✅ {key}: OK")
             else:
                 print(f"❌ {key}: FALTANTE")
+        
+        # Verificar que las claves problemáticas NO están presentes
+        problematic_keys = ['forceCesiumPrimitives', 'clampToGround']
+        for key in problematic_keys:
+            if key not in result:
+                print(f"✅ {key}: CORRECTAMENTE AUSENTE")
+            else:
+                print(f"❌ {key}: PRESENTE (problemático)")
         
         # Validar configuración de colores
         styles = result.get('styles', [])
