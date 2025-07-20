@@ -39,18 +39,24 @@ def new_resource_view_list(plugin_instance, context, data_dict):
         
         # Check if there's an activity_id in the URL, so it doesn't try to create anything
         if 'activity_id' in request.args:
-            print("Activity ID detected, skipping resource view creation.")
+            import os
+            if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
+                print("Activity ID detected, skipping resource view creation.")
             return []
         
         resource = toolkit.get_action('resource_show')(context, {'id': resource_id})
         if not resource:
-            print("Debug: Resource not found")
+            import os
+            if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
+                print("Debug: Resource not found")
             return []
             
         ret = resource_view_list(context, data_dict)
         
     except Exception as e:
-        print(f"Error retrieving resource view list: {e}")
+        import os
+        if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
+            print(f"Error retrieving resource view list: {e}")
         ret = []
     
     # Check if a plugin view already exists
@@ -100,6 +106,17 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # Callback for resource_view_list
         self.resource_view_list_callback = None
     
+    def _debug_print(self, message: str):
+        """
+        Print debug messages only when TERRIA_DEBUG environment variable is set to 'true'.
+        
+        Args:
+            message: Debug message to print
+        """
+        import os
+        if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
+            print(message)
+    
     plugins.implements(plugins.IConfigurer)
     def update_config(self, config_):
         """Update plugin configuration."""
@@ -128,7 +145,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 self.config_manager.site_url, package_id
             )
         except Exception as e:
-            print(f"Error in terria_get_sld_files helper: {e}")
+            self._debug_print(f"Error in terria_get_sld_files helper: {e}")
             return []
     
     plugins.implements(plugins.IConfigurable, inherit=True)
@@ -298,9 +315,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         view_custom_config = view.get('custom_config', 'NA')
         view_style = view.get('style', 'NA')
         
-        print(f"TerriaView: Processing view for resource {resource.get('name', 'unknown')}")
-        print(f"TerriaView: Resource format: {resource.get('format', 'unknown')}")
-        print(f"TerriaView: Style URL: {view_style}")
+        self._debug_print(f"TerriaView: Processing view for resource {resource.get('name', 'unknown')}")
+        self._debug_print(f"TerriaView: Resource format: {resource.get('format', 'unknown')}")
+        self._debug_print(f"TerriaView: Style URL: {view_style}")
         
         # User context
         user_context = {

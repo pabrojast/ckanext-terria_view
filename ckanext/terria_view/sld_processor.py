@@ -60,7 +60,7 @@ class SLDProcessor:
     def __init__(self):
         """Initialize the SLD processor."""
         import os
-        if os.environ.get('TERRIA_DEBUG', '').lower() == 'true':
+        if os.environ.get('TERRIA_DEBUG', 'false').lower() == 'true':
             print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
         pass
     
@@ -71,7 +71,7 @@ class SLDProcessor:
         Args:
             message: Debug message to print
         """
-        if os.getenv("TERRIA_DEBUG") == "true":
+        if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
             print(message)
     
     def _normalize_color(self, color: str) -> str:
@@ -323,13 +323,13 @@ class SLDProcessor:
             SLD file content as bytes, None in case of error
         """
         if not sld_url or not isinstance(sld_url, str):
-            print(f"Invalid SLD URL provided: {sld_url}")
+            self._debug_print(f"Invalid SLD URL provided: {sld_url}")
             return None
         
         # Clean and validate URL
         sld_url = sld_url.strip()
         if not sld_url:
-            print("Empty SLD URL provided")
+            self._debug_print("Empty SLD URL provided")
             return None
         
         # Handle different URL schemes
@@ -341,7 +341,7 @@ class SLDProcessor:
             # Local file path
             return self._fetch_local_file_content(sld_url)
         else:
-            print(f"Unsupported URL scheme in: {sld_url}")
+            self._debug_print(f"Unsupported URL scheme in: {sld_url}")
             return None
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
@@ -419,13 +419,13 @@ class SLDProcessor:
             Root element of the parsed XML, None in case of error
         """
         if not sld_content:
-            print("No SLD content provided for parsing")
+            self._debug_print("No SLD content provided for parsing")
             return None
         
         try:
             # Validate content is not empty
             if len(sld_content.strip()) == 0:
-                print("SLD content is empty")
+                self._debug_print("SLD content is empty")
                 return None
             
             # Try different decoding approaches
@@ -439,13 +439,13 @@ class SLDProcessor:
                 for encoding in ['latin-1', 'iso-8859-1', 'cp1252']:
                     try:
                         content_str = sld_content.decode(encoding, errors='ignore')
-                        print(f"Successfully decoded SLD using {encoding}")
+                        self._debug_print(f"Successfully decoded SLD using {encoding}")
                         break
                     except UnicodeDecodeError:
                         continue
             
             if not content_str:
-                print("Failed to decode SLD content")
+                self._debug_print("Failed to decode SLD content")
                 return None
             
             # Remove BOM if present
@@ -454,12 +454,12 @@ class SLDProcessor:
             
             # Basic XML validation
             if not content_str.strip().startswith('<?xml') and not content_str.strip().startswith('<'):
-                print("Content does not appear to be XML")
+                self._debug_print("Content does not appear to be XML")
                 return None
             
             # Check for SLD-specific elements
             if 'StyledLayerDescriptor' not in content_str:
-                print("Content does not appear to be an SLD file (missing StyledLayerDescriptor)")
+                self._debug_print("Content does not appear to be an SLD file (missing StyledLayerDescriptor)")
                 return None
             
             # Parse XML with error recovery

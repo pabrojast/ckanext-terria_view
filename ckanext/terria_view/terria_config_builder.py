@@ -21,6 +21,17 @@ class TerriaConfigBuilder:
         self.config_manager = config_manager
         self.sld_processor = sld_processor
     
+    def _debug_print(self, message: str):
+        """
+        Print debug messages only when TERRIA_DEBUG environment variable is set to 'true'.
+        
+        Args:
+            message: Debug message to print
+        """
+        import os
+        if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
+            print(message)
+    
     def create_base_config(self, resource_name: str, bounds: tuple) -> Dict:
         """
         Crea la configuración base para TerriaJS.
@@ -157,15 +168,15 @@ class TerriaConfigBuilder:
         
         # Apply SLD styles if available
         if sld_url:
-            print(f"Processing SLD for shapefile: {sld_url}")
+            self._debug_print(f"Processing SLD for shapefile: {sld_url}")
             sld_styles = self.sld_processor.process_shp_sld(sld_url)
-            print(f"SLD processing result: {sld_styles}")
+            self._debug_print(f"SLD processing result: {sld_styles}")
             
             if sld_styles:
                 # Apply all SLD style properties
                 for key, value in sld_styles.items():
                     catalog_item[key] = value
-                    print(f"Applied SLD property {key}: {value}")
+                    self._debug_print(f"Applied SLD property {key}: {value}")
         
         config_dict = self.create_base_config(resource_name, bounds)
         config_dict["initSources"][0]["catalog"] = [catalog_item]
@@ -311,7 +322,7 @@ class TerriaConfigBuilder:
                     with urllib.request.urlopen(gist_url) as response:
                         decoded_param = response.read().decode('utf-8')
                 except Exception as e:
-                    print(f"Error fetching gist config: {e}")
+                    self._debug_print(f"Error fetching gist config: {e}")
                     return None
             else:
                 # Caso original con #start
@@ -327,9 +338,9 @@ class TerriaConfigBuilder:
             # Get SLD styles if available
             sld_styles = None
             if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
-                print(f"Processing SLD for resource format: {resource_format}")
+                self._debug_print(f"Processing SLD for resource format: {resource_format}")
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
-                print(f"SLD styles result: {sld_styles}")
+                self._debug_print(f"SLD styles result: {sld_styles}")
             
             # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
@@ -338,15 +349,15 @@ class TerriaConfigBuilder:
                         if isinstance(model_value, dict) and 'url' in model_value:
                             # Actualizar la URL
                             model_value['url'] = resource_url
-                            print(f"Updated URL for model {model_key}: {resource_url}")
+                            self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
                             
                             # Apply SLD styles if available
                             if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff']:
-                                print(f"Applying SLD styles to model {model_key}")
+                                self._debug_print(f"Applying SLD styles to model {model_key}")
                                 # Always apply legends if available
                                 if 'legends' in sld_styles:
                                     model_value['legends'] = sld_styles['legends']
-                                    print(f"Applied legends to model {model_key}")
+                                    self._debug_print(f"Applied legends to model {model_key}")
                                 
                                 # Apply styles for SHP resources
                                 if resource_format.lower() == 'shp' and 'styles' in sld_styles:
@@ -355,19 +366,19 @@ class TerriaConfigBuilder:
                                         model_value['activeStyle'] = sld_styles['activeStyle']
                                     # if 'forceCesiumPrimitives' in sld_styles:
                                     #     model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
-                                    print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
-                                    print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
+                                    self._debug_print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
+                                    self._debug_print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
                                     # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
                                     
                                 # Apply renderOptions for COG resources
                                 elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:
                                     model_value['renderOptions'] = sld_styles['renderOptions']
-                                    print(f"Applied renderOptions to model {model_key}")
+                                    self._debug_print(f"Applied renderOptions to model {model_key}")
             
             return json.dumps(start_data)
             
         except Exception as e:
-            print(f"Error processing custom config: {e}")
+            self._debug_print(f"Error processing custom config: {e}")
             return None
     
     def _decode_names_in_object(self, obj: Any) -> Any:
