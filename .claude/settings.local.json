@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dir \"C:\\Users\\pablo\\Downloads\\soamlia_geology_1.5m\")",
       "Bash(python test:*)",
-      "Bash(del \"C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\test_somalia_sld.py\")"
+      "Bash(del \"C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\test_somalia_sld.py\")",
+      "Bash(dir:*)",
+      "WebFetch(domain:docs.terria.io)"
     ],
     "deny": [],
     "ask": [],

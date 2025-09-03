@@ -1121,13 +1121,49 @@ class SLDProcessor:
                 print("Created singleSymbol styling")
                 
             else:
-                # Fallback styling
-                print(f"Using fallback styling for renderer_type: {renderer_type}")
-                result.update(self._create_fallback_styling())
+                # If we have legend items but no proper styling, try to create basic categorical styling
+                if legend_items and enum_colors:
+                    print(f"Attempting to create basic categorical styling with {len(legend_items)} legend items")
+                    # Try to create a basic style with available data
+                    basic_enum_colors = []
+                    for item in legend_items:
+                        basic_enum_colors.append({
+                            "value": item["title"],
+                            "color": item["color"]
+                        })
+                    
+                    if basic_enum_colors:
+                        # Create a basic categorical style
+                        result["styles"] = [{
+                            "id": "basic-categorical-style",
+                            "title": "Basic Categorical Style",
+                            "color": {
+                                "mapType": "enum",
+                                "colorColumn": property_name or "UNKNOWN_COLUMN",
+                                "enumColors": basic_enum_colors,
+                                "nullColor": "#808080"
+                            }
+                        }]
+                        result["activeStyle"] = "basic-categorical-style"
+                        print(f"Created basic categorical style with {len(basic_enum_colors)} enum colors")
+                    else:
+                        print(f"Using fallback styling for renderer_type: {renderer_type}")
+                        result.update(self._create_fallback_styling())
+                else:
+                    print(f"Using fallback styling for renderer_type: {renderer_type}")
+                    result.update(self._create_fallback_styling())
             
             # OpacityTraits
             if "opacity" not in result:
                 result["opacity"] = 0.8
+            
+            # GeoJsonTraits for shapefile rendering improvements
+            # These properties help with 3D positioning and rendering performance
+            result["clampToGround"] = True  # Default per TerriaJS docs, helps with geological layers
+            
+            # Only add forceCesiumPrimitives if we have complex styling that might benefit
+            if renderer_type == "RuleRenderer" and len(processed_data.get("enum_colors", [])) > 10:
+                result["forceCesiumPrimitives"] = True
             
             print(f"Built TerriaJS result with renderer type: {renderer_type}")
             
@@ -1475,6 +1511,13 @@ class SLDProcessor:
         property_values = []
         
         try:
+            # Check for ElseFilter first - these are fallback rules for unmatched values
+            else_filter = rule.find('.//se:ElseFilter', self.NAMESPACES)
+            if else_filter is not None:
+                # ElseFilter rules don't have specific property values, skip them for styling
+                self._debug_print("Found ElseFilter rule - skipping for categorical styling")
+                return None, []
+            
             # Look for complex AND filters first
             and_filter = rule.find('.//ogc:And', self.NAMESPACES)
             
@@ -2083,10 +2126,16 @@ class SLDProcessor:
                     print(f"Item {i}: Missing required fields (value/color), skipping")
                     continue
                 
-                # Validate value
+                # Validate value - skip empty values and "else" conditions
                 value = item['value']
-                if value is None or str(value).strip() == '':
+                value_str = str(value).strip()
+                if value is None or value_str == '':
                     print(f"Item {i}: Empty value, skipping")
+                    continue
+                
+                # Skip problematic "else" condition labels
+                if "is ''" in value_str or "else" in value_str.lower():
+                    print(f"Item {i}: Skipping 'else' condition or empty value rule: '{value_str}'")
                     continue
                 
                 # Validate color
@@ -2421,7 +2470,10 @@ class SLDProcessor:
             },
             
             # OpacityTraits
-            "opacity": 0.8
+            "opacity": 0.8,
+            
+            # GeoJsonTraits for proper shapefile rendering
+            "clampToGround": True
         }
     
     def process_shp_sld_from_content(self, sld_content: str) -> Dict[str, Any]:
