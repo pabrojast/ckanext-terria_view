@@ -1161,9 +1161,16 @@ class SLDProcessor:
             # These properties help with 3D positioning and rendering performance
             result["clampToGround"] = True  # Default per TerriaJS docs, helps with geological layers
             
-            # Only add forceCesiumPrimitives if we have complex styling that might benefit
-            if renderer_type == "RuleRenderer" and len(processed_data.get("enum_colors", [])) > 10:
+            # Be more conservative with forceCesiumPrimitives - it can interfere with categorical styling
+            # Only use for very complex datasets where performance is critical
+            enum_count = len(processed_data.get("enum_colors", []))
+            if renderer_type == "RuleRenderer" and enum_count > 50:
                 result["forceCesiumPrimitives"] = True
+                print(f"Applied forceCesiumPrimitives for very complex dataset ({enum_count} categories)")
+            else:
+                # Explicitly set to false for categorical styling to avoid conflicts
+                result["forceCesiumPrimitives"] = False
+                print(f"Set forceCesiumPrimitives=false for categorical styling ({enum_count} categories)")
             
             print(f"Built TerriaJS result with renderer type: {renderer_type}")
             
@@ -2473,7 +2480,8 @@ class SLDProcessor:
             "opacity": 0.8,
             
             # GeoJsonTraits for proper shapefile rendering
-            "clampToGround": True
+            "clampToGround": True,
+            "forceCesiumPrimitives": False  # Always false for fallback styling
         }
     
     def process_shp_sld_from_content(self, sld_content: str) -> Dict[str, Any]:
