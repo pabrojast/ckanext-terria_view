@@ -2,9 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(dir \"C:\\Users\\pablo\\Downloads\\soamlia_geology_1.5m\")",
-      "Bash(python test:*)"
+      "Bash(python test:*)",
+      "Bash(del \"C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\test_somalia_sld.py\")"
     ],
     "deny": [],
-    "ask": []
+    "ask": [],
+    "additionalDirectories": [
+      "C:\\Users\\pablo\\OneDrive\\Escritorio\\Proyectos\\aircan\\aircan\\dags"
+    ]
   }
 }
