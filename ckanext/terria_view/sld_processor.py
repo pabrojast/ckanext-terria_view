@@ -72,7 +72,12 @@ class SLDProcessor:
             message: Debug message to print
         """
         if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
-            print(message)
+            try:
+                print(message)
+            except UnicodeEncodeError:
+                # Handle Unicode characters that can't be encoded
+                safe_message = message.encode('utf-8', errors='replace').decode('utf-8')
+                print(f"DEBUG: {safe_message}")
     
     def _normalize_color(self, color: str) -> str:
         """
@@ -927,56 +932,101 @@ class SLDProcessor:
         
         try:
             for i, rule in enumerate(rules):
-                # Check if rule needs RuleRenderer (has filters or scale denominators)
-                has_rule_renderer_features = self._rule_needs_rule_renderer(rule)
-                if has_rule_renderer_features:
-                    need_rule_renderer = True
-                    print(f"Rule {i+1}: Found Filter/Scale elements - needs RuleRenderer")
-                
-                # Extract rule information
-                rule_info = self._extract_rule_info(rule, i+1)
-                if not rule_info:
-                    continue
-                
-                name, title, color, property_name, property_values = rule_info
-                
-                # Validate color
-                if not color:
-                    print(f"Rule {i+1}: No color found, skipping")
-                    continue
-                
-                normalized_color = self._normalize_color(color)
-                if not normalized_color or normalized_color == "#000000":
-                    print(f"Rule {i+1}: Invalid color '{color}', using default")
-                    normalized_color = "#808080"
-                
-                # Count valid rules
-                rule_count += 1
-                
-                # Generate label
-                label = self._generate_rule_label(name, title, i+1)
-                
-                # Add to legend
-                legend_items.append({
-                    "title": label,
-                    "color": normalized_color
-                })
-                
-                # Process for styling
-                if property_name and property_values:
-                    if not valid_property_name:
-                        valid_property_name = property_name
-                    elif valid_property_name != property_name:
-                        print(f"Warning: Multiple property names: {valid_property_name} vs {property_name}")
+                try:
+                    # Check if rule needs RuleRenderer (has filters or scale denominators)
+                    has_rule_renderer_features = self._rule_needs_rule_renderer(rule)
+                    if has_rule_renderer_features:
+                        need_rule_renderer = True
+                        print(f"Rule {i+1}: Found Filter/Scale elements - needs RuleRenderer")
                     
-                    for prop_value in property_values:
-                        if self._is_valid_numeric_value(prop_value):
-                            enum_colors.append({
-                                "value": str(prop_value),
-                                "color": normalized_color
-                            })
-                        else:
-                            print(f"Warning: Invalid numeric value: '{prop_value}'")
+                    # Extract rule information
+                    rule_info = self._extract_rule_info(rule, i+1)
+                    if not rule_info:
+                        continue
+                    
+                    name, title, color, property_name, property_values = rule_info
+                    
+                    # Validate color
+                    if not color:
+                        print(f"Rule {i+1}: No color found, skipping")
+                        continue
+                    
+                    normalized_color = self._normalize_color(color)
+                    if not normalized_color or normalized_color == "#000000":
+                        print(f"Rule {i+1}: Invalid color '{color}', using default")
+                        normalized_color = "#808080"
+                    
+                    # Count valid rules
+                    rule_count += 1
+                    
+                    # Generate label
+                    label = self._generate_rule_label(name, title, i+1)
+                    
+                    # Add to legend
+                    legend_items.append({
+                        "title": label,
+                        "color": normalized_color
+                    })
+                    
+                    # Process for styling
+                    if property_name and property_values:
+                        if not valid_property_name:
+                            valid_property_name = property_name
+                        elif valid_property_name != property_name:
+                            try:
+                                print(f"Warning: Multiple property names: {valid_property_name} vs {property_name}")
+                            except UnicodeEncodeError:
+                                print("Warning: Multiple property names detected (contains special characters)")
+                        
+                        for prop_value in property_values:
+                            # For categorical data (like geological unit codes), we always add them
+                            # even if they're not numeric - TerriaJS can handle categorical enum colors
+                            if prop_value and prop_value.strip():
+                                enum_colors.append({
+                                    "value": str(prop_value).strip(),
+                                    "color": normalized_color
+                                })
+                                # Debug for categorical values
+                                is_numeric = self._is_valid_numeric_value(prop_value)
+                                try:
+                                    self._debug_print(f"Added categorical value: '{prop_value}' -> {normalized_color} (numeric: {is_numeric})")
+                                except UnicodeEncodeError:
+                                    safe_value = str(prop_value).encode('ascii', errors='replace').decode('ascii')
+                                    self._debug_print(f"Added categorical value: '{safe_value}' -> {normalized_color} (numeric: {is_numeric})")
+                
+                except UnicodeEncodeError as unicode_error:
+                    print(f"Unicode error processing rule {i+1} (contains special characters): {unicode_error}")
+                    # Still try to add the rule with safe handling
+                    try:
+                        rule_info = self._extract_rule_info(rule, i+1)
+                        if rule_info:
+                            name, title, color, property_name, property_values = rule_info
+                            if color:
+                                normalized_color = self._normalize_color(color)
+                                rule_count += 1
+                                # Use safe label generation
+                                safe_label = f"Style {i+1}"
+                                legend_items.append({
+                                    "title": safe_label,
+                                    "color": normalized_color
+                                })
+                                
+                                # Add values safely
+                                if property_name and property_values:
+                                    if not valid_property_name:
+                                        valid_property_name = property_name
+                                    for prop_value in property_values:
+                                        if prop_value and prop_value.strip():
+                                            enum_colors.append({
+                                                "value": str(prop_value).strip(),
+                                                "color": normalized_color
+                                            })
+                    except Exception as safe_error:
+                        print(f"Failed to safely process rule {i+1}: {safe_error}")
+                        continue
+                except Exception as rule_error:
+                    print(f"Error processing rule {i+1}: {rule_error}")
+                    continue
             
             # Determine renderer type (like QGIS)
             if rule_count > 1:
@@ -1718,7 +1768,10 @@ class SLDProcessor:
             return float(cleaned_value)
             
         except (ValueError, OverflowError) as e:
-            print(f"Warning: Could not convert '{value}' to float: {e}")
+            try:
+                print(f"Warning: Could not convert '{value}' to float: {e}")
+            except UnicodeEncodeError:
+                print(f"Warning: Could not convert value to float (contains special characters)")
             return None
     
     def _is_valid_numeric_value(self, value: str) -> bool:
@@ -1807,56 +1860,84 @@ class SLDProcessor:
                 print("No valid enum color traits after processing")
                 return {}
             
-            # For range-based data, use 'bin' mapType with binMaximums
-            # This creates a DiscreteColorMap which handles ranges properly
-            map_type = "bin"
-            print(f"Using map type: {map_type} for {len(enum_color_traits)} color values (range-based data)")
-            
-            # For bin-based mapping, we need binMaximums and binColors
-            bin_maximums = []
-            bin_colors = []
+            # Determine if data is numeric (for bins) or categorical (for enums)
+            numeric_count = 0
+            categorical_count = 0
             
             for item in enum_color_traits:
-                try:
-                    # Extract the maximum value for this bin
-                    max_value = float(item['value'])
-                    bin_maximums.append(max_value)
-                    bin_colors.append(item['color'])
-                except (ValueError, KeyError) as e:
-                    print(f"Error processing bin item {item}: {e}")
-                    continue
+                if self._is_valid_numeric_value(item['value']):
+                    numeric_count += 1
+                else:
+                    categorical_count += 1
             
-            if not bin_maximums:
-                print("No valid bin maximums after processing")
-                return {}
+            # If mostly categorical data, use enum mapping; otherwise use bin mapping
+            use_categorical = categorical_count > numeric_count
             
-            # TableStyleTraits configuration for bin mapping
-            style_config = {
-                "id": "sld-style",
-                "title": f"SLD Style ({property_name})",  # Include property name for clarity
-                "color": {
-                    "mapType": map_type,
-                    "colorColumn": property_name,  # This MUST match the shapefile column name
-                    "binMaximums": bin_maximums,
-                    "binColors": bin_colors,
-                    "nullColor": self.DEFAULTS['fill_color']
+            if use_categorical:
+                # Use 'enum' mapType for categorical data (like geological unit codes)
+                map_type = "enum"
+                print(f"Using map type: {map_type} for {len(enum_color_traits)} categorical values")
+                
+                # TableStyleTraits configuration for categorical/enum mapping
+                style_config = {
+                    "id": "sld-style",
+                    "title": f"SLD Style ({property_name})",
+                    "color": {
+                        "mapType": map_type,
+                        "colorColumn": property_name,  # This MUST match the shapefile column name
+                        "enumColors": enum_color_traits,  # Direct value-to-color mapping
+                        "nullColor": self.DEFAULTS['fill_color']
+                    }
                 }
-            }
+                
+                self._debug_print(f"DEBUG: Creating categorical configuration with:")
+                self._debug_print(f"DEBUG:   - enumColors: {len(enum_color_traits)} mappings")
+                self._debug_print(f"DEBUG:   - colorColumn: '{property_name}'")
+                for i, enum_item in enumerate(enum_color_traits[:5]):  # Show first 5
+                    self._debug_print(f"DEBUG:     [{i}] '{enum_item['value']}' -> {enum_item['color']}")
+                if len(enum_color_traits) > 5:
+                    self._debug_print(f"DEBUG:     ... and {len(enum_color_traits) - 5} more")
+            else:
+                # Use 'bin' mapType with binMaximums for numeric data
+                map_type = "bin"
+                print(f"Using map type: {map_type} for {len(enum_color_traits)} numeric values")
+                
+                # For bin-based mapping, we need binMaximums and binColors
+                bin_maximums = []
+                bin_colors = []
+                
+                for item in enum_color_traits:
+                    try:
+                        # Extract the maximum value for this bin
+                        max_value = float(item['value'])
+                        bin_maximums.append(max_value)
+                        bin_colors.append(item['color'])
+                    except (ValueError, KeyError) as e:
+                        print(f"Error processing bin item {item}: {e}")
+                        continue
+                
+                if not bin_maximums:
+                    print("No valid bin maximums after processing")
+                    return {}
+                
+                # TableStyleTraits configuration for bin mapping
+                style_config = {
+                    "id": "sld-style",
+                    "title": f"SLD Style ({property_name})",  # Include property name for clarity
+                    "color": {
+                        "mapType": map_type,
+                        "colorColumn": property_name,  # This MUST match the shapefile column name
+                        "binMaximums": bin_maximums,
+                        "binColors": bin_colors,
+                        "nullColor": self.DEFAULTS['fill_color']
+                    }
+                }
+                
+                self._debug_print(f"DEBUG: Creating bin configuration with:")
+                self._debug_print(f"DEBUG:   - binMaximums: {bin_maximums}")
+                self._debug_print(f"DEBUG:   - binColors: {bin_colors}")
+                self._debug_print(f"DEBUG:   - colorColumn: '{property_name}'")
             
-            self._debug_print(f"DEBUG: ========== COLOR COLUMN MAPPING ==========")
-            self._debug_print(f"DEBUG: Using colorColumn = '{property_name}' for bin mapping")
-            self._debug_print(f"DEBUG: Property name type: {type(property_name)}")
-            self._debug_print(f"DEBUG: Property name length: {len(property_name) if property_name else 'None'}")
-            self._debug_print(f"DEBUG: Property name repr: {repr(property_name)}")
-            self._debug_print(f"DEBUG: This MUST match exactly the column name in the shapefile")
-            self._debug_print(f"DEBUG: ==========================================")
-            
-            # Log the exact configuration being created
-            self._debug_print(f"DEBUG: Creating bin configuration with:")
-            self._debug_print(f"DEBUG:   - binMaximums: {bin_maximums}")
-            self._debug_print(f"DEBUG:   - binColors: {bin_colors}")
-            self._debug_print(f"DEBUG:   - colorColumn: '{property_name}'")
-            self._debug_print(f"DEBUG: ==========================================")
             
             # TableTraits configuration
             result = {
