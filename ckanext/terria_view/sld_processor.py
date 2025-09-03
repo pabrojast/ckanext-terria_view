@@ -1165,7 +1165,7 @@ class SLDProcessor:
             # Only use for very complex datasets where performance is critical
             enum_count = len(processed_data.get("enum_colors", []))
             if renderer_type == "RuleRenderer" and enum_count > 50:
-                result["forceCesiumPrimitives"] = True
+                result["forceCesiumPrimitives"] = False #FIX
                 print(f"Applied forceCesiumPrimitives for very complex dataset ({enum_count} categories)")
             else:
                 # Explicitly set to false for categorical styling to avoid conflicts

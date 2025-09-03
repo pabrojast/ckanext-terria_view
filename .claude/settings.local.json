@@ -5,7 +5,9 @@
       "Bash(python test:*)",
       "Bash(del \"C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\test_somalia_sld.py\")",
       "Bash(dir:*)",
-      "WebFetch(domain:docs.terria.io)"
+      "WebFetch(domain:docs.terria.io)",
+      "Bash(python:*)",
+      "Bash(del \"C:\\Users\\pablo\\verify_forcecesium_fix.py\")"
     ],
     "deny": [],
     "ask": [],
