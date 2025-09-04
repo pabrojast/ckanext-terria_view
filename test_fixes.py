@@ -11,7 +11,7 @@ BASE_URL = "https://data.dev-wins.com"
 def test_endpoint(endpoint, description):
     """Test a single endpoint and return result."""
     url = f"{BASE_URL}{endpoint}"
-    print(f"\n🧪 Testing {description}")
+    print(f"\n[TEST] Testing {description}")
     print(f"   URL: {url}")
     
     try:
@@ -26,16 +26,16 @@ def test_endpoint(endpoint, description):
             try:
                 data = response.json()
                 if 'error' in data:
-                    print(f"   ⚠️  API returned error: {data.get('message', 'Unknown error')}")
+                    print(f"   WARNING: API returned error: {data.get('message', 'Unknown error')}")
                     return False
                 else:
-                    print(f"   ✅ Success - Response size: {len(response.content)} bytes")
+                    print(f"   SUCCESS - Response size: {len(response.content)} bytes")
                     return True
             except json.JSONDecodeError:
-                print(f"   ✅ Success - Non-JSON response size: {len(response.content)} bytes")
+                print(f"   SUCCESS - Non-JSON response size: {len(response.content)} bytes")
                 return True
         else:
-            print(f"   ❌ Failed with status {response.status_code}")
+            print(f"   FAILED with status {response.status_code}")
             try:
                 error_data = response.json()
                 if 'message' in error_data:
@@ -45,15 +45,15 @@ def test_endpoint(endpoint, description):
             return False
             
     except requests.exceptions.Timeout:
-        print(f"   ⏰ Timeout after 30 seconds")
+        print(f"   TIMEOUT after 30 seconds")
         return False
     except Exception as e:
-        print(f"   💥 Exception: {e}")
+        print(f"   EXCEPTION: {e}")
         return False
 
 def main():
     """Run basic endpoint tests."""
-    print("🔧 Testing Terria API Endpoints After Fixes")
+    print("[TESTING] Terria API Endpoints After Fixes")
     print("=" * 60)
     
     tests = [
@@ -70,23 +70,23 @@ def main():
         results.append((description, result))
     
     print("\n" + "=" * 60)
-    print("📊 Test Results Summary:")
+    print("[RESULTS] Test Results Summary:")
     
     passed = 0
     for description, result in results:
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         print(f"   {description}: {status}")
         if result:
             passed += 1
     
-    print(f"\n🏆 Overall: {passed}/{len(results)} tests passed")
+    print(f"\n[OVERALL] {passed}/{len(results)} tests passed")
     
     if passed == len(results):
-        print("🎉 All tests passed! The fixes appear to be working.")
+        print("All tests passed! The fixes appear to be working.")
     elif passed > 0:
-        print("⚠️  Some tests passed. The system is partially working.")
+        print("Some tests passed. The system is partially working.")
     else:
-        print("❌ All tests failed. Please check the logs for more details.")
+        print("All tests failed. Please check the logs for more details.")
 
 if __name__ == "__main__":
     main()

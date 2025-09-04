@@ -18,6 +18,8 @@ from .terria_config_builder import TerriaConfigBuilder
 from .cache_manager import CacheManager
 from .file_cache_manager import FileCacheManager
 from .api_endpoints import terria_api
+from .cache_preloader import CachePreloader
+from .terria_json_generator import TerriaJSONGenerator
 
 # Get the original callback
 resource_view_list = get.resource_view_list
@@ -108,6 +110,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.cache_manager = CacheManager()
         self.file_cache_manager = FileCacheManager()
         
+        # Initialize cache preloader (will be started after configuration)
+        self.cache_preloader = None
+        
         # Callback for resource_view_list
         self.resource_view_list_callback = None
     
@@ -178,6 +183,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
+        
+        # Initialize and start cache preloader
+        self._initialize_cache_preloader()
     
     plugins.implements(plugins.IResourceView, inherit=True)
     def info(self):
@@ -461,6 +469,24 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             data_dict['available_sld_files'] = []
         
         return 'terria_instance_url.html'
+    
+    def _initialize_cache_preloader(self):
+        """Initialize and start the cache preloader."""
+        try:
+            # Create Terria JSON generator instance
+            generator = TerriaJSONGenerator()
+            
+            # Initialize cache preloader
+            self.cache_preloader = CachePreloader(generator)
+            
+            # Start preloading in background
+            self.cache_preloader.start_preload()
+            
+            self._debug_print("Cache preloader initialized and started")
+            
+        except Exception as e:
+            self._debug_print(f"Error initializing cache preloader: {e}")
+            # Don't fail plugin initialization if preloader fails
     
     plugins.implements(plugins.IActions, inherit=True)
     def get_actions(self):

@@ -1,0 +1,18 @@
+{
+  "memory_cache": {
+    "total_entries": 6,
+    "valid_entries": 6,
+    "expired_entries": 0,
+    "cache_timeout": 3600
+  },
+  "file_cache": {
+    "file_caching_enabled": true,
+    "cache_directory": "/tmp/terria_json_cache",
+    "total_files": 1,
+    "valid_files": 1,
+    "expired_files": 0,
+    "total_size_bytes": 7457,
+    "total_size_mb": 0.01,
+    "cache_timeout": 3600
+  }
+}

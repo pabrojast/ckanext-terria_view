@@ -268,13 +268,21 @@ class TerriaAPIController:
             )
             
             if file_path and os.path.exists(file_path):
-                # Serve file
-                return send_file(
-                    file_path,
-                    mimetype='application/json',
-                    as_attachment=False,
-                    download_name=f'dataset_{dataset_id}.json'
-                )
+                # Serve file with Flask version compatibility
+                try:
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False,
+                        download_name=f'dataset_{dataset_id}.json'
+                    )
+                except TypeError:
+                    # Fallback for older Flask versions without download_name
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False
+                    )
             else:
                 # Fallback to JSON response if file caching failed/disabled
                 config = self.generator.generate_dataset_json(dataset_id, view_index)
@@ -305,13 +313,21 @@ class TerriaAPIController:
             )
             
             if file_path and os.path.exists(file_path):
-                # Serve file
-                return send_file(
-                    file_path,
-                    mimetype='application/json',
-                    as_attachment=False,
-                    download_name=f'organization_{org_name}.json'
-                )
+                # Serve file with Flask version compatibility
+                try:
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False,
+                        download_name=f'organization_{org_name}.json'
+                    )
+                except TypeError:
+                    # Fallback for older Flask versions without download_name
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False
+                    )
             else:
                 # Fallback to JSON response if file caching failed/disabled
                 config = self.generator.generate_organization_json(org_name)
@@ -338,13 +354,21 @@ class TerriaAPIController:
             )
             
             if file_path and os.path.exists(file_path):
-                # Serve file
-                return send_file(
-                    file_path,
-                    mimetype='application/json',
-                    as_attachment=False,
-                    download_name='ihp-wins.json'
-                )
+                # Serve file with Flask version compatibility
+                try:
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False,
+                        download_name='ihp-wins.json'
+                    )
+                except TypeError:
+                    # Fallback for older Flask versions without download_name
+                    return send_file(
+                        file_path,
+                        mimetype='application/json',
+                        as_attachment=False
+                    )
             else:
                 # Fallback to JSON response if file caching failed/disabled
                 config = self.generator.generate_full_catalog_json()
