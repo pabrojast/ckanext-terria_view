@@ -347,34 +347,55 @@ export TERRIA_DEBUG=true
 
 ## Troubleshooting
 
-### Problema: Caché no se invalida automáticamente
-**Solución:** Verificar que los hooks `after_create`, `after_update`, `after_delete` estén funcionando en el plugin.
+### Issue: Import errors with urllib3/requests
+**Solution:** The implementation includes compatibility fixes for different urllib3 versions. If you still see import errors:
+1. Check urllib3 version: `pip show urllib3`
+2. For very old versions (<1.15), consider upgrading: `pip install "urllib3>=1.15"`
+3. The code automatically falls back to `method_whitelist` for older versions
 
-### Problema: Múltiples vistas no aparecen
-**Solución:** Verificar que `resource_view_list` retorne todas las vistas `terria_view` para el recurso.
+### Issue: Cache not invalidating automatically
+**Solution:** Verify that the `after_create`, `after_update`, `after_delete` hooks are working in the plugin.
 
-### Problema: Performance lenta en endpoints
-**Solución:** Verificar estadísticas de caché y considerar aumentar `cache_timeout`.
+### Issue: Multiple views not appearing
+**Solution:** Verify that `resource_view_list` returns all `terria_view` views for the resource.
 
-### Problema: DAG falla con timeouts
-**Solución:** Incrementar `TIMEOUT_SECONDS` y verificar conectividad de red.
+### Issue: Slow endpoint performance
+**Solution:** Check cache statistics and consider increasing `cache_timeout`.
 
-### Problema: JSON malformado
-**Solución:** Verificar que `convert_sets_to_lists` se esté aplicando antes de serializar.
+### Issue: DAG fails with timeouts
+**Solution:** Increase `TIMEOUT_SECONDS` and verify network connectivity.
 
-## Configuración de Producción
+### Issue: Malformed JSON
+**Solution:** Verify that `convert_sets_to_lists` is being applied before serialization.
 
-### Variables de Airflow Requeridas
-- `APIDEV`: Token de API de CKAN con permisos de escritura
+### Issue: Private datasets appearing in results
+**Solution:** The implementation filters for `state:active` and `private:false`. If private datasets still appear, check the CKAN search query filters.
 
-### Variables de Entorno CKAN
-- `TERRIA_DEBUG`: `false` (en producción)
+### Issue: File cache growing too large
+**Solution:** Use the cleanup endpoint regularly: `POST /api/terria/cache/cleanup` or adjust `cache_timeout` in `FileCacheManager.__init__()`.
 
-### Configuración de Cache
-- Timeout por defecto: 1 hora (3600 segundos)
-- Ajustable en `CacheManager.__init__()` si es necesario
+## Production Configuration
 
-### Monitoring Recomendado
-- Alertas si el DAG tarda > 20 minutos
-- Alertas si el cache hit rate < 70%
-- Alertas si los endpoints retornan errores 5XX
+### Required Airflow Variables
+- `APIDEV`: CKAN API token with write permissions
+
+### CKAN Environment Variables
+- `TERRIA_DEBUG`: `false` (in production)
+
+### Cache Configuration
+- Default timeout: 1 hour (3600 seconds)
+- Adjustable in `CacheManager.__init__()` and `FileCacheManager.__init__()` if needed
+- File cache directory: Uses CKAN's `ckan.storage_path` or system temp directory
+
+### Recommended Monitoring
+- Alerts if DAG takes > 20 minutes
+- Alerts if cache hit rate < 70%
+- Alerts if endpoints return 5XX errors
+- Monitor file cache size and cleanup regularly
+- Track endpoint response times
+
+### Performance Optimization
+- Use file-based endpoints (`/api/terria/file/*`) for large responses
+- Consider increasing cache timeout for stable datasets
+- Pre-generate commonly requested catalogs during low-traffic periods
+- Monitor and cleanup expired cache files regularly

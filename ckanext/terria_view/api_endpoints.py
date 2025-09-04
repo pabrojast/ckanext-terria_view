@@ -367,89 +367,110 @@ class TerriaAPIController:
             return self._create_error_response(f'Error cleaning up cache: {str(e)}')
 
 
-# Initialize controller
-controller = TerriaAPIController()
+# Initialize controller lazily to avoid import-time errors
+controller = None
+
+def get_controller():
+    global controller
+    if controller is None:
+        try:
+            controller = TerriaAPIController()
+        except Exception as e:
+            # Log the error and create a minimal error response
+            print(f"Error initializing TerriaAPIController: {e}")
+            # Return a minimal controller that can handle errors
+            from flask import jsonify
+            class ErrorController:
+                def __getattr__(self, name):
+                    def error_response(*args, **kwargs):
+                        return jsonify({
+                            'error': True,
+                            'message': f'Service temporarily unavailable: {e}'
+                        }), 503
+                    return error_response
+            controller = ErrorController()
+    return controller
 
 
 # Define routes
 @terria_api.route('/api/terria/dataset/<dataset_id>', methods=['GET'])
 def dataset_json_endpoint(dataset_id):
     """Dataset JSON endpoint."""
-    return controller.dataset_json(dataset_id)
+    return get_controller().dataset_json(dataset_id)
 
 
 @terria_api.route('/api/terria/organization/<org_name>', methods=['GET'])
 def organization_json_endpoint(org_name):
     """Organization JSON endpoint."""
-    return controller.organization_json(org_name)
+    return get_controller().organization_json(org_name)
 
 
 @terria_api.route('/api/terria/tag/<tag_name>', methods=['GET'])
 def tag_json_endpoint(tag_name):
     """Tag JSON endpoint."""
-    return controller.tag_json(tag_name)
+    return get_controller().tag_json(tag_name)
 
 
 @terria_api.route('/api/terria/full', methods=['GET'])
 def full_catalog_json_endpoint():
     """Full catalog JSON endpoint."""
-    return controller.full_catalog_json()
+    return get_controller().full_catalog_json()
 
 
 @terria_api.route('/api/terria/resource/<resource_id>/views', methods=['GET'])
 def resource_views_endpoint(resource_id):
     """Resource views endpoint."""
-    return controller.resource_views(resource_id)
+    return get_controller().resource_views(resource_id)
 
 
 @terria_api.route('/api/terria/modular', methods=['GET'])
 def modular_catalog_endpoint():
     """Modular catalog JSON endpoint."""
-    return controller.modular_catalog_json()
+    return get_controller().modular_catalog_json()
 
 
 # File serving endpoints for better performance
 @terria_api.route('/api/terria/file/dataset/<dataset_id>', methods=['GET'])
 def dataset_json_file_endpoint(dataset_id):
     """Dataset JSON file endpoint."""
-    return controller.dataset_json_file(dataset_id)
+    return get_controller().dataset_json_file(dataset_id)
 
 
 @terria_api.route('/api/terria/file/organization/<org_name>', methods=['GET'])
 def organization_json_file_endpoint(org_name):
     """Organization JSON file endpoint."""
-    return controller.organization_json_file(org_name)
+    return get_controller().organization_json_file(org_name)
 
 
 @terria_api.route('/api/terria/file/full', methods=['GET'])
 def full_catalog_json_file_endpoint():
     """Full catalog JSON file endpoint."""
-    return controller.full_catalog_json_file()
+    return get_controller().full_catalog_json_file()
 
 
 # Serve the main IHP-WINS.json file at the root for compatibility
 @terria_api.route('/ihp-wins.json', methods=['GET'])
 def ihp_wins_json_endpoint():
     """Main IHP-WINS JSON file endpoint (compatibility)."""
-    return controller.full_catalog_json_file()
+    return get_controller().full_catalog_json_file()
 
 
 @terria_api.route('/api/terria/cache/stats', methods=['GET'])
 def cache_stats_endpoint():
     """Cache statistics endpoint."""
-    return controller.cache_stats()
+    return get_controller().cache_stats()
 
 
 @terria_api.route('/api/terria/cache/invalidate', methods=['POST'])
 def invalidate_cache_endpoint():
     """Cache invalidation endpoint."""
-    return controller.invalidate_cache()
+    return get_controller().invalidate_cache()
 
 
 @terria_api.route('/api/terria/cache/cleanup', methods=['POST'])
 def cleanup_cache_endpoint():
     """Cache cleanup endpoint."""
-    return controller.cleanup_cache()
+    return get_controller().cleanup_cache()
 
 
 # Support for OPTIONS requests (CORS preflight)

@@ -9,7 +9,11 @@ from typing import Dict, List, Optional, Any, Tuple
 import ckan.plugins.toolkit as toolkit
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+try:
+    from urllib3.util.retry import Retry
+except ImportError:
+    # Fallback for very old urllib3 versions
+    from urllib3.util import Retry
 
 from .cache_manager import CacheManager
 from .file_cache_manager import FileCacheManager
@@ -30,12 +34,22 @@ class TerriaJSONGenerator:
         self.resource_utils = ResourceUtils(self.config_manager)
         
         # Setup HTTP session with retry strategy
-        retry_strategy = Retry(
-            total=2,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["GET", "POST"]
-        )
+        # Use method_whitelist for compatibility with older urllib3 versions
+        try:
+            retry_strategy = Retry(
+                total=2,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                allowed_methods=["GET", "POST"]  # newer urllib3 versions
+            )
+        except TypeError:
+            # Fallback for older urllib3 versions
+            retry_strategy = Retry(
+                total=2,
+                backoff_factor=1,
+                status_forcelist=[429, 500, 502, 503, 504],
+                method_whitelist=["GET", "POST"]  # older urllib3 versions
+            )
         adapter = HTTPAdapter(max_retries=retry_strategy)
         self.http = requests.Session()
         self.http.mount("https://", adapter)
