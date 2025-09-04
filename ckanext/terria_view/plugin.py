@@ -15,6 +15,8 @@ from .config_manager import ConfigManager
 from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import TerriaConfigBuilder
+from .cache_manager import CacheManager
+from .api_endpoints import terria_api
 
 # Get the original callback
 resource_view_list = get.resource_view_list
@@ -102,6 +104,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.sld_processor = SLDProcessor()
         self.resource_utils = ResourceUtils(self.config_manager)
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
+        self.cache_manager = CacheManager()
         
         # Callback for resource_view_list
         self.resource_view_list_callback = None
@@ -122,6 +125,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         """Update plugin configuration."""
         toolkit.add_template_directory(config_, 'templates')
         toolkit.add_public_directory(config_, 'public')
+    
+    plugins.implements(plugins.IBlueprint)
+    def get_blueprint(self):
+        """Register API blueprint."""
+        return terria_api
     
     plugins.implements(plugins.ITemplateHelpers)
     def get_helpers(self):
@@ -225,6 +233,48 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             Dictionary with processed data
         """
         return self._process_form_data(data_dict)
+    
+    def after_create(self, context, data_dict):
+        """
+        Process data after creating resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view creation")
+    
+    def after_update(self, context, data_dict):
+        """
+        Process data after updating resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view update")
+    
+    def after_delete(self, context, data_dict):
+        """
+        Process data after deleting resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view deletion")
     
     def _process_form_data(self, data_dict):
         """

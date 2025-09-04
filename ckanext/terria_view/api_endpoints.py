@@ -1,0 +1,241 @@
+# encoding: utf-8
+"""
+API endpoints for Terria JSON generation.
+"""
+import json
+from flask import Blueprint, jsonify, request, Response
+import ckan.plugins.toolkit as toolkit
+from ckan.common import config
+
+from .terria_json_generator import TerriaJSONGenerator
+
+
+# Create Blueprint for our API endpoints
+terria_api = Blueprint('terria_api', __name__)
+
+
+class TerriaAPIController:
+    """Controller for Terria API endpoints."""
+    
+    def __init__(self):
+        """Initialize the controller."""
+        self.generator = TerriaJSONGenerator()
+    
+    def _create_json_response(self, data: dict, status_code: int = 200) -> Response:
+        """
+        Create a JSON response with appropriate headers.
+        
+        Args:
+            data: Data to return as JSON
+            status_code: HTTP status code
+            
+        Returns:
+            Flask Response object
+        """
+        response = Response(
+            json.dumps(data, ensure_ascii=False, indent=2),
+            status=status_code,
+            content_type='application/json; charset=utf-8'
+        )
+        
+        # Add CORS headers if needed
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        
+        return response
+    
+    def _create_error_response(self, message: str, status_code: int = 500) -> Response:
+        """
+        Create an error response.
+        
+        Args:
+            message: Error message
+            status_code: HTTP status code
+            
+        Returns:
+            Flask Response object
+        """
+        return self._create_json_response({
+            'error': True,
+            'message': message
+        }, status_code)
+    
+    def dataset_json(self, dataset_id: str):
+        """
+        Generate Terria JSON for a specific dataset.
+        
+        Args:
+            dataset_id: Dataset ID
+            
+        Returns:
+            JSON response with Terria configuration
+        """
+        try:
+            # Get view_index from query parameters
+            view_index = request.args.get('view_index', type=int)
+            
+            # Generate configuration
+            config = self.generator.generate_dataset_json(dataset_id, view_index)
+            
+            # Convert sets to lists for JSON serialization
+            config = self.generator.convert_sets_to_lists(config)
+            
+            return self._create_json_response(config)
+            
+        except toolkit.ObjectNotFound:
+            return self._create_error_response(f'Dataset not found: {dataset_id}', 404)
+        except Exception as e:
+            return self._create_error_response(f'Error generating dataset JSON: {str(e)}')
+    
+    def organization_json(self, org_name: str):
+        """
+        Generate Terria JSON for an organization.
+        
+        Args:
+            org_name: Organization name
+            
+        Returns:
+            JSON response with Terria configuration
+        """
+        try:
+            # Generate configuration
+            config = self.generator.generate_organization_json(org_name)
+            
+            # Convert sets to lists for JSON serialization
+            config = self.generator.convert_sets_to_lists(config)
+            
+            return self._create_json_response(config)
+            
+        except toolkit.ObjectNotFound:
+            return self._create_error_response(f'Organization not found: {org_name}', 404)
+        except Exception as e:
+            return self._create_error_response(f'Error generating organization JSON: {str(e)}')
+    
+    def tag_json(self, tag_name: str):
+        """
+        Generate Terria JSON for a tag.
+        
+        Args:
+            tag_name: Tag name
+            
+        Returns:
+            JSON response with Terria configuration
+        """
+        try:
+            # Generate configuration
+            config = self.generator.generate_tag_json(tag_name)
+            
+            # Convert sets to lists for JSON serialization
+            config = self.generator.convert_sets_to_lists(config)
+            
+            return self._create_json_response(config)
+            
+        except Exception as e:
+            return self._create_error_response(f'Error generating tag JSON: {str(e)}')
+    
+    def full_catalog_json(self):
+        """
+        Generate full catalog Terria JSON.
+        
+        Returns:
+            JSON response with full Terria configuration
+        """
+        try:
+            # Generate configuration
+            config = self.generator.generate_full_catalog_json()
+            
+            # Convert sets to lists for JSON serialization
+            config = self.generator.convert_sets_to_lists(config)
+            
+            return self._create_json_response(config)
+            
+        except Exception as e:
+            return self._create_error_response(f'Error generating full catalog JSON: {str(e)}')
+    
+    def cache_stats(self):
+        """
+        Get cache statistics.
+        
+        Returns:
+            JSON response with cache statistics
+        """
+        try:
+            stats = self.generator.cache_manager.get_cache_stats()
+            return self._create_json_response(stats)
+        except Exception as e:
+            return self._create_error_response(f'Error getting cache stats: {str(e)}')
+    
+    def invalidate_cache(self):
+        """
+        Invalidate cache entries.
+        
+        Returns:
+            JSON response confirming cache invalidation
+        """
+        try:
+            # Get parameters
+            cache_type = request.args.get('type')
+            identifier = request.args.get('id')
+            
+            # Invalidate cache
+            self.generator.cache_manager.invalidate_cache(cache_type, identifier)
+            
+            return self._create_json_response({
+                'success': True,
+                'message': 'Cache invalidated successfully'
+            })
+        except Exception as e:
+            return self._create_error_response(f'Error invalidating cache: {str(e)}')
+
+
+# Initialize controller
+controller = TerriaAPIController()
+
+
+# Define routes
+@terria_api.route('/api/terria/dataset/<dataset_id>', methods=['GET'])
+def dataset_json_endpoint(dataset_id):
+    """Dataset JSON endpoint."""
+    return controller.dataset_json(dataset_id)
+
+
+@terria_api.route('/api/terria/organization/<org_name>', methods=['GET'])
+def organization_json_endpoint(org_name):
+    """Organization JSON endpoint."""
+    return controller.organization_json(org_name)
+
+
+@terria_api.route('/api/terria/tag/<tag_name>', methods=['GET'])
+def tag_json_endpoint(tag_name):
+    """Tag JSON endpoint."""
+    return controller.tag_json(tag_name)
+
+
+@terria_api.route('/api/terria/full', methods=['GET'])
+def full_catalog_json_endpoint():
+    """Full catalog JSON endpoint."""
+    return controller.full_catalog_json()
+
+
+@terria_api.route('/api/terria/cache/stats', methods=['GET'])
+def cache_stats_endpoint():
+    """Cache statistics endpoint."""
+    return controller.cache_stats()
+
+
+@terria_api.route('/api/terria/cache/invalidate', methods=['POST'])
+def invalidate_cache_endpoint():
+    """Cache invalidation endpoint."""
+    return controller.invalidate_cache()
+
+
+# Support for OPTIONS requests (CORS preflight)
+@terria_api.route('/api/terria/<path:path>', methods=['OPTIONS'])
+def handle_options(path):
+    """Handle OPTIONS requests for CORS."""
+    response = Response()
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response

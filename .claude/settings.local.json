@@ -7,7 +7,11 @@
       "Bash(dir:*)",
       "WebFetch(domain:docs.terria.io)",
       "Bash(python:*)",
-      "Bash(del \"C:\\Users\\pablo\\verify_forcecesium_fix.py\")"
+      "Bash(del \"C:\\Users\\pablo\\verify_forcecesium_fix.py\")",
+      "Read(/C:\\Users\\pablo\\OneDrive\\Escritorio\\Proyectos\\aircan\\aircan\\dags/**)",
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)"
     ],
     "deny": [],
     "ask": [],
