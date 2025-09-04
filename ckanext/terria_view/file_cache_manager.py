@@ -17,17 +17,46 @@ class FileCacheManager:
     
     def __init__(self):
         """Initialize the file cache manager."""
-        # Use CKAN's storage path or temp directory
-        self.cache_dir = config.get('ckan.storage_path', tempfile.gettempdir())
-        self.cache_subdir = os.path.join(self.cache_dir, 'terria_json_cache')
+        # Try different cache directory options with fallbacks
+        cache_locations = [
+            # First try CKAN's storage path
+            config.get('ckan.storage_path'),
+            # Then try common writable directories
+            '/tmp',
+            '/var/tmp', 
+            # Finally use system temp directory
+            tempfile.gettempdir()
+        ]
         
-        # Create cache directory if it doesn't exist
-        os.makedirs(self.cache_subdir, exist_ok=True)
+        self.cache_subdir = None
+        
+        for cache_dir in cache_locations:
+            if cache_dir:
+                try:
+                    cache_subdir = os.path.join(cache_dir, 'terria_json_cache')
+                    # Test if we can create the directory
+                    os.makedirs(cache_subdir, exist_ok=True)
+                    # Test if we can write to it
+                    test_file = os.path.join(cache_subdir, '.write_test')
+                    with open(test_file, 'w') as f:
+                        f.write('test')
+                    os.remove(test_file)
+                    
+                    self.cache_subdir = cache_subdir
+                    self._debug_print(f"File cache initialized at: {self.cache_subdir}")
+                    break
+                    
+                except (OSError, PermissionError) as e:
+                    self._debug_print(f"Cannot use cache directory {cache_dir}: {e}")
+                    continue
+        
+        if self.cache_subdir is None:
+            # If all fails, disable file caching
+            self._debug_print("WARNING: File caching disabled due to permission issues")
+            self.cache_subdir = None
         
         # Default cache timeout (1 hour)
         self.cache_timeout = 3600
-        
-        self._debug_print(f"File cache initialized at: {self.cache_subdir}")
     
     def _debug_print(self, message: str):
         """Print debug messages when TERRIA_DEBUG is enabled."""
@@ -97,6 +126,9 @@ class FileCacheManager:
         Returns:
             Path to cached file or None if not found/invalid
         """
+        if self.cache_subdir is None:
+            return None  # File caching disabled
+            
         filepath = self._get_cache_path(cache_type, identifier)
         
         if self._is_cache_valid(filepath):
@@ -124,6 +156,9 @@ class FileCacheManager:
         Returns:
             Cached JSON data or None if not found/invalid
         """
+        if self.cache_subdir is None:
+            return None  # File caching disabled
+            
         filepath = self.get_cached_file(cache_type, identifier)
         
         if filepath:
@@ -140,7 +175,7 @@ class FileCacheManager:
         
         return None
     
-    def cache_json(self, cache_type: str, identifier: str, data: Dict) -> str:
+    def cache_json(self, cache_type: str, identifier: str, data: Dict) -> Optional[str]:
         """
         Cache JSON data to file.
         
@@ -150,8 +185,12 @@ class FileCacheManager:
             data: JSON data to cache
             
         Returns:
-            Path to cached file
+            Path to cached file or None if caching failed/disabled
         """
+        if self.cache_subdir is None:
+            self._debug_print(f"File caching disabled, skipping cache for {cache_type}:{identifier}")
+            return None  # File caching disabled
+            
         filepath = self._get_cache_path(cache_type, identifier)
         
         try:
@@ -175,7 +214,7 @@ class FileCacheManager:
                     os.remove(temp_path)
                 except:
                     pass
-            raise
+            return None  # Return None instead of raising exception
     
     def invalidate_cache(self, cache_type: str = None, identifier: str = None) -> None:
         """
@@ -185,6 +224,9 @@ class FileCacheManager:
             cache_type: Type of cache to invalidate (None for all)
             identifier: Specific identifier to invalidate (None for all of type)
         """
+        if self.cache_subdir is None:
+            return  # File caching disabled
+            
         if cache_type and identifier:
             # Invalidate specific cache file
             filepath = self._get_cache_path(cache_type, identifier)
@@ -198,25 +240,31 @@ class FileCacheManager:
         elif cache_type:
             # Invalidate all files of specific type
             pattern = f"terria_{cache_type}_"
-            for filename in os.listdir(self.cache_subdir):
-                if filename.startswith(pattern):
-                    filepath = os.path.join(self.cache_subdir, filename)
-                    try:
-                        os.remove(filepath)
-                        self._debug_print(f"Invalidated cache file: {filename}")
-                    except Exception as e:
-                        self._debug_print(f"Error removing cache file: {e}")
+            try:
+                for filename in os.listdir(self.cache_subdir):
+                    if filename.startswith(pattern):
+                        filepath = os.path.join(self.cache_subdir, filename)
+                        try:
+                            os.remove(filepath)
+                            self._debug_print(f"Invalidated cache file: {filename}")
+                        except Exception as e:
+                            self._debug_print(f"Error removing cache file: {e}")
+            except Exception as e:
+                self._debug_print(f"Error listing cache directory: {e}")
         
         else:
             # Invalidate all cache
-            for filename in os.listdir(self.cache_subdir):
-                if filename.startswith('terria_') and filename.endswith('.json'):
-                    filepath = os.path.join(self.cache_subdir, filename)
-                    try:
-                        os.remove(filepath)
-                        self._debug_print(f"Invalidated cache file: {filename}")
-                    except Exception as e:
-                        self._debug_print(f"Error removing cache file: {e}")
+            try:
+                for filename in os.listdir(self.cache_subdir):
+                    if filename.startswith('terria_') and filename.endswith('.json'):
+                        filepath = os.path.join(self.cache_subdir, filename)
+                        try:
+                            os.remove(filepath)
+                            self._debug_print(f"Invalidated cache file: {filename}")
+                        except Exception as e:
+                            self._debug_print(f"Error removing cache file: {e}")
+            except Exception as e:
+                self._debug_print(f"Error listing cache directory: {e}")
     
     def invalidate_by_resource_id(self, resource_id: str) -> None:
         """
@@ -275,6 +323,13 @@ class FileCacheManager:
         Returns:
             Dictionary with cache statistics
         """
+        if self.cache_subdir is None:
+            return {
+                'file_caching_enabled': False,
+                'message': 'File caching disabled due to permission issues',
+                'cache_directory': None
+            }
+            
         try:
             files = [f for f in os.listdir(self.cache_subdir) 
                     if f.startswith('terria_') and f.endswith('.json')]
@@ -302,6 +357,7 @@ class FileCacheManager:
                     self._debug_print(f"Error getting stats for {filename}: {e}")
             
             return {
+                'file_caching_enabled': True,
                 'cache_directory': self.cache_subdir,
                 'total_files': total_files,
                 'valid_files': valid_files,
@@ -314,6 +370,7 @@ class FileCacheManager:
         except Exception as e:
             self._debug_print(f"Error getting cache stats: {e}")
             return {
+                'file_caching_enabled': True,
                 'error': str(e),
                 'cache_directory': self.cache_subdir
             }
@@ -325,6 +382,9 @@ class FileCacheManager:
         Returns:
             Number of files cleaned up
         """
+        if self.cache_subdir is None:
+            return 0  # File caching disabled
+            
         cleaned_files = 0
         
         try:

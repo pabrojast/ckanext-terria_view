@@ -211,8 +211,19 @@ class TerriaAPIController:
             JSON response with cache statistics
         """
         try:
-            stats = self.generator.cache_manager.get_cache_stats()
-            return self._create_json_response(stats)
+            # Get memory cache stats
+            memory_stats = self.generator.cache_manager.get_cache_stats()
+            
+            # Get file cache stats
+            file_stats = self.generator.file_cache_manager.get_cache_stats()
+            
+            # Combine stats
+            combined_stats = {
+                'memory_cache': memory_stats,
+                'file_cache': file_stats
+            }
+            
+            return self._create_json_response(combined_stats)
         except Exception as e:
             return self._create_error_response(f'Error getting cache stats: {str(e)}')
     
@@ -243,7 +254,7 @@ class TerriaAPIController:
             dataset_id: Dataset ID
             
         Returns:
-            File response with JSON
+            File response with JSON or JSON response if file caching disabled
         """
         try:
             view_index = request.args.get('view_index', type=int)
@@ -256,13 +267,19 @@ class TerriaAPIController:
                 dataset_id, view_index
             )
             
-            # Serve file
-            return send_file(
-                file_path,
-                mimetype='application/json',
-                as_attachment=False,
-                download_name=f'dataset_{dataset_id}.json'
-            )
+            if file_path and os.path.exists(file_path):
+                # Serve file
+                return send_file(
+                    file_path,
+                    mimetype='application/json',
+                    as_attachment=False,
+                    download_name=f'dataset_{dataset_id}.json'
+                )
+            else:
+                # Fallback to JSON response if file caching failed/disabled
+                config = self.generator.generate_dataset_json(dataset_id, view_index)
+                config = self.generator.convert_sets_to_lists(config)
+                return self._create_json_response(config)
             
         except toolkit.ObjectNotFound:
             return self._create_error_response(f'Dataset not found: {dataset_id}', 404)
@@ -277,7 +294,7 @@ class TerriaAPIController:
             org_name: Organization name
             
         Returns:
-            File response with JSON
+            File response with JSON or JSON response if file caching disabled
         """
         try:
             # Get or generate cached file
@@ -287,13 +304,19 @@ class TerriaAPIController:
                 org_name
             )
             
-            # Serve file
-            return send_file(
-                file_path,
-                mimetype='application/json',
-                as_attachment=False,
-                download_name=f'organization_{org_name}.json'
-            )
+            if file_path and os.path.exists(file_path):
+                # Serve file
+                return send_file(
+                    file_path,
+                    mimetype='application/json',
+                    as_attachment=False,
+                    download_name=f'organization_{org_name}.json'
+                )
+            else:
+                # Fallback to JSON response if file caching failed/disabled
+                config = self.generator.generate_organization_json(org_name)
+                config = self.generator.convert_sets_to_lists(config)
+                return self._create_json_response(config)
             
         except toolkit.ObjectNotFound:
             return self._create_error_response(f'Organization not found: {org_name}', 404)
@@ -305,7 +328,7 @@ class TerriaAPIController:
         Generate and serve full catalog JSON as file.
         
         Returns:
-            File response with JSON
+            File response with JSON or JSON response if file caching disabled
         """
         try:
             # Get or generate cached file
@@ -314,13 +337,19 @@ class TerriaAPIController:
                 self.generator.generate_full_catalog_json
             )
             
-            # Serve file
-            return send_file(
-                file_path,
-                mimetype='application/json',
-                as_attachment=False,
-                download_name='ihp-wins.json'
-            )
+            if file_path and os.path.exists(file_path):
+                # Serve file
+                return send_file(
+                    file_path,
+                    mimetype='application/json',
+                    as_attachment=False,
+                    download_name='ihp-wins.json'
+                )
+            else:
+                # Fallback to JSON response if file caching failed/disabled
+                config = self.generator.generate_full_catalog_json()
+                config = self.generator.convert_sets_to_lists(config)
+                return self._create_json_response(config)
             
         except Exception as e:
             return self._create_error_response(f'Error generating full catalog file: {str(e)}')
@@ -358,11 +387,20 @@ class TerriaAPIController:
         try:
             cleaned_files = self.generator.file_cache_manager.cleanup_expired_files()
             
-            return self._create_json_response({
+            result = {
                 'success': True,
                 'cleaned_files': cleaned_files,
                 'message': f'Cleaned up {cleaned_files} expired cache files'
-            })
+            }
+            
+            if cleaned_files == 0:
+                file_cache_enabled = self.generator.file_cache_manager.cache_subdir is not None
+                if not file_cache_enabled:
+                    result['message'] = 'File caching is disabled - no cleanup needed'
+                else:
+                    result['message'] = 'No expired cache files found'
+            
+            return self._create_json_response(result)
         except Exception as e:
             return self._create_error_response(f'Error cleaning up cache: {str(e)}')
 
@@ -375,17 +413,20 @@ def get_controller():
     if controller is None:
         try:
             controller = TerriaAPIController()
-        except Exception as e:
+        except Exception as init_error:
             # Log the error and create a minimal error response
-            print(f"Error initializing TerriaAPIController: {e}")
+            print(f"Error initializing TerriaAPIController: {init_error}")
             # Return a minimal controller that can handle errors
             from flask import jsonify
+            
+            error_message = str(init_error)
+            
             class ErrorController:
                 def __getattr__(self, name):
                     def error_response(*args, **kwargs):
                         return jsonify({
                             'error': True,
-                            'message': f'Service temporarily unavailable: {e}'
+                            'message': f'Service temporarily unavailable: {error_message}'
                         }), 503
                     return error_response
             controller = ErrorController()

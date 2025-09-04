@@ -641,7 +641,7 @@ class TerriaJSONGenerator:
         return obj
     
     def get_or_generate_file(self, cache_type: str, identifier: str, 
-                           generator_func, *args, **kwargs) -> str:
+                           generator_func, *args, **kwargs) -> Optional[str]:
         """
         Get cached file or generate new one.
         
@@ -652,7 +652,7 @@ class TerriaJSONGenerator:
             *args, **kwargs: Arguments for generator function
             
         Returns:
-            Path to JSON file
+            Path to JSON file or None if file caching is disabled
         """
         # Try to get from file cache first
         cached_file = self.file_cache_manager.get_cached_file(cache_type, identifier)
@@ -667,7 +667,7 @@ class TerriaJSONGenerator:
         # Convert sets to lists
         data = self.convert_sets_to_lists(data)
         
-        # Cache to file
+        # Try to cache to file (may return None if file caching disabled)
         cached_file = self.file_cache_manager.cache_json(cache_type, identifier, data)
         
         return cached_file
