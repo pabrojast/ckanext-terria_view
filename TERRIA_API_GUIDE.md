@@ -1,60 +1,69 @@
-# Guía de la API de Terria JSON - Implementación On-Demand
+# Terria JSON API Guide - On-Demand Implementation
 
-## Resumen
+## Overview
 
-Esta implementación reemplaza el sistema anterior de generación de JSON de Terria cada hora por un sistema on-demand con caché inteligente. Los usuarios ahora tienen acceso automático a la versión más actualizada sin duplicar código SLD entre el DAG y el plugin CKAN.
+This implementation replaces the previous hourly Terria JSON generation system with an on-demand system featuring intelligent caching. Users now have automatic access to the latest version without duplicating SLD code between the DAG and CKAN plugin.
 
-## Arquitectura
+## Architecture
 
-### Componentes Principales
+### Main Components
 
-1. **Cache Manager** (`cache_manager.py`) - Gestión de caché con invalidación automática
-2. **Terria JSON Generator** (`terria_json_generator.py`) - Generación de configuraciones JSON
-3. **API Endpoints** (`api_endpoints.py`) - Endpoints REST para acceso on-demand
-4. **Plugin actualizado** (`plugin.py`) - Integración con hooks de invalidación de caché
-5. **DAG refactorizado** (`terria_catalog_updater_v2.py`) - Usa endpoints en lugar de duplicar código
+1. **Cache Manager** (`cache_manager.py`) - Cache management with automatic invalidation
+2. **File Cache Manager** (`file_cache_manager.py`) - File-based caching for pre-generated JSONs
+3. **Terria JSON Generator** (`terria_json_generator.py`) - JSON configuration generation
+4. **API Endpoints** (`api_endpoints.py`) - REST endpoints for on-demand access
+5. **Updated Plugin** (`plugin.py`) - Integration with cache invalidation hooks
+6. **Refactored DAG** (`terria_catalog_updater_v2.py`) - Uses endpoints instead of duplicating code
 
-### Sistema de Caché Inteligente
+### Intelligent Caching System
 
-- **Basado en contenido**: El caché se invalida automáticamente cuando cambian los datos
-- **Multi-nivel**: Caché por dataset, organización, tag y catálogo completo
-- **Consideración de vistas múltiples**: Incluye cambios en `custom_config`, `style`, y otras propiedades de vista
-- **Invalidación automática**: Se activa cuando se crean, actualizan o eliminan vistas de Terria
+- **Content-based**: Cache is automatically invalidated when data changes
+- **Multi-level**: Cache by dataset, organization, tag, and full catalog
+- **Multiple views consideration**: Includes changes in `custom_config`, `style`, and other view properties
+- **Automatic invalidation**: Triggered when Terria views are created, updated, or deleted
+- **File-based pre-generation**: Large JSONs are pre-generated and served as files for better performance
+- **Private/Draft filtering**: Only public and active datasets are included in generated JSONs
 
-## Endpoints de la API
+## API Endpoints
 
 ### Base URL
 ```
 https://ihp-wins.unesco.org/api/terria/
 ```
 
-### Endpoints Disponibles
+### Available Endpoints
 
-#### 1. Dataset Específico
+#### 1. Specific Dataset
 ```
 GET /api/terria/dataset/{dataset_id}
+GET /api/terria/file/dataset/{dataset_id}  # Optimized version with file
 ```
 
-**Parámetros:**
-- `view_index` (opcional): Índice de vista específica (0, 1, 2...)
+**Parameters:**
+- `view_index` (optional): Specific view index (0, 1, 2...)
 
-**Ejemplos:**
+**Examples:**
 ```bash
-# Todas las vistas del dataset
+# All views of the dataset (JSON response)
 curl "https://ihp-wins.unesco.org/api/terria/dataset/my-dataset-id"
 
-# Vista específica (índice 1)
+# Specific view (index 1, JSON response)
 curl "https://ihp-wins.unesco.org/api/terria/dataset/my-dataset-id?view_index=1"
+
+# Optimized version with pre-generated file
+curl "https://ihp-wins.unesco.org/api/terria/file/dataset/my-dataset-id"
 ```
 
-#### 2. Organización
+#### 2. Organization
 ```
 GET /api/terria/organization/{org_name}
+GET /api/terria/file/organization/{org_name}  # Optimized version with file
 ```
 
-**Ejemplo:**
+**Example:**
 ```bash
 curl "https://ihp-wins.unesco.org/api/terria/organization/unesco"
+curl "https://ihp-wins.unesco.org/api/terria/file/organization/unesco"
 ```
 
 #### 3. Tag
@@ -62,52 +71,111 @@ curl "https://ihp-wins.unesco.org/api/terria/organization/unesco"
 GET /api/terria/tag/{tag_name}
 ```
 
-**Ejemplo:**
+**Example:**
 ```bash
 curl "https://ihp-wins.unesco.org/api/terria/tag/groundwater"
 ```
 
-#### 4. Catálogo Completo
+#### 4. Full Catalog
 ```
 GET /api/terria/full
+GET /api/terria/file/full  # Optimized version with file
+GET /ihp-wins.json        # Compatibility endpoint
 ```
 
-**Ejemplo:**
+**Examples:**
 ```bash
 curl "https://ihp-wins.unesco.org/api/terria/full"
+curl "https://ihp-wins.unesco.org/api/terria/file/full"
+curl "https://ihp-wins.unesco.org/ihp-wins.json"
 ```
 
-#### 5. Estadísticas de Caché
+#### 5. Modular Catalog
+```
+GET /api/terria/modular
+```
+
+**Example:**
+```bash
+curl "https://ihp-wins.unesco.org/api/terria/modular"
+```
+
+#### 6. Resource Views Information
+```
+GET /api/terria/resource/{resource_id}/views
+```
+
+**Example:**
+```bash
+curl "https://ihp-wins.unesco.org/api/terria/resource/my-resource-id/views"
+```
+
+**Response example:**
+```json
+{
+  "resource_id": "my-resource-id",
+  "resource_name": "Sample Dataset",
+  "resource_format": "shp",
+  "total_views": 2,
+  "views": [
+    {
+      "view_index": 0,
+      "view_id": "view-123",
+      "title": "Default View",
+      "description": "",
+      "custom_config": "",
+      "style": "https://example.com/style.sld",
+      "json_url": "/api/terria/dataset/dataset-id?view_index=0"
+    },
+    {
+      "view_index": 1,
+      "view_id": "view-124",
+      "title": "Themed View",
+      "custom_config": "https://example.com#start=config",
+      "style": "NA",
+      "json_url": "/api/terria/dataset/dataset-id?view_index=1"
+    }
+  ]
+}
+```
+
+#### 7. Cache Statistics
 ```
 GET /api/terria/cache/stats
 ```
 
-**Respuesta ejemplo:**
+**Response example:**
 ```json
 {
-  "total_entries": 25,
-  "valid_entries": 23,
-  "expired_entries": 2,
+  "cache_directory": "/path/to/cache",
+  "total_files": 45,
+  "valid_files": 40,
+  "expired_files": 5,
+  "total_size_mb": 12.5,
   "cache_timeout": 3600
 }
 ```
 
-#### 6. Invalidación de Caché
+#### 8. Cache Management
 ```
 POST /api/terria/cache/invalidate
+POST /api/terria/cache/cleanup
 ```
 
-**Parámetros opcionales:**
-- `type`: Tipo de caché (dataset, organization, tag, full)
-- `id`: Identificador específico
+**Optional parameters for invalidate:**
+- `type`: Cache type (dataset, organization, tag, full)
+- `id`: Specific identifier
 
-**Ejemplos:**
+**Examples:**
 ```bash
-# Invalidar todo el caché
+# Invalidate all cache
 curl -X POST "https://ihp-wins.unesco.org/api/terria/cache/invalidate"
 
-# Invalidar caché de organización específica
+# Invalidate specific organization cache
 curl -X POST "https://ihp-wins.unesco.org/api/terria/cache/invalidate?type=organization&id=unesco"
+
+# Clean up expired cache files
+curl -X POST "https://ihp-wins.unesco.org/api/terria/cache/cleanup"
 ```
 
 ## Manejo de Múltiples Vistas

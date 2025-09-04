@@ -16,6 +16,7 @@ from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import TerriaConfigBuilder
 from .cache_manager import CacheManager
+from .file_cache_manager import FileCacheManager
 from .api_endpoints import terria_api
 
 # Get the original callback
@@ -105,6 +106,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.resource_utils = ResourceUtils(self.config_manager)
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
         self.cache_manager = CacheManager()
+        self.file_cache_manager = FileCacheManager()
         
         # Callback for resource_view_list
         self.resource_view_list_callback = None
@@ -246,6 +248,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         resource_id = data_dict.get('resource_id')
         if resource_id:
             self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
             self._debug_print(f"Cache invalidated for resource {resource_id} after view creation")
     
     def after_update(self, context, data_dict):
@@ -260,6 +263,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         resource_id = data_dict.get('resource_id')
         if resource_id:
             self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
             self._debug_print(f"Cache invalidated for resource {resource_id} after view update")
     
     def after_delete(self, context, data_dict):
@@ -274,6 +278,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         resource_id = data_dict.get('resource_id')
         if resource_id:
             self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
             self._debug_print(f"Cache invalidated for resource {resource_id} after view deletion")
     
     def _process_form_data(self, data_dict):

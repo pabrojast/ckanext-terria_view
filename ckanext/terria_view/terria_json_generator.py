@@ -12,6 +12,7 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 from .cache_manager import CacheManager
+from .file_cache_manager import FileCacheManager
 from .sld_processor import SLDProcessor
 from .config_manager import ConfigManager
 from .resource_utils import ResourceUtils
@@ -23,6 +24,7 @@ class TerriaJSONGenerator:
     def __init__(self):
         """Initialize the Terria JSON generator."""
         self.cache_manager = CacheManager()
+        self.file_cache_manager = FileCacheManager()
         self.sld_processor = SLDProcessor()
         self.config_manager = ConfigManager()
         self.resource_utils = ResourceUtils(self.config_manager)
@@ -261,8 +263,15 @@ class TerriaJSONGenerator:
             return cached_config
         
         try:
-            # Get dataset information
+            # Get dataset information - only public datasets
             dataset = toolkit.get_action('package_show')({}, {'id': dataset_id})
+            
+            # Check if dataset is public and active
+            if dataset.get('private', False):
+                raise toolkit.ObjectNotFound('Dataset is private')
+            
+            if dataset.get('state', '') != 'active':
+                raise toolkit.ObjectNotFound('Dataset is not active')
             
             # Get organization info
             org = dataset.get('organization', {})
@@ -362,9 +371,9 @@ class TerriaJSONGenerator:
             return cached_config
         
         try:
-            # Get organization datasets
+            # Get organization datasets - only public and active
             datasets_search = toolkit.get_action('package_search')({}, {
-                'fq': f'organization:{org_name}',
+                'fq': f'organization:{org_name} AND state:active',
                 'rows': 1000,  # Adjust as needed
                 'include_private': False
             })
@@ -466,9 +475,9 @@ class TerriaJSONGenerator:
             return cached_config
         
         try:
-            # Get tag datasets
+            # Get tag datasets - only public and active
             datasets_search = toolkit.get_action('package_search')({}, {
-                'fq': f'tags:{tag_name}',
+                'fq': f'tags:{tag_name} AND state:active',
                 'rows': 1000,  # Adjust as needed
                 'include_private': False
             })
@@ -616,3 +625,181 @@ class TerriaJSONGenerator:
         elif isinstance(obj, list):
             return [self.convert_sets_to_lists(v) for v in obj]
         return obj
+    
+    def get_or_generate_file(self, cache_type: str, identifier: str, 
+                           generator_func, *args, **kwargs) -> str:
+        """
+        Get cached file or generate new one.
+        
+        Args:
+            cache_type: Type of cache
+            identifier: Identifier for cache
+            generator_func: Function to generate data if not cached
+            *args, **kwargs: Arguments for generator function
+            
+        Returns:
+            Path to JSON file
+        """
+        # Try to get from file cache first
+        cached_file = self.file_cache_manager.get_cached_file(cache_type, identifier)
+        if cached_file:
+            self._debug_print(f"Serving cached file for {cache_type}:{identifier}")
+            return cached_file
+        
+        # Generate new data
+        self._debug_print(f"Generating new data for {cache_type}:{identifier}")
+        data = generator_func(*args, **kwargs)
+        
+        # Convert sets to lists
+        data = self.convert_sets_to_lists(data)
+        
+        # Cache to file
+        cached_file = self.file_cache_manager.cache_json(cache_type, identifier, data)
+        
+        return cached_file
+    
+    def generate_modular_catalog(self) -> Dict:
+        """
+        Generate a modular catalog structure similar to the example provided.
+        This creates a reference-based structure for better performance.
+        
+        Returns:
+            Modular catalog configuration
+        """
+        try:
+            # Check file cache first
+            cached_data = self.file_cache_manager.get_cached_json('modular', 'catalog')
+            if cached_data:
+                self._debug_print("Returning cached modular catalog")
+                return cached_data
+            
+            # Get all organizations
+            orgs_search = toolkit.get_action('organization_list')({}, {
+                'all_fields': True,
+                'include_extras': True,
+                'include_dataset_count': True
+            })
+            
+            # Base structure inspired by your example
+            catalog = {
+                "workbench": [],
+                "catalog": [
+                    {
+                        "name": "IHP-WINS",
+                        "type": "group",
+                        "description": "UNESCO IHP-WINS datasets and base map references",
+                        "info": [
+                            {
+                                "name": "Attribution",
+                                "content": "Data provided by UNESCO IHP-WINS. For more information visit: https://ihp-wins.unesco.org/"
+                            },
+                            {
+                                "name": "License",
+                                "content": "Data available under UNESCO data sharing policies. Please check individual datasets for specific licensing terms."
+                            }
+                        ],
+                        "infoSectionOrder": ["Attribution", "License"],
+                        "members": [
+                            {
+                                "name": "IHP-WINS Complete Catalog",
+                                "url": f"{toolkit.config.get('ckan.site_url', '')}/api/terria/full",
+                                "type": "terria-reference",
+                                "isGroup": True,
+                                "description": "UNESCO's International Hydrological Programme Water Information Network System (IHP-WINS) complete catalog"
+                            }
+                        ]
+                    }
+                ],
+                "corsDomains": [
+                    "ihp-wins.unesco.org",
+                    "unesco.org",
+                    "gibs.earthdata.nasa.gov",
+                    "gitc.earthdata.nasa.gov",
+                    "earthdata.nasa.gov",
+                    "nasa.gov"
+                ],
+                "homeCamera": {
+                    "north": 0,
+                    "east": 50,
+                    "south": -75,
+                    "west": 98
+                },
+                "viewerMode": "3dSmooth",
+                "baseMaps": {
+                    "items": [
+                        {
+                            "item": {
+                                "name": "United Nations Clear Map",
+                                "type": "wms",
+                                "url": "https://pro-ags1.dfs.un.org/arcgis/services/ClearMap_WebTopo/MapServer/WMSServer?request=GetCapabilities&service=WMS",
+                                "layers": "0,3,4,6,8,9,11,12,13,15,16,18,19,20,29,30,31,32,33",
+                                "id": "clearmap-webtopo",
+                                "isEsri": True,
+                                "minScaleDenominator": 4724702.380952
+                            },
+                            "image": "images/basemaps/ClearMap.JPG"
+                        },
+                        {
+                            "item": {
+                                "name": "OpenStreetMap",
+                                "type": "open-street-map",
+                                "id": "basemap-openstreetmap"
+                            }
+                        }
+                    ],
+                    "enabledBaseMaps": [
+                        "basemap-natural-earth-II",
+                        "basemap-openstreetmap",
+                        "clearmap-webtopo"
+                    ],
+                    "defaultBaseMapId": "basemap-natural-earth-II"
+                },
+                "info": [
+                    {
+                        "name": "About This Catalog",
+                        "content": "This is a modular version of the IHP-WINS TerriaMap catalog, organized into thematic modules for better performance and maintainability. Each module contains related datasets with complete attribution and licensing information."
+                    },
+                    {
+                        "name": "Data Sources", 
+                        "content": "Data sources include UNESCO IHP-WINS, NASA Global Imagery Browse Services (GIBS), USGS/Climate Hazards Center (CHIRPS), UC Irvine (PERSIANN), McGill University/WWF (HydroRIVERS), Global Dam Watch consortium, and United Nations cartographic services."
+                    },
+                    {
+                        "name": "Contact",
+                        "content": "For technical support contact earthdata-support@nasa.gov (NASA GIBS data) or consult individual dataset documentation for specific data provider contacts."
+                    }
+                ],
+                "infoSectionOrder": ["About This Catalog", "Data Sources", "Contact"]
+            }
+            
+            # Add organization references 
+            org_members = []
+            for org in orgs_search:
+                if org.get('package_count', 0) > 0:
+                    org_name = org['name']
+                    org_title = org.get('title', org_name)
+                    
+                    org_ref = {
+                        "name": org_title,
+                        "type": "terria-reference",
+                        "url": f"{toolkit.config.get('ckan.site_url', '')}/api/terria/organization/{org_name}",
+                        "isGroup": True,
+                        "description": f"Datasets from {org_title}"
+                    }
+                    org_members.append(org_ref)
+            
+            if org_members:
+                catalog["catalog"].append({
+                    "name": "Organizations",
+                    "type": "group",
+                    "description": "Data organized by contributing organizations",
+                    "members": org_members
+                })
+            
+            # Cache the result
+            self.file_cache_manager.cache_json('modular', 'catalog', catalog)
+            
+            return catalog
+            
+        except Exception as e:
+            self._debug_print(f"Error generating modular catalog: {e}")
+            raise
