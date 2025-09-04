@@ -22,7 +22,9 @@
       "Bash(time curl:*)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
-      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)"
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)",
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)"
     ],
     "deny": [],
     "ask": [],
