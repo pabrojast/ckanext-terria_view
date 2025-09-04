@@ -25,13 +25,32 @@ from .resource_utils import ResourceUtils
 class TerriaJSONGenerator:
     """Generates Terria JSON configurations for datasets, organizations, and tags."""
     
+    # Shared instances to ensure singleton behavior
+    _shared_cache_manager = None
+    _shared_file_cache_manager = None
+    _shared_sld_processor = None
+    _shared_config_manager = None
+    _shared_resource_utils = None
+    
     def __init__(self):
-        """Initialize the Terria JSON generator."""
-        self.cache_manager = CacheManager()
-        self.file_cache_manager = FileCacheManager()
-        self.sld_processor = SLDProcessor()
-        self.config_manager = ConfigManager()
-        self.resource_utils = ResourceUtils(self.config_manager)
+        """Initialize the Terria JSON generator with shared instances."""
+        # Use shared instances to ensure all generators use the same cache
+        if TerriaJSONGenerator._shared_cache_manager is None:
+            TerriaJSONGenerator._shared_cache_manager = CacheManager()
+        if TerriaJSONGenerator._shared_file_cache_manager is None:
+            TerriaJSONGenerator._shared_file_cache_manager = FileCacheManager()
+        if TerriaJSONGenerator._shared_sld_processor is None:
+            TerriaJSONGenerator._shared_sld_processor = SLDProcessor()
+        if TerriaJSONGenerator._shared_config_manager is None:
+            TerriaJSONGenerator._shared_config_manager = ConfigManager()
+        if TerriaJSONGenerator._shared_resource_utils is None:
+            TerriaJSONGenerator._shared_resource_utils = ResourceUtils(TerriaJSONGenerator._shared_config_manager)
+        
+        self.cache_manager = TerriaJSONGenerator._shared_cache_manager
+        self.file_cache_manager = TerriaJSONGenerator._shared_file_cache_manager
+        self.sld_processor = TerriaJSONGenerator._shared_sld_processor
+        self.config_manager = TerriaJSONGenerator._shared_config_manager
+        self.resource_utils = TerriaJSONGenerator._shared_resource_utils
         
         # Setup HTTP session with retry strategy
         # Use method_whitelist for compatibility with older urllib3 versions
