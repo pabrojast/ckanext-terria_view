@@ -15,6 +15,11 @@ from .config_manager import ConfigManager
 from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import TerriaConfigBuilder
+from .cache_manager import CacheManager
+from .file_cache_manager import FileCacheManager
+from .api_endpoints import terria_api
+from .cache_preloader import CachePreloader
+from .terria_json_generator import TerriaJSONGenerator
 
 # Get the original callback
 resource_view_list = get.resource_view_list
@@ -102,6 +107,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.sld_processor = SLDProcessor()
         self.resource_utils = ResourceUtils(self.config_manager)
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
+        self.cache_manager = CacheManager()
+        self.file_cache_manager = FileCacheManager()
+        
+        # Initialize cache preloader (will be started after configuration)
+        self.cache_preloader = None
         
         # Callback for resource_view_list
         self.resource_view_list_callback = None
@@ -122,6 +132,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         """Update plugin configuration."""
         toolkit.add_template_directory(config_, 'templates')
         toolkit.add_public_directory(config_, 'public')
+    
+    plugins.implements(plugins.IBlueprint)
+    def get_blueprint(self):
+        """Register API blueprint."""
+        return terria_api
     
     plugins.implements(plugins.ITemplateHelpers)
     def get_helpers(self):
@@ -168,6 +183,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
+        
+        # Initialize and start cache preloader
+        self._initialize_cache_preloader()
     
     plugins.implements(plugins.IResourceView, inherit=True)
     def info(self):
@@ -225,6 +243,51 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             Dictionary with processed data
         """
         return self._process_form_data(data_dict)
+    
+    def after_create(self, context, data_dict):
+        """
+        Process data after creating resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view creation")
+    
+    def after_update(self, context, data_dict):
+        """
+        Process data after updating resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view update")
+    
+    def after_delete(self, context, data_dict):
+        """
+        Process data after deleting resource view.
+        Invalidate cache for the affected resource.
+        
+        Args:
+            context: View context
+            data_dict: Dictionary with view data
+        """
+        resource_id = data_dict.get('resource_id')
+        if resource_id:
+            self.cache_manager.invalidate_by_resource_id(resource_id)
+            self.file_cache_manager.invalidate_by_resource_id(resource_id)
+            self._debug_print(f"Cache invalidated for resource {resource_id} after view deletion")
     
     def _process_form_data(self, data_dict):
         """
@@ -406,6 +469,24 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             data_dict['available_sld_files'] = []
         
         return 'terria_instance_url.html'
+    
+    def _initialize_cache_preloader(self):
+        """Initialize and start the cache preloader."""
+        try:
+            # Create Terria JSON generator instance
+            generator = TerriaJSONGenerator()
+            
+            # Initialize cache preloader
+            self.cache_preloader = CachePreloader(generator)
+            
+            # Start preloading in background
+            self.cache_preloader.start_preload()
+            
+            self._debug_print("Cache preloader initialized and started")
+            
+        except Exception as e:
+            self._debug_print(f"Error initializing cache preloader: {e}")
+            # Don't fail plugin initialization if preloader fails
     
     plugins.implements(plugins.IActions, inherit=True)
     def get_actions(self):
