@@ -538,13 +538,17 @@ class SLDProcessor:
             color_maps = root.findall('.//sld:ColorMap', self.NAMESPACES)
             
             all_entries = []
-            interpolation_type = "linear"  # default
+            # Default to discrete unless explicitly a ramp
+            # SLD 1.0.0 ColorMap types: ramp (continuous), intervals (discrete), values (discrete)
+            interpolation_type = "discrete"
             
             for color_map in color_maps:
                 # Check for interpolation type
-                color_map_type = color_map.get('type', 'ramp')
-                if color_map_type in ['ramp', 'intervals']:
-                    interpolation_type = "linear" if color_map_type == 'ramp' else "discrete"
+                color_map_type = color_map.get('type', '').strip().lower()
+                if color_map_type == 'ramp':
+                    interpolation_type = "linear"
+                elif color_map_type in ['intervals', 'values', 'discrete']:
+                    interpolation_type = "discrete"
                 
                 # Get ColorMapEntry elements
                 color_map_entries = color_map.findall('sld:ColorMapEntry', self.NAMESPACES)
@@ -584,9 +588,10 @@ class SLDProcessor:
                         
                         # Create legend entry
                         legend_title = label if label else f"{quantity_val}"
+                        # Use the same rgb/rgba string for legend to honor opacity
                         legend_items.append({
                             "title": legend_title,
-                            "color": normalized_color
+                            "color": rgb_string
                         })
                         
                     except ValueError as e:
@@ -600,8 +605,8 @@ class SLDProcessor:
         # Sort colors by quantity for proper rendering
         colors.sort(key=lambda x: x[0])
         
-        # If we have colors, check if we need to create intermediate gradients
-        if len(colors) >= 2:
+        # If we have colors and the colormap is continuous, enhance gradient
+        if len(colors) >= 2 and interpolation_type == "linear":
             colors = self._enhance_color_gradient(colors, interpolation_type)
         
         result = {}
