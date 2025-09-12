@@ -640,11 +640,16 @@ class SLDProcessor:
         if colors:
             # For COG/raster data, TerriaJS uses renderOptions for color mapping
             # This is different from vector data which uses TableTraits
+            # Explicitly disable palette conversion so our color mapping is applied,
+            # and set nodata based on the common convention for binary masks.
             result["renderOptions"] = {
                 "single": {
                     "colors": colors,
                     "useRealValue": True
-                }
+                },
+                "nodata": 0,
+                "convertToRGB": False,
+                "resampleMethod": "nearest"
             }
         
         return result
