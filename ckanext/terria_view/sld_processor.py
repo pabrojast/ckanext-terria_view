@@ -674,6 +674,26 @@ class SLDProcessor:
             if nodata_values:
                 render_options["nodata"] = nodata_values[0] if len(nodata_values) == 1 else nodata_values
 
+            # For binary masks (0 and 1 values), set domain to help TerriaJS calculate min/max
+            # Extract all quantity values from colors
+            all_quantities = [quantity_val for quantity_val, _ in colors]
+            if nodata_values:
+                all_quantities.extend(nodata_values)
+
+            if all_quantities:
+                min_val = min(all_quantities)
+                max_val = max(all_quantities)
+                # Set domain for the single band
+                render_options["single"]["domain"] = [min_val, max_val]
+
+                # For binary masks, also set displayRange to exclude nodata values
+                if nodata_values and filtered_colors:
+                    # Only display the actual data values (exclude nodata)
+                    data_values = [quantity_val for quantity_val, _ in filtered_colors]
+                    if data_values:
+                        render_options["single"]["displayRange"] = [min(data_values), max(data_values)]
+                        render_options["single"]["applyDisplayRange"] = True
+
             result["renderOptions"] = render_options
         
         return result
