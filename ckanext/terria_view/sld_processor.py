@@ -640,39 +640,11 @@ class SLDProcessor:
         if colors:
             # For COG/raster data, TerriaJS uses renderOptions for color mapping
             # This is different from vector data which uses TableTraits
-            # Explicitly set discrete/continuous type and disable palette conversion
-            # so our color mapping is applied. Also set nodata for common binary masks.
-            try:
-                min_q = colors[0][0]
-                max_q = colors[-1][0]
-            except Exception:
-                min_q = None
-                max_q = None
-            # Detect simple binary classification to optionally clamp values
-            unique_vals = sorted({q for q, _ in colors})
-            is_binary = len(unique_vals) == 2 and unique_vals[0] == 0 and unique_vals[1] == 1
-
             result["renderOptions"] = {
                 "single": {
                     "colors": colors,
-                    "useRealValue": True,
-                    # Use SLD ColorMap type to steer rendering (ramp vs values)
-                    "type": "ramp" if interpolation_type == "linear" else "values",
-                    # Provide domain to avoid auto-scaling on 1-bit rasters
-                    **({"domain": [min_q, max_q]} if min_q is not None and max_q is not None else {}),
-                    # Avoid value blending for categorical rasters
-                    "clampLow": True,
-                    "clampHigh": True,
-                    # Prefer nearest for 1-bit masks to avoid edge blending
-                    "resampleMethod": "nearest",
-                    "resampling": "nearest",
-                    # Clamp fractional resampling artifacts for binary masks
-                    **({"expression": "b1 > 0.5 ? 1 : 0"} if is_binary else {})
-                },
-                "nodata": 0,
-                "convertToRGB": False,
-                "resampleMethod": "nearest",
-                "resampling": "nearest"
+                    "useRealValue": True
+                }
             }
         
         return result
