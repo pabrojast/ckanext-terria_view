@@ -640,10 +640,16 @@ class SLDProcessor:
         if colors:
             # For COG/raster data, TerriaJS uses renderOptions for color mapping
             # This is different from vector data which uses TableTraits
+
+            # Map SLD interpolation type to TerriaJS type specification
+            # SLD "ramp" -> TerriaJS "continuous", SLD "values/intervals/discrete" -> TerriaJS "discrete"
+            terria_type = "continuous" if interpolation_type == "linear" else "discrete"
+
             result["renderOptions"] = {
                 "single": {
                     "colors": colors,
-                    "useRealValue": True
+                    "useRealValue": True,
+                    "type": terria_type
                 }
             }
         
