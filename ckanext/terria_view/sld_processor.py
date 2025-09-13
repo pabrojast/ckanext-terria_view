@@ -686,14 +686,6 @@ class SLDProcessor:
                 # Set domain for the single band
                 render_options["single"]["domain"] = [min_val, max_val]
 
-                # For binary masks, also set displayRange to exclude nodata values
-                if nodata_values and filtered_colors:
-                    # Only display the actual data values (exclude nodata)
-                    data_values = [quantity_val for quantity_val, _ in filtered_colors]
-                    if data_values:
-                        render_options["single"]["displayRange"] = [min(data_values), max(data_values)]
-                        render_options["single"]["applyDisplayRange"] = True
-
             result["renderOptions"] = render_options
         
         return result
