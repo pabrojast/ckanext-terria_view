@@ -346,8 +346,8 @@ class SLDProcessor:
             # Local file path
             return self._fetch_local_file_content(sld_url)
         else:
-            self._debug_print(f"Unsupported URL scheme in: {sld_url}")
-            return None
+            # Assume it's a local file path relative to current directory
+            return self._fetch_local_file_content(sld_url)
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
         """Fetch content from HTTP/HTTPS URL."""
@@ -413,12 +413,12 @@ class SLDProcessor:
             print(f"Error reading local SLD file {file_path}: {e}")
             return None
     
-    def parse_sld_xml(self, sld_content: bytes) -> Optional[ET.Element]:
+    def parse_sld_xml(self, sld_content) -> Optional[ET.Element]:
         """
         Parse the XML content of an SLD file with robust error handling.
         
         Args:
-            sld_content: SLD file content as bytes
+            sld_content: SLD file content as bytes or string
             
         Returns:
             Root element of the parsed XML, None in case of error
@@ -433,25 +433,29 @@ class SLDProcessor:
                 self._debug_print("SLD content is empty")
                 return None
             
-            # Try different decoding approaches
-            content_str = None
-            
-            # Try UTF-8 first
-            try:
-                content_str = sld_content.decode('utf-8', errors='ignore')
-            except UnicodeDecodeError:
-                # Try other common encodings
-                for encoding in ['latin-1', 'iso-8859-1', 'cp1252']:
-                    try:
-                        content_str = sld_content.decode(encoding, errors='ignore')
-                        self._debug_print(f"Successfully decoded SLD using {encoding}")
-                        break
-                    except UnicodeDecodeError:
-                        continue
-            
-            if not content_str:
-                self._debug_print("Failed to decode SLD content")
-                return None
+            # Handle both string and bytes input
+            if isinstance(sld_content, str):
+                content_str = sld_content
+            else:
+                # Try different decoding approaches for bytes
+                content_str = None
+
+                # Try UTF-8 first
+                try:
+                    content_str = sld_content.decode('utf-8', errors='ignore')
+                except UnicodeDecodeError:
+                    # Try other common encodings
+                    for encoding in ['latin-1', 'iso-8859-1', 'cp1252']:
+                        try:
+                            content_str = sld_content.decode(encoding, errors='ignore')
+                            self._debug_print(f"Successfully decoded SLD using {encoding}")
+                            break
+                        except UnicodeDecodeError:
+                            continue
+
+                if not content_str:
+                    self._debug_print("Failed to decode SLD content")
+                    return None
             
             # Remove BOM if present
             if content_str.startswith('\ufeff'):
@@ -645,13 +649,32 @@ class SLDProcessor:
             # SLD "ramp" -> TerriaJS "continuous", SLD "values/intervals/discrete" -> TerriaJS "discrete"
             terria_type = "continuous" if interpolation_type == "linear" else "discrete"
 
-            result["renderOptions"] = {
+            # Filter out transparent/nodata values for binary masks
+            # If a color entry has opacity 0, it should be treated as nodata, not as a color to render
+            filtered_colors = []
+            nodata_values = []
+
+            for quantity_val, rgb_string in colors:
+                if rgb_string.startswith("rgba(") and ", 0.0)" in rgb_string:
+                    # This is a fully transparent color, treat as nodata
+                    nodata_values.append(quantity_val)
+                else:
+                    filtered_colors.append([quantity_val, rgb_string])
+
+            # Only include renderOptions if we have actual colors to render
+            render_options = {
                 "single": {
-                    "colors": colors,
+                    "colors": filtered_colors if filtered_colors else colors,
                     "useRealValue": True,
                     "type": terria_type
                 }
             }
+
+            # Add nodata specification if we found transparent values
+            if nodata_values:
+                render_options["nodata"] = nodata_values[0] if len(nodata_values) == 1 else nodata_values
+
+            result["renderOptions"] = render_options
         
         return result
     
