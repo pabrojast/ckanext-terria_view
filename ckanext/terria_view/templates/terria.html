@@ -38,6 +38,7 @@
     }, false);
   }
 
+  {% if encoded_config %}
   window.terriaJSPreview = function()
   {
     var url = '{{ terria_instance_url }}';
@@ -49,6 +50,7 @@
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
     makePopupSendMessage(message, destination.origin, destination.pathname);
   };
+  {% endif %}
 
   function toggleContainerWidth() {
     const containers = document.querySelectorAll('.container');
@@ -61,30 +63,149 @@
     });
   }
 
+  // Save configuration functionality
+  var terriaViewId = '{{ view_id | default("", true) }}';
+  var terriaResourceId = '{{ resource_id | default("", true) }}';
+  var terriaInstanceUrl = '{{ terria_instance_url }}';
+
+  async function expandShortenedUrl(shareToken, baseUrl) {
+    // Extract the base URL without hash
+    var urlObj = new URL(baseUrl);
+    var shareEndpoint = urlObj.origin + urlObj.pathname.replace(/\/$/, '') + '/share/' + shareToken;
+    
+    try {
+      var response = await fetch(shareEndpoint);
+      if (!response.ok) {
+        throw new Error('Failed to resolve share token');
+      }
+      var shareData = await response.json();
+      // Return the full URL with the expanded configuration
+      return baseUrl + '#start=' + encodeURIComponent(JSON.stringify(shareData));
+    } catch (e) {
+      console.error('Error expanding share URL:', e);
+      throw e;
+    }
+  }
+
+  async function processShareUrl(inputUrl) {
+    // Parse the URL to check for share token
+    var shareMatch = inputUrl.match(/#share=([^&]+)/);
+    if (shareMatch) {
+      // Expand the shortened URL
+      return await expandShortenedUrl(shareMatch[1], terriaInstanceUrl);
+    }
+    // Return as-is if it's already a full URL
+    return inputUrl;
+  }
+
+  async function saveConfiguration() {
+    if (!terriaViewId) {
+      alert('Error: View ID not available');
+      return;
+    }
+
+    // Prompt user to paste the share URL
+    var inputUrl = prompt(
+      'To save the current map configuration:\n\n' +
+      '1. In the TerriaJS map below, click the "Share" button\n' +
+      '2. Copy the share URL (short or long)\n' +
+      '3. Paste it here:\n\n' +
+      '(The system will automatically expand shortened URLs)'
+    );
+
+    if (!inputUrl || inputUrl.trim() === '') {
+      return; // User cancelled or didn't enter anything
+    }
+
+    inputUrl = inputUrl.trim();
+
+    // Validate that it looks like a TerriaJS URL
+    if (!inputUrl.includes('#share=') && !inputUrl.includes('#start=')) {
+      alert('Invalid URL. Please paste a TerriaJS share URL that contains "#share=" or "#start=".');
+      return;
+    }
+
+    // Show confirmation
+    if (!confirm('Are you sure you want to save this configuration?\n\nThis will overwrite the existing custom configuration.')) {
+      return;
+    }
+
+    var saveBtn = document.getElementById('save-config-btn');
+    var originalText = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving...';
+    saveBtn.disabled = true;
+
+    try {
+      var shareUrl = await processShareUrl(inputUrl);
+      
+      // Send to API
+      var response = await fetch('/api/terria/view/' + terriaViewId + '/save-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          custom_config_url: shareUrl
+        })
+      });
+
+      var result = await response.json();
+
+      if (result.success) {
+        alert('Configuration saved successfully!\n\nThe map will now load with this configuration.');
+        // Reload to show new config
+        window.location.reload();
+      } else {
+        alert('Failed to save configuration: ' + (result.message || 'Unknown error'));
+      }
+    } catch (e) {
+      console.error('Error saving configuration:', e);
+      alert('Error saving configuration: ' + e.message);
+    } finally {
+      saveBtn.innerHTML = originalText;
+      saveBtn.disabled = false;
+    }
+  }
+
 </script>
 <div style="margin-bottom: 10px;" class="pull-right">
   <a class="btn"
     target="_blank"
-    {% if resource.format.lower() == 'json' %}
+    {% if resource and resource.format and resource.format.lower() == 'json' %}
     href="{{ terria_instance_url }}#{{ resource.url }}"
-    {% else %}
+    {% elif encoded_config %}
     href="{{ terria_instance_url }}#start={{ encoded_config }}"
+    {% else %}
+    href="{{ terria_instance_url }}"
     {% endif %}>
     {{ _('View in a separate') }} {{title}} {{ _('window') }}
   </a>
   <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
     Toggle full width
   </a>
+  {% if view_id %}
+  <a class="btn btn-primary" id="save-config-btn" onclick="saveConfiguration()" style="margin-left: 5px;" title="{{ _('Save the current TerriaJS configuration from a share URL') }}">
+    <i class="fa fa-save"></i> {{ _('Save Configuration') }}
+  </a>
+  {% endif %}
 </div>
 {% if direct_url %}
   <iframe src="{{ terria_instance_url }}" frameborder="0" style="border:0;width:100%;height: 100vh;" allowFullScreen mozAllowFullScreen webkitAllowFullScreen></iframe>
+{% elif resource and resource.format and resource.format.lower() == 'json' %}
+  <iframe
+    src="{{ terria_instance_url }}#{{ resource.url }}"
+    style="height: 100vh; width: 100%; border: none;"
+    allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
+  </iframe>
+{% elif encoded_config %}
+  <iframe
+    src="{{ terria_instance_url }}#start={{ encoded_config }}"
+    style="height: 100vh; width: 100%; border: none;"
+    allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
+  </iframe>
 {% else %}
   <iframe
-    {% if resource.format.lower() == 'json' %}
-    src="{{ terria_instance_url }}#{{ resource.url }}"
-    {% else %}
-    src="{{ terria_instance_url }}#start={{ encoded_config }}"
-    {% endif %}
+    src="{{ terria_instance_url }}"
     style="height: 100vh; width: 100%; border: none;"
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>

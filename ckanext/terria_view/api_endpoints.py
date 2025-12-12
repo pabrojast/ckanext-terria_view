@@ -427,6 +427,69 @@ class TerriaAPIController:
             return self._create_json_response(result)
         except Exception as e:
             return self._create_error_response(f'Error cleaning up cache: {str(e)}')
+    
+    def save_view_config(self, view_id: str):
+        """
+        Save custom configuration URL to a resource view.
+        
+        Args:
+            view_id: Resource view ID
+            
+        Returns:
+            JSON response confirming the save operation
+        """
+        try:
+            # Get JSON data from request
+            data = request.get_json()
+            if not data:
+                return self._create_error_response('No data provided', 400)
+            
+            custom_config_url = data.get('custom_config_url')
+            if not custom_config_url:
+                return self._create_error_response('custom_config_url is required', 400)
+            
+            # Get current user context
+            context = {
+                'user': toolkit.g.user,
+                'auth_user_obj': toolkit.g.userobj
+            }
+            
+            # Get current view data
+            try:
+                current_view = toolkit.get_action('resource_view_show')(context, {'id': view_id})
+            except toolkit.ObjectNotFound:
+                return self._create_error_response(f'View not found: {view_id}', 404)
+            except toolkit.NotAuthorized:
+                return self._create_error_response('Not authorized to access this view', 403)
+            
+            # Update view with new custom_config
+            update_data = {
+                'id': view_id,
+                'resource_id': current_view.get('resource_id'),
+                'view_type': current_view.get('view_type'),
+                'title': current_view.get('title'),
+                'description': current_view.get('description', ''),
+                'terria_instance_url': current_view.get('terria_instance_url', ''),
+                'style': current_view.get('style', 'NA'),
+                'custom_config': custom_config_url
+            }
+            
+            try:
+                updated_view = toolkit.get_action('resource_view_update')(context, update_data)
+            except toolkit.NotAuthorized:
+                return self._create_error_response('Not authorized to update this view', 403)
+            except Exception as e:
+                return self._create_error_response(f'Failed to update view: {str(e)}', 500)
+            
+            return self._create_json_response({
+                'success': True,
+                'message': 'Configuration saved successfully',
+                'view_id': view_id,
+                'custom_config': custom_config_url
+            })
+            
+        except Exception as e:
+            return self._create_error_response(f'Error saving view configuration: {str(e)}')
 
 
 # Initialize controller lazily to avoid import-time errors
@@ -536,6 +599,12 @@ def invalidate_cache_endpoint():
 def cleanup_cache_endpoint():
     """Cache cleanup endpoint."""
     return get_controller().cleanup_cache()
+
+
+@terria_api.route('/api/terria/view/<view_id>/save-config', methods=['POST'])
+def save_view_config_endpoint(view_id):
+    """Save view configuration endpoint."""
+    return get_controller().save_view_config(view_id)
 
 
 # Support for OPTIONS requests (CORS preflight)

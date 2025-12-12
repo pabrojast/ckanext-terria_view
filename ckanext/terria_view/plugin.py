@@ -360,7 +360,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             return {
                 'title': view_title,
                 'terria_instance_url': view_terria_instance_url,
-                'direct_url': True
+                'direct_url': True,
+                'view_id': view.get('id'),
+                'resource_id': resource.get('id')
             }
         
         # If format is JSON, we only need to pass the TerriaJS URL
@@ -368,7 +370,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             return {
                 'title': view_title,
                 'terria_instance_url': view_terria_instance_url,
-                'resource': resource
+                'resource': resource,
+                'view_id': view.get('id'),
+                'resource_id': resource.get('id')
             }
         
         # Get safe resource name
@@ -420,7 +424,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'terria_instance_url': view_terria_instance_url,
             'encoded_config': encoded_config,
             'origin': self.config_manager.site_url,
-            'custom_config': view_custom_config
+            'custom_config': view_custom_config,
+            'view_id': view.get('id'),
+            'resource_id': resource.get('id')
         }
     
     def view_template(self, context, data_dict):
