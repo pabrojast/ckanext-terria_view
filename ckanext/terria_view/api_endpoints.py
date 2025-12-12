@@ -490,6 +490,129 @@ class TerriaAPIController:
             
         except Exception as e:
             return self._create_error_response(f'Error saving view configuration: {str(e)}')
+    
+    def user_private_datasets(self):
+        """
+        Get private datasets accessible to the current logged-in user in Terria JSON format.
+        
+        Returns:
+            JSON response with Terria catalog configuration for private datasets
+        """
+        try:
+            # Check if user is logged in
+            user = toolkit.g.user
+            if not user:
+                return self._create_error_response('Authentication required. Please log in.', 401)
+            
+            # Get user context
+            context = {
+                'user': user,
+                'auth_user_obj': toolkit.g.userobj
+            }
+            
+            # Search for private datasets the user can access
+            try:
+                # Use package_search with include_private=True to get private datasets
+                search_result = toolkit.get_action('package_search')(context, {
+                    'include_private': True,
+                    'rows': 1000,
+                    'q': '*:*'
+                })
+                
+                # Filter only private datasets and generate Terria catalog
+                catalog_members = []
+                
+                for dataset in search_result.get('results', []):
+                    if not dataset.get('private', False):
+                        continue
+                    
+                    dataset_id = dataset.get('id')
+                    dataset_title = dataset.get('title', dataset.get('name', 'Unknown'))
+                    notes = dataset.get('notes', '')
+                    resources = dataset.get('resources', [])
+                    
+                    # Get organization info
+                    org = dataset.get('organization', {})
+                    if org:
+                        org_info = {
+                            'display_name': org.get('title', 'Unknown Organization'),
+                            'description': org.get('description', ''),
+                            'image_display_url': org.get('image_display_url', '')
+                        }
+                    else:
+                        org_info = {
+                            'display_name': 'Unknown Organization',
+                            'description': '',
+                            'image_display_url': ''
+                        }
+                    
+                    # Build dataset group with resources
+                    dataset_members = []
+                    
+                    for resource in resources:
+                        resource_format = resource.get('format', '').lower()
+                        if resource_format not in [f.lower() for f in self.generator.formatos_permitidos]:
+                            continue
+                        
+                        # Format resource as Terria item with styles
+                        try:
+                            formatted_item, total_views = self.generator.format_dataset_item(
+                                resource, dataset_id, notes, org_info, 0
+                            )
+                            dataset_members.append(formatted_item)
+                            
+                            # Add additional views if they exist
+                            if total_views > 1:
+                                for vi in range(1, total_views):
+                                    additional_item, _ = self.generator.format_dataset_item(
+                                        resource, dataset_id, notes, org_info, vi
+                                    )
+                                    dataset_members.append(additional_item)
+                        except Exception as e:
+                            # If formatting fails, skip this resource
+                            continue
+                    
+                    # Only add dataset if it has Terria-compatible resources
+                    if dataset_members:
+                        catalog_members.append({
+                            "name": dataset_title,
+                            "type": "group",
+                            "members": dataset_members,
+                            "description": notes[:500] if notes else '',
+                            "info": [{
+                                "name": "About Dataset",
+                                "content": notes or ''
+                            }, {
+                                "name": "Organization",
+                                "content": org_info.get('display_name', '')
+                            }, {
+                                "name": "Access",
+                                "content": "Private Dataset"
+                            }],
+                            "infoSectionOrder": ["About Dataset", "Organization", "Access"]
+                        })
+                
+                # Create final Terria catalog configuration
+                config = {
+                    "catalog": [{
+                        "name": f"Private Datasets ({user})",
+                        "type": "group",
+                        "members": catalog_members,
+                        "description": f"Private datasets accessible to {user}",
+                        "isOpen": True
+                    }]
+                }
+                
+                # Convert sets to lists for JSON serialization
+                config = self.generator.convert_sets_to_lists(config)
+                
+                return self._create_json_response(config)
+                
+            except toolkit.NotAuthorized:
+                return self._create_error_response('Not authorized to access private datasets', 403)
+                
+        except Exception as e:
+            return self._create_error_response(f'Error retrieving private datasets: {str(e)}')
 
 
 # Initialize controller lazily to avoid import-time errors
@@ -605,6 +728,12 @@ def cleanup_cache_endpoint():
 def save_view_config_endpoint(view_id):
     """Save view configuration endpoint."""
     return get_controller().save_view_config(view_id)
+
+
+@terria_api.route('/api/terria/user/private-datasets', methods=['GET'])
+def user_private_datasets_endpoint():
+    """Get private datasets accessible to the current user."""
+    return get_controller().user_private_datasets()
 
 
 # Support for OPTIONS requests (CORS preflight)
