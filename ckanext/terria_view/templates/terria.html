@@ -67,35 +67,75 @@
   var terriaViewId = '{{ view_id | default("", true) }}';
   var terriaResourceId = '{{ resource_id | default("", true) }}';
   var terriaInstanceUrl = '{{ terria_instance_url }}';
+  var terriaIframeReady = false;
+  var pendingShareDataCallbacks = {};
 
-  async function expandShortenedUrl(shareToken, baseUrl) {
-    // Extract the base URL without hash
-    var urlObj = new URL(baseUrl);
-    var shareEndpoint = urlObj.origin + urlObj.pathname.replace(/\/$/, '') + '/share/' + shareToken;
-    
-    try {
-      var response = await fetch(shareEndpoint);
-      if (!response.ok) {
-        throw new Error('Failed to resolve share token');
+  // Listen for messages from TerriaJS iframe
+  window.addEventListener('message', function(event) {
+    // Handle "ready" message from TerriaJS
+    if (event.data === 'ready') {
+      terriaIframeReady = true;
+      console.log('TerriaJS iframe is ready');
+      return;
+    }
+
+    // Handle share data response
+    if (event.data && event.data.type === 'shareDataResponse') {
+      var callback = pendingShareDataCallbacks[event.data.requestId];
+      if (callback) {
+        delete pendingShareDataCallbacks[event.data.requestId];
+        if (event.data.success) {
+          callback.resolve(event.data.shareData);
+        } else {
+          callback.reject(new Error(event.data.error || 'Failed to get share data'));
+        }
       }
-      var shareData = await response.json();
-      // Return the full URL with the expanded configuration
-      return baseUrl + '#start=' + encodeURIComponent(JSON.stringify(shareData));
-    } catch (e) {
-      console.error('Error expanding share URL:', e);
-      throw e;
+      return;
     }
-  }
+  }, false);
 
-  async function processShareUrl(inputUrl) {
-    // Parse the URL to check for share token
-    var shareMatch = inputUrl.match(/#share=([^&]+)/);
-    if (shareMatch) {
-      // Expand the shortened URL
-      return await expandShortenedUrl(shareMatch[1], terriaInstanceUrl);
-    }
-    // Return as-is if it's already a full URL
-    return inputUrl;
+  function requestShareDataFromIframe() {
+    return new Promise(function(resolve, reject) {
+      var iframe = document.querySelector('iframe');
+      if (!iframe || !iframe.contentWindow) {
+        reject(new Error('TerriaJS iframe not found'));
+        return;
+      }
+
+      var requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      
+      // Set timeout for response
+      var timeout = setTimeout(function() {
+        delete pendingShareDataCallbacks[requestId];
+        reject(new Error('Timeout waiting for share data from TerriaJS'));
+      }, 10000);
+
+      pendingShareDataCallbacks[requestId] = {
+        resolve: function(data) {
+          clearTimeout(timeout);
+          resolve(data);
+        },
+        reject: function(error) {
+          clearTimeout(timeout);
+          reject(error);
+        }
+      };
+
+      // Send request to iframe
+      var targetOrigin = '*';
+      try {
+        var urlObj = new URL(terriaInstanceUrl);
+        targetOrigin = urlObj.origin;
+      } catch (e) {
+        // Keep * if URL parsing fails
+      }
+
+      iframe.contentWindow.postMessage({
+        type: 'requestShareData',
+        requestId: requestId,
+        allowOrigin: window.location.origin
+      }, targetOrigin);
+    });
   }
 
   async function saveConfiguration() {
@@ -104,29 +144,8 @@
       return;
     }
 
-    // Prompt user to paste the share URL
-    var inputUrl = prompt(
-      'To save the current map configuration:\n\n' +
-      '1. In the TerriaJS map below, click the "Share" button\n' +
-      '2. Copy the share URL (short or long)\n' +
-      '3. Paste it here:\n\n' +
-      '(The system will automatically expand shortened URLs)'
-    );
-
-    if (!inputUrl || inputUrl.trim() === '') {
-      return; // User cancelled or didn't enter anything
-    }
-
-    inputUrl = inputUrl.trim();
-
-    // Validate that it looks like a TerriaJS URL
-    if (!inputUrl.includes('#share=') && !inputUrl.includes('#start=')) {
-      alert('Invalid URL. Please paste a TerriaJS share URL that contains "#share=" or "#start=".');
-      return;
-    }
-
     // Show confirmation
-    if (!confirm('Are you sure you want to save this configuration?\n\nThis will overwrite the existing custom configuration.')) {
+    if (!confirm('Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration.')) {
       return;
     }
 
@@ -136,7 +155,11 @@
     saveBtn.disabled = true;
 
     try {
-      var shareUrl = await processShareUrl(inputUrl);
+      // Request share data from TerriaJS iframe
+      var shareData = await requestShareDataFromIframe();
+      
+      // Build the full URL with share data
+      var shareUrl = terriaInstanceUrl + '#start=' + encodeURIComponent(JSON.stringify(shareData));
       
       // Send to API
       var response = await fetch('/api/terria/view/' + terriaViewId + '/save-config', {
