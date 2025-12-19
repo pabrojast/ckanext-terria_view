@@ -206,7 +206,7 @@
   <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
     Toggle full width
   </a>
-  {% if view_id %}
+  {% if view_id and c.user %}
   <a class="btn btn-primary" id="save-config-btn" onclick="saveConfiguration()" style="margin-left: 5px;" title="{{ _('Save the current TerriaJS configuration from a share URL') }}">
     <i class="fa fa-save"></i> {{ _('Save Configuration') }}
   </a>
