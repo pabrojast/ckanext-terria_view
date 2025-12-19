@@ -420,4 +420,36 @@ class TerriaConfigBuilder:
             return new_dict
         elif isinstance(obj, list):
             return [self._decode_names_in_object(item) for item in obj]
-        return obj 
+        return obj
+    
+    def inject_private_datasets_catalog(self, config_json: str, site_url: str) -> str:
+        """
+        Inyecta una referencia al catálogo de datasets privados en la configuración.
+        
+        TerriaJS cargará automáticamente el catálogo desde la URL proporcionada.
+        
+        Args:
+            config_json: Configuración JSON como string
+            site_url: URL base del sitio CKAN
+            
+        Returns:
+            Configuración JSON actualizada con referencia al catálogo privado
+        """
+        try:
+            config = json.loads(config_json)
+            
+            # URL del endpoint de datasets privados
+            private_catalog_url = f"{site_url}/api/terria/user/private-datasets"
+            
+            # Agregar como initSource adicional (TerriaJS carga catálogos desde URLs)
+            if "initSources" in config:
+                config["initSources"].append(private_catalog_url)
+            else:
+                config["initSources"] = [private_catalog_url]
+            
+            self._debug_print(f"Injected private datasets catalog: {private_catalog_url}")
+            
+            return json.dumps(config)
+        except Exception as e:
+            self._debug_print(f"Error injecting private datasets catalog: {e}")
+            return config_json

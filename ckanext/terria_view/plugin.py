@@ -404,20 +404,26 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             config = self.terria_config_builder.create_config_for_resource(
                 resource, safe_resource_name, resource_url, bounds, view_style
             )
-            encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         else:
             # Custom configuration
             custom_config = self.terria_config_builder.process_custom_config(
                 view_custom_config, resource_url, resource.get('format', ''), view_style
             )
             if custom_config:
-                encoded_config = urllib.parse.quote(custom_config)
+                config = custom_config
             else:
                 # Fallback to standard configuration
                 config = self.terria_config_builder.create_config_for_resource(
                     resource, safe_resource_name, resource_url, bounds, view_style
                 )
-                encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
+        
+        # Inject private datasets catalog if user is logged in
+        if user_context.get('user'):
+            config = self.terria_config_builder.inject_private_datasets_catalog(
+                config, self.config_manager.site_url
+            )
+        
+        encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
         return {
             'title': view_title,
