@@ -48,6 +48,15 @@
     }
     var destination = new (URL || webkitURL)(url);
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
+    
+    // Inject private datasets catalog URL only if user is logged in
+    // This ensures private datasets are not shared when sharing maps
+    {% if user_logged_in and private_catalog_url %}
+    if (message.initSources) {
+      message.initSources.push('{{ private_catalog_url }}');
+    }
+    {% endif %}
+    
     makePopupSendMessage(message, destination.origin, destination.pathname);
   };
   {% endif %}
@@ -192,6 +201,20 @@
 
 </script>
 <div style="margin-bottom: 10px;" class="pull-right">
+  {% if user_logged_in and private_catalog_url and encoded_config %}
+  <!-- For logged-in users, inject private catalog when opening in new window -->
+  <a class="btn"
+    target="_blank"
+    href="#"
+    onclick="(function() {
+      var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
+      if (config.initSources) { config.initSources.push('{{ private_catalog_url }}'); }
+      window.open('{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config)), '_blank');
+      return false;
+    })(); return false;">
+    {{ _('View in a separate') }} {{title}} {{ _('window') }}
+  </a>
+  {% else %}
   <a class="btn"
     target="_blank"
     {% if resource and resource.format and resource.format.lower() == 'json' %}
@@ -203,6 +226,7 @@
     {% endif %}>
     {{ _('View in a separate') }} {{title}} {{ _('window') }}
   </a>
+  {% endif %}
   <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
     Toggle full width
   </a>
@@ -221,11 +245,31 @@
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
 {% elif encoded_config %}
+  {% if user_logged_in and private_catalog_url %}
+  <!-- For logged-in users, inject private catalog dynamically to prevent sharing -->
+  <iframe
+    id="terria-iframe"
+    style="height: 100vh; width: 100%; border: none;"
+    allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
+  </iframe>
+  <script>
+    (function() {
+      var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
+      if (config.initSources) {
+        config.initSources.push('{{ private_catalog_url }}');
+      }
+      var iframeSrc = '{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config));
+      document.getElementById('terria-iframe').src = iframeSrc;
+    })();
+  </script>
+  {% else %}
+  <!-- For non-logged-in users, use the standard config without private catalog -->
   <iframe
     src="{{ terria_instance_url }}#start={{ encoded_config }}"
     style="height: 100vh; width: 100%; border: none;"
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
+  {% endif %}
 {% else %}
   <iframe
     src="{{ terria_instance_url }}"

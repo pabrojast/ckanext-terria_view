@@ -417,11 +417,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     resource, safe_resource_name, resource_url, bounds, view_style
                 )
         
-        # Inject private datasets catalog if user is logged in
-        if user_context.get('user'):
-            config = self.terria_config_builder.inject_private_datasets_catalog(
-                config, self.config_manager.site_url
-            )
+        # Note: Private datasets catalog is now injected client-side in terria.html
+        # to prevent the private catalog URL from being shared when users share maps
         
         encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
         
@@ -432,7 +429,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'origin': self.config_manager.site_url,
             'custom_config': view_custom_config,
             'view_id': view.get('id'),
-            'resource_id': resource.get('id')
+            'resource_id': resource.get('id'),
+            'user_logged_in': bool(user_context.get('user')),
+            'private_catalog_url': f"{self.config_manager.site_url}/api/terria/user/private-datasets"
         }
     
     def view_template(self, context, data_dict):
