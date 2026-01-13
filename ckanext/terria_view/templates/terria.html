@@ -49,11 +49,11 @@
     var destination = new (URL || webkitURL)(url);
     var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
     
-    // Inject private datasets catalog URL only if user is logged in
-    // This ensures private datasets are not shared when sharing maps
-    {% if user_logged_in and private_catalog_url %}
+    // Inject private datasets catalog data directly if user is logged in
+    // This avoids cross-origin authentication issues
+    {% if user_logged_in and private_catalog_data %}
     if (message.initSources) {
-      message.initSources.push('{{ private_catalog_url }}');
+      message.initSources.push({{ private_catalog_data | tojson }});
     }
     {% endif %}
     
@@ -201,14 +201,15 @@
 
 </script>
 <div style="margin-bottom: 10px;" class="pull-right">
-  {% if user_logged_in and private_catalog_url and encoded_config %}
-  <!-- For logged-in users, inject private catalog when opening in new window -->
+  {% if user_logged_in and private_catalog_data and encoded_config %}
+  <!-- For logged-in users, inject private catalog data directly -->
   <a class="btn"
     target="_blank"
     href="#"
     onclick="(function() {
       var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-      if (config.initSources) { config.initSources.push('{{ private_catalog_url }}'); }
+      var privateCatalog = {{ private_catalog_data | tojson }};
+      if (config.initSources && privateCatalog) { config.initSources.push(privateCatalog); }
       window.open('{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config)), '_blank');
       return false;
     })(); return false;">
@@ -245,8 +246,8 @@
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
 {% elif encoded_config %}
-  {% if user_logged_in and private_catalog_url %}
-  <!-- For logged-in users, inject private catalog dynamically to prevent sharing -->
+  {% if user_logged_in and private_catalog_data %}
+  <!-- For logged-in users, inject private catalog data directly to avoid cross-origin auth issues -->
   <iframe
     id="terria-iframe"
     style="height: 100vh; width: 100%; border: none;"
@@ -255,8 +256,9 @@
   <script>
     (function() {
       var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-      if (config.initSources) {
-        config.initSources.push('{{ private_catalog_url }}');
+      var privateCatalog = {{ private_catalog_data | tojson }};
+      if (config.initSources && privateCatalog) {
+        config.initSources.push(privateCatalog);
       }
       var iframeSrc = '{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config));
       document.getElementById('terria-iframe').src = iframeSrc;
