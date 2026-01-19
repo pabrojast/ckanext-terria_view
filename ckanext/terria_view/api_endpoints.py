@@ -4,11 +4,13 @@ API endpoints for Terria JSON generation.
 """
 import json
 import os
-from flask import Blueprint, jsonify, request, Response, send_file
+import urllib.parse
+from flask import Blueprint, jsonify, request, Response, send_file, redirect
 import ckan.plugins.toolkit as toolkit
-from ckan.common import config
+from ckan.lib import uploader
 
 from .terria_json_generator import TerriaJSONGenerator
+from .private_download import validate_token
 
 
 # Create Blueprint for our API endpoints
@@ -44,6 +46,21 @@ class TerriaAPIController:
         response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         
+        return response
+
+    def _add_cors_headers(self, response: Response) -> Response:
+        """
+        Add CORS headers to non-JSON responses.
+
+        Args:
+            response: Flask Response object
+
+        Returns:
+            Response with CORS headers
+        """
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
         return response
     
     def _create_error_response(self, message: str, status_code: int = 500) -> Response:
@@ -202,6 +219,89 @@ class TerriaAPIController:
             return self._create_error_response(f'Resource not found: {resource_id}', 404)
         except Exception as e:
             return self._create_error_response(f'Error getting resource views: {str(e)}')
+
+    def resource_download(self, resource_id: str):
+        """
+        Serve a private resource file using a signed token.
+
+        Args:
+            resource_id: Resource ID
+
+        Returns:
+            File response or redirect
+        """
+        token = request.args.get('token', '')
+        if not token:
+            return self._create_error_response('Authentication token required', 401)
+
+        is_valid, error_message = validate_token(token, resource_id)
+        if not is_valid:
+            return self._create_error_response(error_message or 'Invalid token', 401)
+
+        try:
+            resource = toolkit.get_action('resource_show')({'ignore_auth': True}, {'id': resource_id})
+        except toolkit.ObjectNotFound:
+            return self._create_error_response(f'Resource not found: {resource_id}', 404)
+        except Exception as e:
+            return self._create_error_response(f'Error loading resource: {str(e)}')
+
+        resource_url = resource.get('url', '')
+        filename = None
+        if resource_url:
+            filename = os.path.basename(urllib.parse.urlparse(resource_url).path) or None
+
+        upload = uploader.get_resource_uploader(resource)
+        signed_url = None
+        if hasattr(upload, 'get_signed_url'):
+            try:
+                signed_url = upload.get_signed_url(resource_id)
+            except TypeError:
+                if filename:
+                    try:
+                        signed_url = upload.get_signed_url(resource_id, filename)
+                    except TypeError:
+                        signed_url = None
+            except Exception:
+                signed_url = None
+
+        if signed_url:
+            return self._add_cors_headers(redirect(signed_url))
+
+        file_path = None
+        if hasattr(upload, 'get_path'):
+            try:
+                file_path = upload.get_path(resource_id)
+            except Exception:
+                file_path = None
+            if file_path and os.path.isdir(file_path) and filename:
+                candidate = os.path.join(file_path, filename)
+                if os.path.exists(candidate):
+                    file_path = candidate
+
+        if not file_path and filename and hasattr(upload, 'get_path_from_filename'):
+            try:
+                file_path = upload.get_path_from_filename(resource_id, filename)
+            except TypeError:
+                file_path = None
+
+        if file_path and os.path.exists(file_path):
+            try:
+                if filename:
+                    response = send_file(
+                        file_path,
+                        as_attachment=False,
+                        download_name=filename
+                    )
+                else:
+                    response = send_file(file_path, as_attachment=False)
+            except TypeError:
+                response = send_file(file_path, as_attachment=False)
+            return self._add_cors_headers(response)
+
+        if resource_url:
+            return self._add_cors_headers(redirect(resource_url))
+
+        return self._create_error_response('Resource file not available', 404)
     
     def cache_stats(self):
         """
@@ -557,7 +657,8 @@ class TerriaAPIController:
                         # Format resource as Terria item with styles
                         try:
                             formatted_item, total_views = self.generator.format_dataset_item(
-                                resource, dataset_id, notes, org_info, 0
+                                resource, dataset_id, notes, org_info, 0,
+                                package=dataset, user_context=context
                             )
                             dataset_members.append(formatted_item)
                             
@@ -565,7 +666,8 @@ class TerriaAPIController:
                             if total_views > 1:
                                 for vi in range(1, total_views):
                                     additional_item, _ = self.generator.format_dataset_item(
-                                        resource, dataset_id, notes, org_info, vi
+                                        resource, dataset_id, notes, org_info, vi,
+                                        package=dataset, user_context=context
                                     )
                                     dataset_members.append(additional_item)
                         except Exception as e:
@@ -672,6 +774,12 @@ def full_catalog_json_endpoint():
 def resource_views_endpoint(resource_id):
     """Resource views endpoint."""
     return get_controller().resource_views(resource_id)
+
+
+@terria_api.route('/api/terria/resource/<resource_id>/download', methods=['GET'])
+def resource_download_endpoint(resource_id):
+    """Resource download endpoint for private resources."""
+    return get_controller().resource_download(resource_id)
 
 
 @terria_api.route('/api/terria/modular', methods=['GET'])

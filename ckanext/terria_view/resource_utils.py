@@ -8,6 +8,7 @@ import urllib.parse
 from typing import Dict, List, Optional, Tuple, Any
 from ckan.lib import uploader
 from ckan.plugins import toolkit
+from .private_download import generate_token
 
 
 class ResourceUtils:
@@ -135,12 +136,22 @@ class ResourceUtils:
             URL del recurso
         """
         resource_url = resource.get("url", "")
+        user = user_context.get("user") if user_context else None
+
+        # Use a short-lived signed URL for private resources to avoid cross-site auth issues
+        if user and package.get("private") is True:
+            site_url = self.config_manager.site_url or toolkit.config.get("ckan.site_url", "")
+            resource_id = resource.get("id")
+            token = generate_token(resource_id, user) if resource_id else None
+            if site_url and token:
+                query = urllib.parse.urlencode({"token": token})
+                return f"{site_url.rstrip('/')}/api/terria/resource/{resource_id}/download?{query}"
         
         # Check if it's a valid domain and accepted format
         if self.config_manager.is_valid_domain(resource_url):
             if self.config_manager.is_accepted_format(resource):
                 # Fix para datasets privados
-                if user_context['user'] and package.get("private") == True:
+                if user and package.get("private") == True:
                     upload = uploader.get_resource_uploader(resource)
                     uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
                 else:

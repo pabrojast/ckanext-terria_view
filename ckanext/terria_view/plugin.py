@@ -545,7 +545,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     
                     try:
                         formatted_item, total_views = generator.format_dataset_item(
-                            resource, dataset_id, notes, org_info, 0
+                            resource, dataset_id, notes, org_info, 0,
+                            package=dataset, user_context=user_context
                         )
                         dataset_members.append(formatted_item)
                         
@@ -553,7 +554,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                         if total_views > 1:
                             for vi in range(1, total_views):
                                 additional_item, _ = generator.format_dataset_item(
-                                    resource, dataset_id, notes, org_info, vi
+                                    resource, dataset_id, notes, org_info, vi,
+                                    package=dataset, user_context=user_context
                                 )
                                 dataset_members.append(additional_item)
                     except Exception:
