@@ -39,6 +39,16 @@
   }
 
   {% if encoded_config %}
+  // Base Terria config (resource + custom config). We clone before sending to avoid mutations.
+  var terriaStartConfig = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
+  {% if user_logged_in and private_catalog_data %}
+  // Append private catalog inline; will be delivered via postMessage to avoid huge URL fragments.
+  var terriaPrivateCatalog = {{ private_catalog_data | tojson }};
+  if (terriaStartConfig.initSources && terriaPrivateCatalog) {
+    terriaStartConfig.initSources.push(terriaPrivateCatalog);
+  }
+  {% endif %}
+
   window.terriaJSPreview = function()
   {
     var url = '{{ terria_instance_url }}';
@@ -47,15 +57,7 @@
       url = window.location.protocol + url;
     }
     var destination = new (URL || webkitURL)(url);
-    var message = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-    
-    // Inject private datasets catalog data directly if user is logged in
-    // This avoids cross-origin authentication issues
-    {% if user_logged_in and private_catalog_data %}
-    if (message.initSources) {
-      message.initSources.push({{ private_catalog_data | tojson }});
-    }
-    {% endif %}
+    var message = JSON.parse(JSON.stringify(terriaStartConfig));
     
     makePopupSendMessage(message, destination.origin, destination.pathname);
   };
@@ -78,6 +80,20 @@
   var terriaInstanceUrl = '{{ terria_instance_url }}';
   var terriaIframeReady = false;
   var pendingShareDataCallbacks = {};
+  {% if user_logged_in and private_catalog_data and encoded_config %}
+  var terriaTargetOrigin = '*';
+  try { terriaTargetOrigin = new URL(terriaInstanceUrl).origin; } catch (e) {}
+
+  function postConfigToIframe() {
+    var iframe = document.getElementById('terria-iframe');
+    if (!iframe || !iframe.contentWindow || !terriaStartConfig) {
+      return;
+    }
+    var payload = JSON.parse(JSON.stringify(terriaStartConfig));
+    payload.allowOrigin = window.location.origin;
+    iframe.contentWindow.postMessage(payload, terriaTargetOrigin);
+  }
+  {% endif %}
 
   // Listen for messages from TerriaJS iframe
   window.addEventListener('message', function(event) {
@@ -85,6 +101,9 @@
     if (event.data === 'ready') {
       terriaIframeReady = true;
       console.log('TerriaJS iframe is ready');
+      {% if user_logged_in and private_catalog_data and encoded_config %}
+      postConfigToIframe();
+      {% endif %}
       return;
     }
 
@@ -199,20 +218,26 @@
     }
   }
 
+  {% if user_logged_in and private_catalog_data and encoded_config %}
+  // Fallback: send config once the iframe finishes loading (in case the ready message is missed).
+  document.addEventListener('DOMContentLoaded', function() {
+    var iframe = document.getElementById('terria-iframe');
+    if (iframe) {
+      iframe.addEventListener('load', function() {
+        setTimeout(postConfigToIframe, 100);
+      });
+    }
+  });
+  {% endif %}
+
 </script>
 <div style="margin-bottom: 10px;" class="pull-right">
   {% if user_logged_in and private_catalog_data and encoded_config %}
   <!-- For logged-in users, inject private catalog data directly -->
   <a class="btn"
     target="_blank"
-    href="#"
-    onclick="(function() {
-      var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-      var privateCatalog = {{ private_catalog_data | tojson }};
-      if (config.initSources && privateCatalog) { config.initSources.push(privateCatalog); }
-      window.open('{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config)), '_blank');
-      return false;
-    })(); return false;">
+    href="{{ terria_instance_url }}"
+    onclick="window.terriaJSPreview(); return false;">
     {{ _('View in a separate') }} {{title}} {{ _('window') }}
   </a>
   {% else %}
@@ -246,32 +271,12 @@
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
 {% elif encoded_config %}
-  {% if user_logged_in and private_catalog_data %}
-  <!-- For logged-in users, inject private catalog data directly to avoid cross-origin auth issues -->
   <iframe
     id="terria-iframe"
-    style="height: 100vh; width: 100%; border: none;"
-    allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
-  </iframe>
-  <script>
-    (function() {
-      var config = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
-      var privateCatalog = {{ private_catalog_data | tojson }};
-      if (config.initSources && privateCatalog) {
-        config.initSources.push(privateCatalog);
-      }
-      var iframeSrc = '{{ terria_instance_url }}#start=' + encodeURIComponent(JSON.stringify(config));
-      document.getElementById('terria-iframe').src = iframeSrc;
-    })();
-  </script>
-  {% else %}
-  <!-- For non-logged-in users, use the standard config without private catalog -->
-  <iframe
     src="{{ terria_instance_url }}#start={{ encoded_config }}"
     style="height: 100vh; width: 100%; border: none;"
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
-  {% endif %}
 {% else %}
   <iframe
     src="{{ terria_instance_url }}"
