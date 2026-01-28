@@ -296,7 +296,9 @@ class TerriaConfigBuilder:
             return self.create_generic_config(resource_name, resource_url, resource_format, bounds)
     
     def process_custom_config(self, custom_config: str, resource_url: str, 
-                            resource_format: str, sld_url: Optional[str] = None) -> Optional[str]:
+                            resource_format: str, sld_url: Optional[str] = None,
+                            resource_id: Optional[str] = None,
+                            resource_name: Optional[str] = None) -> Optional[str]:
         """
         Procesa una configuración personalizada y actualiza URLs y estilos.
         
@@ -305,6 +307,8 @@ class TerriaConfigBuilder:
             resource_url: URL del recurso
             resource_format: Formato del recurso
             sld_url: URL del archivo SLD (opcional)
+            resource_id: ID del recurso CKAN (opcional)
+            resource_name: Nombre seguro del recurso (opcional)
             
         Returns:
             Configuración procesada como string JSON, None en caso de error
@@ -334,6 +338,11 @@ class TerriaConfigBuilder:
             
             # Decode names
             start_data = self._decode_names_in_object(start_data)
+
+            resource_format = (resource_format or '').lower()
+            target_ids = {rid for rid in [resource_id, resource_name] if rid}
+            matched_models = []
+            type_candidates = []
             
             # Get SLD styles if available
             sld_styles = None
@@ -346,34 +355,49 @@ class TerriaConfigBuilder:
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
                     for model_key, model_value in init_source['models'].items():
-                        if isinstance(model_value, dict) and 'url' in model_value:
-                            # Actualizar la URL
-                            model_value['url'] = resource_url
-                            self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
-                            
-                            # Apply SLD styles if available
-                            if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff']:
-                                self._debug_print(f"Applying SLD styles to model {model_key}")
-                                # Always apply legends if available
-                                if 'legends' in sld_styles:
-                                    model_value['legends'] = sld_styles['legends']
-                                    self._debug_print(f"Applied legends to model {model_key}")
-                                
-                                # Apply styles for SHP resources
-                                if resource_format.lower() == 'shp' and 'styles' in sld_styles:
-                                    model_value['styles'] = sld_styles['styles']
-                                    if 'activeStyle' in sld_styles:
-                                        model_value['activeStyle'] = sld_styles['activeStyle']
-                                    # if 'forceCesiumPrimitives' in sld_styles:
-                                    #     model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
-                                    self._debug_print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
-                                    self._debug_print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
-                                    # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
-                                    
-                                # Apply renderOptions for COG resources
-                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:
-                                    model_value['renderOptions'] = sld_styles['renderOptions']
-                                    self._debug_print(f"Applied renderOptions to model {model_key}")
+                        if not isinstance(model_value, dict):
+                            continue
+
+                        model_type = (model_value.get('type') or '').lower()
+                        key_matches = model_key in target_ids
+                        id_matches = bool(resource_id and model_value.get('id') == resource_id)
+                        name_matches = bool(resource_name and model_value.get('name') == resource_name)
+
+                        if key_matches or id_matches or name_matches:
+                            matched_models.append((model_key, model_value))
+                        elif model_type and model_type == resource_format:
+                            type_candidates.append((model_key, model_value))
+
+            if not matched_models and len(type_candidates) == 1:
+                matched_models = type_candidates
+
+            for model_key, model_value in matched_models:
+                model_value['url'] = resource_url
+                self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
+
+                # Apply SLD styles if available
+                if sld_styles and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
+                    self._debug_print(f"Applying SLD styles to model {model_key}")
+                    # Always apply legends if available
+                    if 'legends' in sld_styles:
+                        model_value['legends'] = sld_styles['legends']
+                        self._debug_print(f"Applied legends to model {model_key}")
+
+                    # Apply styles for SHP resources
+                    if resource_format == 'shp' and 'styles' in sld_styles:
+                        model_value['styles'] = sld_styles['styles']
+                        if 'activeStyle' in sld_styles:
+                            model_value['activeStyle'] = sld_styles['activeStyle']
+                        # if 'forceCesiumPrimitives' in sld_styles:
+                        #     model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
+                        self._debug_print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
+                        self._debug_print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
+                        # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
+                        
+                    # Apply renderOptions for COG resources
+                    elif resource_format in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:
+                        model_value['renderOptions'] = sld_styles['renderOptions']
+                        self._debug_print(f"Applied renderOptions to model {model_key}")
             
             return json.dumps(start_data)
             

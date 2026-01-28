@@ -407,7 +407,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             # Custom configuration
             custom_config = self.terria_config_builder.process_custom_config(
-                view_custom_config, resource_url, resource.get('format', ''), view_style
+                view_custom_config,
+                resource_url,
+                resource.get('format', ''),
+                view_style,
+                resource_id=resource.get('id'),
+                resource_name=safe_resource_name
             )
             if custom_config:
                 config = custom_config
