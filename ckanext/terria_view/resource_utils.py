@@ -166,8 +166,10 @@ class ResourceUtils:
         resource_url = resource.get("url", "")
         user = user_context.get("user") if user_context else None
 
+        is_private = package.get("private") is True
+
         # Use a short-lived signed URL for private resources to avoid cross-site auth issues
-        if user and package.get("private") is True:
+        if user and is_private:
             site_url = self.config_manager.site_url or toolkit.config.get("ckan.site_url", "")
             resource_id = resource.get("id")
             token = generate_token(resource_id, user) if resource_id else None
@@ -175,22 +177,18 @@ class ResourceUtils:
                 query = urllib.parse.urlencode({"token": token})
                 signed_url = f"{site_url.rstrip('/')}/api/terria/resource/{resource_id}/download?{query}"
                 return self.config_manager.ensure_https_url(signed_url)
+
+        # For uploaded resources, prefer the storage URL directly to avoid mixed-content redirects
+        if resource.get("url_type") == "upload":
+            try:
+                upload = uploader.get_resource_uploader(resource)
+                uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
+                return self.config_manager.ensure_https_url(uploaded_url)
+            except Exception:
+                pass
         
-        # Check if it's a valid domain and accepted format
-        if self.config_manager.is_valid_domain(resource_url):
-            if self.config_manager.is_accepted_format(resource):
-                # Fix para datasets privados
-                if user and package.get("private") == True:
-                    upload = uploader.get_resource_uploader(resource)
-                    uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
-                else:
-                    uploaded_url = resource_url
-            else:
-                uploaded_url = resource_url
-        else:
-            uploaded_url = resource_url
-        
-        return self.config_manager.ensure_https_url(uploaded_url)
+        # Fallback to the resource URL as-is
+        return self.config_manager.ensure_https_url(resource_url)
     
     def decode_names_in_object(self, obj: Any) -> Any:
         """
