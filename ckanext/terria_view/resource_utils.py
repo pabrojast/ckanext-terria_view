@@ -22,6 +22,7 @@ class ResourceUtils:
         Args:
             config_manager: Instancia del gestor de configuraciones
         """
+        self.config_manager = config_manager
         # Cache for SLD files to avoid repeated HTTP calls
         self._sld_cache = {}
         self._sld_cache_max_age = 300  # 5 minutes cache
