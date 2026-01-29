@@ -97,22 +97,44 @@ def new_resource_view_list(plugin_instance, context, data_dict):
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
     """Main plugin for Terria View - Refactored version."""
-    
+
+    # Shared instances to ensure singleton behavior across all contexts
+    # This ensures cache is shared between plugin and TerriaJSONGenerator
+    _shared_config_manager = None
+    _shared_sld_processor = None
+    _shared_resource_utils = None
+    _shared_cache_manager = None
+    _shared_file_cache_manager = None
+
     def __init__(self, name=None):
         """Initialize the plugin with refactored modules."""
         super().__init__()
-        
-        # Initialize modules
-        self.config_manager = ConfigManager()
-        self.sld_processor = SLDProcessor()
-        self.resource_utils = ResourceUtils(self.config_manager)
+
+        # Use shared instances to ensure cache is effective across requests
+        if Terria_ViewPlugin._shared_config_manager is None:
+            Terria_ViewPlugin._shared_config_manager = ConfigManager()
+        if Terria_ViewPlugin._shared_sld_processor is None:
+            Terria_ViewPlugin._shared_sld_processor = SLDProcessor()
+        if Terria_ViewPlugin._shared_resource_utils is None:
+            Terria_ViewPlugin._shared_resource_utils = ResourceUtils(Terria_ViewPlugin._shared_config_manager)
+        if Terria_ViewPlugin._shared_cache_manager is None:
+            Terria_ViewPlugin._shared_cache_manager = CacheManager()
+        if Terria_ViewPlugin._shared_file_cache_manager is None:
+            Terria_ViewPlugin._shared_file_cache_manager = FileCacheManager()
+
+        # Assign shared instances
+        self.config_manager = Terria_ViewPlugin._shared_config_manager
+        self.sld_processor = Terria_ViewPlugin._shared_sld_processor
+        self.resource_utils = Terria_ViewPlugin._shared_resource_utils
+        self.cache_manager = Terria_ViewPlugin._shared_cache_manager
+        self.file_cache_manager = Terria_ViewPlugin._shared_file_cache_manager
+
+        # Create config builder with shared instances
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
-        self.cache_manager = CacheManager()
-        self.file_cache_manager = FileCacheManager()
-        
+
         # Initialize cache preloader (will be started after configuration)
         self.cache_preloader = None
-        
+
         # Callback for resource_view_list
         self.resource_view_list_callback = None
     
@@ -458,45 +480,59 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     def form_template(self, context, data_dict):
         """
         Specify the template for the configuration form.
-        
+
         Args:
             context: Form context
             data_dict: Dictionary with form data
-            
+
         Returns:
             Template name
         """
         # Pass resource format to template
         if 'resource' in data_dict and 'format' in data_dict['resource']:
             data_dict['resource_format'] = data_dict['resource']['format']
-        
-        # Only load SLD files when actually editing the view
-        # Check if we're in edit mode (POST request or edit/new view page)
+
+        # Only load SLD files when actually editing the view (creating new or editing existing)
+        # This prevents HTTP calls to CKAN API when just viewing the dataset
         from flask import request as flask_request
-        is_editing = (
-            flask_request.method == 'POST' or 
-            'edit' in flask_request.path or 
-            'new' in flask_request.path or
-            flask_request.endpoint in ['resource.edit_view', 'resource.new_view']
-        )
-        
+
+        # More precise check for edit mode
+        is_edit_endpoint = flask_request.endpoint in [
+            'resource.edit_view',
+            'resource.new_view',
+            'dataset_resource.edit_view',
+            'dataset_resource.new_view'
+        ]
+        is_edit_path = any(segment in flask_request.path for segment in ['/edit_view/', '/new_view'])
+        is_post_request = flask_request.method == 'POST'
+
+        is_editing = is_edit_endpoint or is_edit_path or is_post_request
+
+        self._debug_print(f"form_template: is_editing={is_editing}, endpoint={flask_request.endpoint}, path={flask_request.path}")
+
+        # Always initialize the list (empty by default)
+        data_dict['available_sld_files'] = []
+
         if is_editing and 'package' in data_dict:
             package_id = data_dict['package']['id']
+            self._debug_print(f"form_template: Loading SLD files for package {package_id}")
+
             sld_files = self.resource_utils.get_sld_files_from_dataset(
                 self.config_manager.site_url, package_id
             )
-            
+
             # Pass SLD files to template
             data_dict['available_sld_files'] = sld_files
             context['available_sld_files'] = sld_files
-            
+
             # Add to global template variables
             if 'c' in context:
                 context['c'].available_sld_files = sld_files
+
+            self._debug_print(f"form_template: Found {len(sld_files)} SLD files")
         else:
-            # Not editing or no package - empty list
-            data_dict['available_sld_files'] = []
-        
+            self._debug_print(f"form_template: Skipping SLD file load (is_editing={is_editing}, has_package={'package' in data_dict})")
+
         return 'terria_instance_url.html'
 
     def _get_private_datasets_catalog(self, user_context):

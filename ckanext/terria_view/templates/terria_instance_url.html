@@ -64,7 +64,8 @@
 <div class="control-group">
   <label class="control-label" for="style">{{ _('Style') }}</label>
   <div class="controls">
-    {% set available_sld_files = h.terria_get_sld_files(data.package_id) if data.package_id else [] %}
+    {# Use the pre-loaded SLD files from form_template() to avoid HTTP calls on every render #}
+    {% set available_sld_files = data.available_sld_files if data.available_sld_files else [] %}
     
     {% if available_sld_files and available_sld_files|length > 0 %}
       {# Show available SLD files #}
