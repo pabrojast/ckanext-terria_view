@@ -4,6 +4,7 @@ Module for managing Terria View plugin configurations.
 """
 import os
 import re
+import urllib.parse
 from typing import Dict, List, Optional, Union
 
 
@@ -26,6 +27,15 @@ class ConfigManager:
     VALID_DOMAINS = [
         'https://data.dev-wins.com',
         'https://ihp-wins.unesco.org/'
+    ]
+
+    # Hosts/suffixes that should always be upgraded to HTTPS to avoid mixed content
+    HTTPS_UPGRADE_HOSTS = [
+        'data.dev-wins.com',
+        'ihp-wins.unesco.org'
+    ]
+    HTTPS_UPGRADE_SUFFIXES = [
+        'blob.core.windows.net'
     ]
     
     def __init__(self, site_url: str = '', default_title: str = 'Terria Viewer', 
@@ -68,6 +78,32 @@ class ConfigManager:
             True si la URL es de un dominio válido, False en caso contrario
         """
         return any(url.startswith(domain) for domain in self.VALID_DOMAINS)
+
+    def ensure_https_url(self, url: str) -> str:
+        """
+        Upgrade URLs to HTTPS for known hosts to avoid mixed content.
+        
+        Args:
+            url: URL to normalize
+            
+        Returns:
+            URL upgraded to HTTPS when applicable
+        """
+        try:
+            parsed = urllib.parse.urlparse(url)
+        except Exception:
+            return url
+        
+        if parsed.scheme != 'http':
+            return url
+        
+        hostname = (parsed.hostname or '').lower()
+        if hostname in self.HTTPS_UPGRADE_HOSTS or any(
+            hostname.endswith(suffix) for suffix in self.HTTPS_UPGRADE_SUFFIXES
+        ):
+            return parsed._replace(scheme='https').geturl()
+        
+        return url
     
     def is_shp_resource(self, resource: Dict) -> bool:
         """

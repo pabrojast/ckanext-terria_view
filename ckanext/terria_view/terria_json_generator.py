@@ -114,6 +114,8 @@ class TerriaJSONGenerator:
         resource_url = resource.get('url', '')
         if package and package.get('private') and user_context:
             resource_url = self.resource_utils.get_resource_url(resource, package, user_context)
+        else:
+            resource_url = self.config_manager.ensure_https_url(resource_url)
         resource_description = resource.get('description', '')
         
         # Adjust the type if necessary

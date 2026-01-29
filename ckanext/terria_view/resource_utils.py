@@ -145,7 +145,8 @@ class ResourceUtils:
             token = generate_token(resource_id, user) if resource_id else None
             if site_url and token:
                 query = urllib.parse.urlencode({"token": token})
-                return f"{site_url.rstrip('/')}/api/terria/resource/{resource_id}/download?{query}"
+                signed_url = f"{site_url.rstrip('/')}/api/terria/resource/{resource_id}/download?{query}"
+                return self.config_manager.ensure_https_url(signed_url)
         
         # Check if it's a valid domain and accepted format
         if self.config_manager.is_valid_domain(resource_url):
@@ -161,7 +162,7 @@ class ResourceUtils:
         else:
             uploaded_url = resource_url
         
-        return uploaded_url
+        return self.config_manager.ensure_https_url(uploaded_url)
     
     def decode_names_in_object(self, obj: Any) -> Any:
         """
