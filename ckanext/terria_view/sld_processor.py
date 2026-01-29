@@ -4,11 +4,15 @@ Module for processing SLD (Styled Layer Descriptor) files.
 Enhanced for better TerriaJS compatibility.
 """
 import os
+import copy
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 import re
 import traceback
+from ckan.common import config
+import ckan.plugins.toolkit as toolkit
 
 
 class SLDProcessor:
@@ -62,7 +66,11 @@ class SLDProcessor:
         import os
         if os.environ.get('TERRIA_DEBUG', 'false').lower() == 'true':
             print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
-        pass
+        self._cache_enabled = toolkit.asbool(config.get('ckanext.terria_view.sld_cache_enabled', True))
+        self._cache_ttl = int(config.get('ckanext.terria_view.sld_cache_seconds', 3600))
+        self._cache_max_entries = int(config.get('ckanext.terria_view.sld_cache_max_entries', 256))
+        self._sld_content_cache = {}
+        self._sld_style_cache = {}
     
     def _debug_print(self, message: str):
         """
@@ -78,6 +86,55 @@ class SLDProcessor:
                 # Handle Unicode characters that can't be encoded
                 safe_message = message.encode('utf-8', errors='replace').decode('utf-8')
                 print(f"DEBUG: {safe_message}")
+
+    def _cache_is_valid(self, timestamp: float) -> bool:
+        if not self._cache_enabled or self._cache_ttl <= 0:
+            return False
+        return (time.time() - timestamp) < self._cache_ttl
+
+    def _prune_cache(self, cache: Dict[str, Dict[str, Any]]) -> None:
+        if not self._cache_enabled:
+            cache.clear()
+            return
+        if self._cache_max_entries <= 0:
+            cache.clear()
+            return
+        while len(cache) > self._cache_max_entries:
+            oldest_key = min(cache.items(), key=lambda item: item[1].get('ts', 0))[0]
+            cache.pop(oldest_key, None)
+
+    def _get_cached_content(self, cache_key: str) -> Tuple[bool, Optional[bytes]]:
+        if not self._cache_enabled:
+            return False, None
+        entry = self._sld_content_cache.get(cache_key)
+        if entry and self._cache_is_valid(entry.get('ts', 0)):
+            return True, entry.get('value')
+        if entry:
+            self._sld_content_cache.pop(cache_key, None)
+        return False, None
+
+    def _set_cached_content(self, cache_key: str, value: Optional[bytes]) -> None:
+        if not self._cache_enabled:
+            return
+        self._sld_content_cache[cache_key] = {'ts': time.time(), 'value': value}
+        self._prune_cache(self._sld_content_cache)
+
+    def _get_cached_style(self, cache_key: str) -> Tuple[bool, Optional[Dict[str, Any]]]:
+        if not self._cache_enabled:
+            return False, None
+        entry = self._sld_style_cache.get(cache_key)
+        if entry and self._cache_is_valid(entry.get('ts', 0)):
+            cached_value = entry.get('value')
+            return True, copy.deepcopy(cached_value) if cached_value is not None else None
+        if entry:
+            self._sld_style_cache.pop(cache_key, None)
+        return False, None
+
+    def _set_cached_style(self, cache_key: str, value: Dict[str, Any]) -> None:
+        if not self._cache_enabled:
+            return
+        self._sld_style_cache[cache_key] = {'ts': time.time(), 'value': value}
+        self._prune_cache(self._sld_style_cache)
     
     def _normalize_color(self, color: str) -> str:
         """
@@ -337,17 +394,30 @@ class SLDProcessor:
             self._debug_print("Empty SLD URL provided")
             return None
         
+        cache_key = sld_url
+        cache_hit, cached_value = self._get_cached_content(cache_key)
+        if cache_hit:
+            return cached_value
+
         # Handle different URL schemes
         if sld_url.startswith(('http://', 'https://')):
-            return self._fetch_http_content(sld_url)
+            content = self._fetch_http_content(sld_url)
+            self._set_cached_content(cache_key, content)
+            return content
         elif sld_url.startswith('file://'):
-            return self._fetch_file_content(sld_url)
+            content = self._fetch_file_content(sld_url)
+            self._set_cached_content(cache_key, content)
+            return content
         elif sld_url.startswith('/') or (':\\' in sld_url and len(sld_url) > 3):
             # Local file path
-            return self._fetch_local_file_content(sld_url)
+            content = self._fetch_local_file_content(sld_url)
+            self._set_cached_content(cache_key, content)
+            return content
         else:
             # Assume it's a local file path relative to current directory
-            return self._fetch_local_file_content(sld_url)
+            content = self._fetch_local_file_content(sld_url)
+            self._set_cached_content(cache_key, content)
+            return content
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
         """Fetch content from HTTP/HTTPS URL."""
@@ -531,13 +601,22 @@ class SLDProcessor:
         Returns:
             Dictionary with style information for COG
         """
+        cache_key = f"cog::{sld_url.strip()}"
+        cache_hit, cached_style = self._get_cached_style(cache_key)
+        if cache_hit and cached_style is not None:
+            return cached_style
+
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         root = self.parse_sld_xml(sld_content)
         if root is None:
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         colors = []
         legend_items = []
@@ -609,7 +688,9 @@ class SLDProcessor:
         
         except Exception as e:
             print(f"Error processing COG SLD: {e}")
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         # Sort colors by quantity for proper rendering
         colors.sort(key=lambda x: x[0])
@@ -688,6 +769,7 @@ class SLDProcessor:
 
             result["renderOptions"] = render_options
         
+        self._set_cached_style(cache_key, result)
         return result
     
     def process_shp_sld(self, sld_url: str) -> Dict[str, Any]:
@@ -700,33 +782,48 @@ class SLDProcessor:
         Returns:
             Dictionary with style information for Shapefile
         """
+        cache_key = f"shp::{sld_url.strip()}"
+        cache_hit, cached_style = self._get_cached_style(cache_key)
+        if cache_hit and cached_style is not None:
+            return cached_style
+
         # Input validation
         if not sld_url or not isinstance(sld_url, str):
             print(f"Invalid SLD URL provided: {sld_url}")
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         sld_url = sld_url.strip()
         if not sld_url or sld_url.lower() in ['na', 'none', 'null']:
             print("No valid SLD URL provided")
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         # Fetch and parse SLD content
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
             print(f"Failed to fetch SLD content from: {sld_url}")
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         root = self.parse_sld_xml(sld_content)
         if root is None:
             print(f"Failed to parse SLD XML from: {sld_url}")
-            return {}
+            result = {}
+            self._set_cached_style(cache_key, result)
+            return result
         
         try:
             # Follow QGIS approach: find UserStyle elements first
             user_styles = self._find_user_styles(root)
             if not user_styles:
                 print("No UserStyle elements found in SLD")
-                return {}
+                result = {}
+                self._set_cached_style(cache_key, result)
+                return result
             
             # Process all UserStyle elements and merge rules
             all_rules = []
@@ -738,7 +835,9 @@ class SLDProcessor:
             
             if not all_rules:
                 print("No valid rules found in any FeatureTypeStyle")
-                return {}
+                result = {}
+                self._set_cached_style(cache_key, result)
+                return result
             
             print(f"Found {len(all_rules)} total rules from all UserStyle/FeatureTypeStyle elements")
             
@@ -747,16 +846,22 @@ class SLDProcessor:
             
             if not processed_data:
                 print("No valid styling data extracted from rules")
-                return {}
+                result = {}
+                self._set_cached_style(cache_key, result)
+                return result
             
             # Build TerriaJS result based on renderer type
-            return self._build_terria_result(renderer_type, processed_data)
+            result = self._build_terria_result(renderer_type, processed_data)
+            self._set_cached_style(cache_key, result)
+            return result
             
         except Exception as e:
             print(f"Error processing SHP SLD: {e}")
             import traceback
             traceback.print_exc()
-            return self._create_fallback_result([])
+            result = self._create_fallback_result([])
+            self._set_cached_style(cache_key, result)
+            return result
     
     def _find_user_styles(self, root) -> List:
         """

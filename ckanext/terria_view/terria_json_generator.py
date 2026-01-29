@@ -7,6 +7,7 @@ import urllib.parse
 from collections import defaultdict
 from typing import Dict, List, Optional, Any, Tuple
 import ckan.plugins.toolkit as toolkit
+from ckan.common import config
 import requests
 from requests.adapters import HTTPAdapter
 try:
@@ -51,6 +52,11 @@ class TerriaJSONGenerator:
         self.sld_processor = TerriaJSONGenerator._shared_sld_processor
         self.config_manager = TerriaJSONGenerator._shared_config_manager
         self.resource_utils = TerriaJSONGenerator._shared_resource_utils
+
+        # Whether to include SLD styles when generating catalog JSON
+        self.catalog_include_sld = toolkit.asbool(
+            config.get('ckanext.terria_view.catalog_include_sld', False)
+        )
         
         # Setup HTTP session with retry strategy
         # Use method_whitelist for compatibility with older urllib3 versions
@@ -177,10 +183,13 @@ class TerriaJSONGenerator:
                 
                 # Process styles if available
                 if style_url and style_url != 'NA':
-                    self._debug_print(f"Processing SLD styles from: {style_url}")
-                    style_config = self._process_sld_styles(style_url, resource_format)
-                    if style_config:
-                        self._apply_style_config(elemento, style_config, resource_format)
+                    if self.catalog_include_sld:
+                        self._debug_print(f"Processing SLD styles from: {style_url}")
+                        style_config = self._process_sld_styles(style_url, resource_format)
+                        if style_config:
+                            self._apply_style_config(elemento, style_config, resource_format)
+                    else:
+                        self._debug_print("Skipping SLD styles for catalog generation")
                 
                 # Process custom config if available
                 if custom_config and custom_config not in ['NA', '']:

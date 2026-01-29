@@ -31,6 +31,11 @@ class TerriaConfigBuilder:
         import os
         if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
             print(message)
+
+    def _is_valid_sld_url(self, sld_url: Optional[str]) -> bool:
+        if not sld_url:
+            return False
+        return str(sld_url).strip().lower() not in ['na', 'none', 'null', '']
     
     def create_base_config(self, resource_name: str, bounds: tuple) -> Dict:
         """
@@ -130,7 +135,7 @@ class TerriaConfigBuilder:
         }
         
         # Apply SLD styles if available
-        if sld_url:
+        if self._is_valid_sld_url(sld_url):
             sld_styles = self.sld_processor.process_cog_sld(sld_url)
             catalog_item.update(sld_styles)
         
@@ -167,7 +172,7 @@ class TerriaConfigBuilder:
         }
         
         # Apply SLD styles if available
-        if sld_url:
+        if self._is_valid_sld_url(sld_url):
             self._debug_print(f"Processing SLD for shapefile: {sld_url}")
             sld_styles = self.sld_processor.process_shp_sld(sld_url)
             self._debug_print(f"SLD processing result: {sld_styles}")
@@ -346,7 +351,7 @@ class TerriaConfigBuilder:
             
             # Get SLD styles if available
             sld_styles = None
-            if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
+            if self._is_valid_sld_url(sld_url) and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
                 self._debug_print(f"Processing SLD for resource format: {resource_format}")
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
                 self._debug_print(f"SLD styles result: {sld_styles}")
