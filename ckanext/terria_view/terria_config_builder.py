@@ -323,7 +323,7 @@ class TerriaConfigBuilder:
                 gist_id = fragment.split('=g-')[1]
                 gist_url = f'https://gist.githubusercontent.com/pabrojast/{gist_id}/raw/Terriajs-usercatalog.json'
                 try:
-                    with urllib.request.urlopen(gist_url) as response:
+                    with urllib.request.urlopen(gist_url, timeout=5) as response:
                         decoded_param = response.read().decode('utf-8')
                 except Exception as e:
                     self._debug_print(f"Error fetching gist config: {e}")

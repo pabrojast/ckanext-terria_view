@@ -6,6 +6,7 @@ import json
 import urllib.request
 import urllib.parse
 from typing import Dict, List, Optional, Tuple, Any
+import time
 from ckan.lib import uploader
 from ckan.plugins import toolkit
 from .private_download import generate_token
@@ -21,11 +22,16 @@ class ResourceUtils:
         Args:
             config_manager: Instancia del gestor de configuraciones
         """
-        self.config_manager = config_manager
+        # Cache for SLD files to avoid repeated HTTP calls
+        self._sld_cache = {}
+        self._sld_cache_max_age = 300  # 5 minutes cache
+        self._cache_timestamps = {}
     
     def get_sld_files_from_dataset(self, site_url: str, package_id: str) -> List[Dict]:
         """
         Obtiene archivos SLD de un dataset usando la API de CKAN.
+        Usa cache para evitar llamadas repetidas (5 minutos).
+        Limita a máximo 5 recursos si hay más de 11.
         
         Args:
             site_url: URL base del sitio CKAN
@@ -34,18 +40,31 @@ class ResourceUtils:
         Returns:
             Lista de diccionarios con información de archivos SLD
         """
+        # Check cache first
+        cache_key = f"{site_url}:{package_id}"
+        current_time = time.time()
+        
+        if cache_key in self._sld_cache:
+            cache_age = current_time - self._cache_timestamps.get(cache_key, 0)
+            if cache_age < self._sld_cache_max_age:
+                return self._sld_cache[cache_key]
+        
         try:
             # Construir la URL de la API
             api_url = f"{site_url.rstrip('/')}/api/3/action/package_show?id={package_id}"
             
-            # Make the API request
-            with urllib.request.urlopen(api_url) as response:
+            # Make the API request with timeout
+            with urllib.request.urlopen(api_url, timeout=5) as response:
                 data = json.loads(response.read().decode('utf-8'))
             
             if data.get('success') and data.get('result'):
                 package_data = data['result']
                 sld_files = []
                 resources = package_data.get('resources', [])
+                
+                # Limitar recursos si son más de 11 -> procesar solo 5
+                if len(resources) > 11:
+                    resources = resources[:5]
                 
                 # Buscar recursos con formato 'sld'
                 for resource in resources:
@@ -60,12 +79,20 @@ class ResourceUtils:
                         }
                         sld_files.append(sld_file)
                 
+                # Cache the result
+                self._sld_cache[cache_key] = sld_files
+                self._cache_timestamps[cache_key] = current_time
+                
                 return sld_files
             else:
                 return []
         except Exception as e:
             print(f"Error obteniendo archivos SLD desde la API: {e}")
+            # Cache empty result to avoid repeated failures
+            self._sld_cache[cache_key] = []
+            self._cache_timestamps[cache_key] = current_time
             return []
+
     
     def extract_bounds_from_spatial(self, spatial: str) -> Tuple[Optional[str], Optional[str], Optional[str], Optional[str]]:
         """
@@ -225,7 +252,7 @@ class ResourceUtils:
                 gist_id = fragment.split('=g-')[1]
                 gist_url = f'https://gist.githubusercontent.com/pabrojast/{gist_id}/raw/Terriajs-usercatalog.json'
                 try:
-                    with urllib.request.urlopen(gist_url) as response:
+                    with urllib.request.urlopen(gist_url, timeout=5) as response:
                         decoded_param = response.read().decode('utf-8')
                 except Exception as e:
                     print(f"Error fetching gist config: {e}")

@@ -470,8 +470,17 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         if 'resource' in data_dict and 'format' in data_dict['resource']:
             data_dict['resource_format'] = data_dict['resource']['format']
         
-        # Get SLD files from dataset if package exists
-        if 'package' in data_dict:
+        # Only load SLD files when actually editing the view
+        # Check if we're in edit mode (POST request or edit/new view page)
+        from flask import request as flask_request
+        is_editing = (
+            flask_request.method == 'POST' or 
+            'edit' in flask_request.path or 
+            'new' in flask_request.path or
+            flask_request.endpoint in ['resource.edit_view', 'resource.new_view']
+        )
+        
+        if is_editing and 'package' in data_dict:
             package_id = data_dict['package']['id']
             sld_files = self.resource_utils.get_sld_files_from_dataset(
                 self.config_manager.site_url, package_id
@@ -485,10 +494,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             if 'c' in context:
                 context['c'].available_sld_files = sld_files
         else:
+            # Not editing or no package - empty list
             data_dict['available_sld_files'] = []
         
         return 'terria_instance_url.html'
-    
+
     def _get_private_datasets_catalog(self, user_context):
         """
         Get private datasets accessible to the current user as inline Terria catalog data.
