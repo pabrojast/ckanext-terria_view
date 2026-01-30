@@ -179,7 +179,9 @@ class ConfigManager:
             "terria_instance_url": [ignore_missing],
             "custom_config": [ignore_missing],
             "style": [ignore_missing],
+            "cached_config": [ignore_missing],
+            "cached_config_signature": [ignore_missing],
             'show_fields': [ignore_missing],
             'filterable': [default(True), boolean_validator],
             '__extras': [ignore_missing],
-        } 
+        }

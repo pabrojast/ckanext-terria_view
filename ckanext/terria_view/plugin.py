@@ -7,6 +7,7 @@ import ckan.plugins.toolkit as toolkit
 import json
 import urllib.parse
 import functools
+import hashlib
 from flask import request
 import ckan.logic.action.get as get
 
@@ -300,19 +301,25 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             Dictionary with processed data
         """
         # Process custom configuration
-        custom_config_option = data_dict.get('custom_config_option', 'automatic')
+        custom_config_option = data_dict.get('custom_config_option')
         custom_config_url = data_dict.get('custom_config_url', '')
-        
-        if custom_config_option == 'custom' and custom_config_url:
+        if custom_config_option is None:
+            # Preserve existing custom_config when provided (e.g. API updates)
+            if not data_dict.get('custom_config'):
+                data_dict['custom_config'] = 'NA'
+        elif custom_config_option == 'custom' and custom_config_url:
             data_dict['custom_config'] = custom_config_url
         else:
             data_dict['custom_config'] = 'NA'
         
         # Process style
-        style_option = data_dict.get('style_option', 'none')
+        style_option = data_dict.get('style_option')
         style_custom_input = data_dict.get('style_custom_input', '')
-        
-        if style_option == 'custom_url' and style_custom_input:
+        if style_option is None:
+            # Preserve existing style when provided (e.g. API updates)
+            if not data_dict.get('style'):
+                data_dict['style'] = 'NA'
+        elif style_option == 'custom_url' and style_custom_input:
             data_dict['style'] = style_custom_input
         elif style_option == 'sld_file':
             # JavaScript in the form should have already put the SLD URL in style_custom_input
@@ -336,6 +343,73 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             data_dict.pop(field, None)
         
         return data_dict
+
+    def _build_cached_config_signature(self, resource, package, resource_url, bounds,
+                                       view_custom_config, view_style, resource_name):
+        """
+        Build a deterministic signature for cached Terria config.
+
+        This avoids rebuilding (and re-fetching SLDs) when inputs haven't changed.
+        """
+        signature_payload = {
+            "resource": {
+                "id": resource.get('id'),
+                "name": resource.get('name', ''),
+                "safe_name": resource_name,
+                "format": resource.get('format', ''),
+                "url": resource.get('url', ''),
+                "computed_url": resource_url,
+                "last_modified": resource.get('last_modified', '')
+            },
+            "package": {
+                "id": package.get('id'),
+                "metadata_modified": package.get('metadata_modified', '')
+            },
+            "bounds": list(bounds),
+            "view": {
+                "custom_config": view_custom_config or '',
+                "style": view_style or ''
+            }
+        }
+        signature_raw = json.dumps(signature_payload, sort_keys=True, default=str)
+        return hashlib.md5(signature_raw.encode('utf-8')).hexdigest()
+
+    def _update_view_cached_config(self, context, view, encoded_config, signature):
+        """Persist cached config and signature in the resource view."""
+        try:
+            view_id = view.get('id')
+            if not view_id or not encoded_config or not signature:
+                return
+
+            update_data = {
+                'id': view_id,
+                'resource_id': view.get('resource_id'),
+                'view_type': view.get('view_type'),
+                'title': view.get('title'),
+                'description': view.get('description', ''),
+                'terria_instance_url': view.get('terria_instance_url', ''),
+                'custom_config': view.get('custom_config', 'NA'),
+                'style': view.get('style', 'NA'),
+                'cached_config': encoded_config,
+                'cached_config_signature': signature
+            }
+
+            # Preserve optional fields if present
+            for key in ('filterable', 'show_fields'):
+                if key in view:
+                    update_data[key] = view.get(key)
+
+            sysadmin_context = {
+                'model': context.get('model'),
+                'session': context.get('session'),
+                'user': 'ckan.system',
+                'ignore_auth': True
+            }
+
+            toolkit.get_action('resource_view_update')(sysadmin_context, update_data)
+            self._debug_print(f"Cached Terria config saved for view {view_id}")
+        except Exception as e:
+            self._debug_print(f"Failed to persist cached Terria config: {e}")
     
     def setup_template_variables(self, context, data_dict):
         """
@@ -397,27 +471,40 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Get package bounds
         bounds = self.resource_utils.get_resource_bounds(package)
-        
-        # Generate configuration
-        if view_custom_config == 'NA' or view_custom_config == '':
-            # Standard configuration
-            config = self.terria_config_builder.create_config_for_resource(
-                resource, safe_resource_name, resource_url, bounds, view_style
-            )
-            encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
+
+        # Try to reuse cached configuration when inputs haven't changed
+        cached_config = view.get('cached_config')
+        cached_signature = view.get('cached_config_signature')
+        current_signature = self._build_cached_config_signature(
+            resource, package, resource_url, bounds, view_custom_config, view_style, safe_resource_name
+        )
+
+        if cached_config and cached_signature == current_signature:
+            encoded_config = cached_config
         else:
-            # Custom configuration
-            custom_config = self.terria_config_builder.process_custom_config(
-                view_custom_config, resource_url, resource.get('format', ''), view_style
-            )
-            if custom_config:
-                encoded_config = urllib.parse.quote(custom_config)
-            else:
-                # Fallback to standard configuration
+            # Generate configuration
+            if view_custom_config == 'NA' or view_custom_config == '':
+                # Standard configuration
                 config = self.terria_config_builder.create_config_for_resource(
                     resource, safe_resource_name, resource_url, bounds, view_style
                 )
                 encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
+            else:
+                # Custom configuration
+                custom_config = self.terria_config_builder.process_custom_config(
+                    view_custom_config, resource_url, resource.get('format', ''), view_style
+                )
+                if custom_config:
+                    encoded_config = urllib.parse.quote(custom_config)
+                else:
+                    # Fallback to standard configuration
+                    config = self.terria_config_builder.create_config_for_resource(
+                        resource, safe_resource_name, resource_url, bounds, view_style
+                    )
+                    encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
+
+            # Persist cached configuration so we avoid future external calls
+            self._update_view_cached_config(context, view, encoded_config, current_signature)
         
         return {
             'title': view_title,
