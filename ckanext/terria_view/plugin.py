@@ -21,6 +21,7 @@ from .file_cache_manager import FileCacheManager
 from .api_endpoints import terria_api
 from .cache_preloader import CachePreloader
 from .terria_json_generator import TerriaJSONGenerator
+from . import action_filters
 
 # Get the original callback
 resource_view_list = get.resource_view_list
@@ -116,6 +117,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Callback for resource_view_list
         self.resource_view_list_callback = None
+        self.package_show_callback = None
+        self.resource_show_callback = None
     
     def _debug_print(self, message: str):
         """
@@ -184,6 +187,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
+        self.package_show_callback = action_filters.package_show
+        self.resource_show_callback = action_filters.resource_show
         
         # Initialize and start cache preloader
         self._initialize_cache_preloader()
@@ -590,5 +595,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             Dictionary with plugin actions
         """
         return {
-            'resource_view_list': self.resource_view_list_callback
+            'resource_view_list': self.resource_view_list_callback,
+            'package_show': self.package_show_callback,
+            'resource_show': self.resource_show_callback,
         }
