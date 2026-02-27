@@ -342,6 +342,15 @@ class TerriaConfigBuilder:
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
                 self._debug_print(f"SLD styles result: {sld_styles}")
             
+            # Strip orphaned group models (e.g. built-in catalog groups like
+            # "//IHP-WINS") that were captured in the saved Terria state but
+            # already exist in the Terria instance, causing duplicates.
+            for init_source in start_data.get('initSources', []):
+                if 'models' in init_source:
+                    init_source['models'] = self._strip_orphaned_group_models(
+                        init_source['models']
+                    )
+            
             # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
@@ -381,6 +390,54 @@ class TerriaConfigBuilder:
             self._debug_print(f"Error processing custom config: {e}")
             return None
     
+    def _strip_orphaned_group_models(self, models: Dict) -> Dict:
+        """
+        Remove group models not in the ancestry chain of any data item.
+        
+        Saved Terria states include model entries for built-in catalog groups
+        (e.g. "//IHP-WINS") that were merely opened/browsed.  When loaded via
+        #start=, these create duplicates of groups already in the instance.
+        This method keeps only models reachable from data items (those with a
+        ``url``) plus the root ``/``.
+        """
+        if not models:
+            return models
+
+        needed = {"/"}
+        # Seed with data-item models (have a url) and trace their ancestry
+        for key, model in models.items():
+            if isinstance(model, dict) and 'url' in model:
+                needed.add(key)
+                to_visit = [key]
+                while to_visit:
+                    current = to_visit.pop()
+                    current_model = models.get(current, {})
+                    if isinstance(current_model, dict):
+                        for cid in current_model.get('knownContainerUniqueIds', []):
+                            if cid not in needed and cid in models:
+                                needed.add(cid)
+                                to_visit.append(cid)
+
+        # Also follow members from already-needed groups
+        changed = True
+        while changed:
+            changed = False
+            for key in list(needed):
+                model = models.get(key, {})
+                if isinstance(model, dict):
+                    for member in model.get('members', []):
+                        if member in models and member not in needed:
+                            needed.add(member)
+                            changed = True
+
+        stripped = {k: v for k, v in models.items() if k in needed}
+        removed = set(models.keys()) - needed
+        if removed:
+            self._debug_print(
+                f"Stripped orphaned group models from config: {removed}"
+            )
+        return stripped
+
     def _decode_names_in_object(self, obj: Any) -> Any:
         """
         Método auxiliar para decodificar nombres en objetos anidados.
