@@ -22,46 +22,38 @@ class ResourceUtils:
         """
         self.config_manager = config_manager
     
-    def get_sld_files_from_dataset(self, site_url: str, package_id: str) -> List[Dict]:
+    def get_sld_files_from_dataset(self, package_id: str) -> List[Dict]:
         """
-        Obtiene archivos SLD de un dataset usando la API de CKAN.
+        Obtiene archivos SLD de un dataset usando la API interna de CKAN.
         
         Args:
-            site_url: URL base del sitio CKAN
             package_id: ID del paquete/dataset
             
         Returns:
             Lista de diccionarios con información de archivos SLD
         """
         try:
-            # Construir la URL de la API
-            api_url = f"{site_url.rstrip('/')}/api/3/action/package_show?id={package_id}"
-            
-            # Make the API request
-            with urllib.request.urlopen(api_url) as response:
-                data = json.loads(response.read().decode('utf-8'))
-            
-            if data.get('success') and data.get('result'):
-                package_data = data['result']
-                sld_files = []
-                resources = package_data.get('resources', [])
-                
-                # Buscar recursos con formato 'sld'
-                for resource in resources:
-                    resource_format = resource.get('format', '').lower()
-                    
-                    if resource_format == 'sld':
-                        sld_file = {
-                            'id': resource.get('id'),
-                            'name': resource.get('name', 'Archivo SLD sin nombre'),
-                            'url': resource.get('url'),
-                            'description': resource.get('description', '')
-                        }
-                        sld_files.append(sld_file)
-                
-                return sld_files
-            else:
-                return []
+            context = {'ignore_auth': True}
+            package_data = toolkit.get_action('package_show')(
+                context, {'id': package_id}
+            )
+
+            sld_files = []
+            resources = package_data.get('resources', [])
+
+            for resource in resources:
+                resource_format = resource.get('format', '').lower()
+
+                if resource_format == 'sld':
+                    sld_file = {
+                        'id': resource.get('id'),
+                        'name': resource.get('name', 'Archivo SLD sin nombre'),
+                        'url': resource.get('url'),
+                        'description': resource.get('description', '')
+                    }
+                    sld_files.append(sld_file)
+
+            return sld_files
         except Exception as e:
             print(f"Error obteniendo archivos SLD desde la API: {e}")
             return []

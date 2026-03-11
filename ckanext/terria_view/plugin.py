@@ -160,9 +160,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             List of SLD files
         """
         try:
-            return self.resource_utils.get_sld_files_from_dataset(
-                self.config_manager.site_url, package_id
-            )
+            return self.resource_utils.get_sld_files_from_dataset(package_id)
         except Exception as e:
             self._debug_print(f"Error in terria_get_sld_files helper: {e}")
             return []
@@ -552,9 +550,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # Get SLD files from dataset if package exists
         if 'package' in data_dict:
             package_id = data_dict['package']['id']
-            sld_files = self.resource_utils.get_sld_files_from_dataset(
-                self.config_manager.site_url, package_id
-            )
+            sld_files = self.resource_utils.get_sld_files_from_dataset(package_id)
             
             # Pass SLD files to template
             data_dict['available_sld_files'] = sld_files

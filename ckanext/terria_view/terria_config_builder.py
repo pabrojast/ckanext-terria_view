@@ -337,7 +337,7 @@ class TerriaConfigBuilder:
             
             # Get SLD styles if available
             sld_styles = None
-            if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff']:
+            if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff', 'cog']:
                 self._debug_print(f"Processing SLD for resource format: {resource_format}")
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
                 self._debug_print(f"SLD styles result: {sld_styles}")
@@ -361,7 +361,7 @@ class TerriaConfigBuilder:
                             self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
                             
                             # Apply SLD styles if available
-                            if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff']:
+                            if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff', 'cog']:
                                 self._debug_print(f"Applying SLD styles to model {model_key}")
                                 # Always apply legends if available
                                 if 'legends' in sld_styles:
@@ -380,7 +380,7 @@ class TerriaConfigBuilder:
                                     # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
                                     
                                 # Apply renderOptions for COG resources
-                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff'] and 'renderOptions' in sld_styles:
+                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff', 'cog'] and 'renderOptions' in sld_styles:
                                     model_value['renderOptions'] = sld_styles['renderOptions']
                                     self._debug_print(f"Applied renderOptions to model {model_key}")
             

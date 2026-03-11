@@ -13,7 +13,7 @@ class ConfigManager:
     # Formats supported by the plugin
     SUPPORTED_FORMATS = [
         'shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 
-        'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'csv', 'json'
+        'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'cog', 'csv', 'json'
     ]
     
     # Filter expression for searches
@@ -91,7 +91,7 @@ class ConfigManager:
         Returns:
             True si es un TIFF, False en caso contrario
         """
-        accepted_formats = ['tif', 'tiff', 'geotiff']
+        accepted_formats = ['tif', 'tiff', 'geotiff', 'cog']
         resource_format = resource.get("format", "").lower()
         return resource_format in accepted_formats
     
