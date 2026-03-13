@@ -1,0 +1,322 @@
+================================================================================
+KEY FINDINGS: CKAN PLUGIN vs AIRFLOW DAG - TerriaJS Catalog Generation
+================================================================================
+
+VERDICT: The two systems produce HIGHLY COMPATIBLE JSON catalogs with the same 
+structure, field names, and hierarchy. However, they differ in architecture, 
+SLD processing sophistication, and deployment approach.
+
+================================================================================
+1. JSON STRUCTURE COMPATIBILITY: ✅ 100% COMPATIBLE
+================================================================================
+
+Root and hierarchy are IDENTICAL:
+  {"catalog": [Org1, Org2, ...], "name": "IHP-WINS"}
+  
+Where each Org:
+  {"name": "org_title", "type": "group", "members": [Dataset1, Dataset2, ...]}
+  
+Where each Dataset:
+  {"name": "dataset_title", "type": "group", "members": [Resource1, Resource2, ...]}
+  
+Where each Resource:
+  {
+    "name": "Resource Name",
+    "type": "shp|cog|csv|kml|wms|wmts",
+    "id": "resource-id",
+    "url": "https://...",
+    "description": "notes + Dataset URL link",
+    "info": [...],
+    "infoSectionOrder": [...]
+  }
+
+LINES OF EVIDENCE:
+  - Plugin: format_dataset_item() lines 121-145 → Base resource object
+  - DAG:    format_dataset_item() lines 337-361 → IDENTICAL object
+  - Plugin: generate_organization_json() lines 464-469 → Group structure
+  - DAG:    generates same hierarchy at lines 961-971
+
+================================================================================
+2. FORMAT HANDLING: ✅ 100% IDENTICAL
+================================================================================
+
+Supported formats: 
+  ['KML', 'tif', 'tiff', 'geotiff', 'csv', 'wms', 'wmts', 'shape', 'shp']
+
+Plugin: line 79 - self.formatos_permitidos = [...]
+DAG:    line 22 - formatos_permitidos = [...]
+
+Normalization (TIF → COG):
+  Plugin: lines 114-115
+  DAG:    lines 333-334
+  IDENTICAL logic
+
+================================================================================
+3. RESOURCE FIELDS: ✅ 100% IDENTICAL
+================================================================================
+
+Core fields in every resource:
+  ✅ name           → resource.get('name', '') or generated
+  ✅ type           → resource_format.lower()
+  ✅ id             → resource['id']
+  ✅ url            → resource['url']
+  ✅ description    → notes + HTML link to dataset
+  ✅ info           → 5 standard sections (Org, Description, Availability, etc.)
+  ✅ infoSectionOrder → Standard ordering
+
+For COG (raster):
+  ✅ renderOptions  → {single: {colors, useRealValue, type, domain}, nodata}
+  ✅ legends        → [{title, items: [{title, color}, ...]}]
+  ✅ opacity        → 0.8
+
+For SHP (vector):
+  ✅ styles         → [{id, title, color: {mapType: "enum"|"bin", colorColumn, ...}}]
+  ✅ activeStyle    → "sld-style"
+  ✅ legends        → [{title, items: [{title, color}, ...]}]
+  ✅ opacity        → 0.8
+  ✅ clampToGround  → true
+  ✅ forceCesiumPrimitives → false
+
+Multi-view support:
+  Plugin: lines 148-173 → Fetches multiple views, modifies name
+  DAG:    lines 364-398 → Same logic
+  Result: "Resource Name - View Title"
+
+================================================================================
+4. SLD PROCESSING: ⚠️ MOSTLY COMPATIBLE, SOME DIFFERENCES
+================================================================================
+
+IDENTICAL COG Processing:
+  1. Parse ColorMapEntry elements
+  2. Extract: quantity, color, label, opacity
+  3. Convert hex colors to RGB/RGBA strings
+  4. Create colors array: [[quantity_val, "rgb(...)"]]
+  5. Filter transparent (opacity 0) as nodata
+  6. Create legend items with title and color
+
+  Plugin: sld_processor.py lines 546-620 (process_cog_sld)
+  DAG:    lines 120-168 (in process_sld_styles)
+
+IDENTICAL SHP Processing:
+  1. Parse Rule elements from SLD
+  2. Skip ElseFilter rules (fallback conditions)
+  3. Extract: property_name, color, label
+  4. Determine if data is categorical or numeric
+  5. For categorical: mapType="enum" with enumColors
+  6. For numeric: mapType="bin" with binMaximums/binColors
+  7. Create legend items
+
+  Plugin: sld_processor.py lines 693+ (process_shp_sld)
+  DAG:    lines 170-305 (in process_sld_styles)
+
+DIFFERENCES IN COG:
+  
+  Plugin EXTRA: Gradient enhancement (line 619 of sld_processor.py)
+    if len(colors) >= 2 and interpolation_type == "linear":
+        colors = self._enhance_color_gradient(colors, interpolation_type)
+  
+  DAG: No gradient enhancement
+  
+  Impact: Plugin may produce smoother color transitions for continuous colormaps
+  
+  Plugin EXTRA: Explicit interpolation type detection
+    color_map_type = color_map.get('type', '').strip().lower()
+    if color_map_type == 'ramp':
+        interpolation_type = "linear"
+  
+  DAG: No interpolation type awareness
+  
+  Impact: Plugin can differentiate between "ramp" and "intervals" type colormaps
+
+SHARED DIFFERENCES FROM IDEAL:
+  ⚠️ Both may miss ColorMapEntry with incomplete attributes
+  ⚠️ Both depend on correct SLD namespace declarations
+
+================================================================================
+5. CUSTOM CONFIGURATION: ✅ 100% IDENTICAL
+================================================================================
+
+Both support Terria sharing format: URL#share=g-{gist_id}
+
+Plugin: _apply_custom_config() lines 233-278
+DAG:    lines 612-665
+
+Process:
+  1. Parse URL fragment: fragment = urllib.parse.urlparse(custom_config).fragment
+  2. If fragment.startswith('share='):
+       → Extract gist_id from "share=g-{id}"
+       → Fetch from GitHub: https://gist.githubusercontent.com/pabrojast/{id}/raw/
+  3. If fragment.startswith('start='):
+       → URL decode the start parameter
+  4. Parse JSON
+  5. Extract initSources
+  6. Apply to elemento:
+       - custom_data['initSources'][0]['models'][key]['legends']
+       - custom_data['initSources'][0]['models'][key]['styles']
+       - custom_data['initSources'][0]['models'][key]['renderOptions']
+       - custom_data['initSources'][0]['models'][key]['opacity']
+
+CODE IS VIRTUALLY IDENTICAL - both developers copy-pasted same logic
+
+================================================================================
+6. PLUGIN FEATURES NOT IN DAG
+================================================================================
+
+1. CACHING (Lines 18-19, 38-52)
+   CacheManager → In-memory cache of org/dataset configs
+   FileCacheManager → File-based cache for modular catalogs
+   Impact: Plugin is faster on repeated requests but may serve stale data
+   
+2. MODULAR CATALOG (Lines 694-834)
+   generate_modular_catalog() creates separate organization reference files
+   Uses "terria-reference" type with URLs pointing to organization JSONs
+   Includes baseMaps configuration
+   Impact: Better for large deployments, but not in DAG
+   
+3. TAG-BASED GENERATION (Lines 494-600)
+   generate_tag_json(tag_name) creates tag-filtered catalogs
+   DAG has this too! (generate_and_upload_catalog_by_tag line 990+)
+   
+4. SLD PROCESSOR CLASS (sld_processor.py - 2,596 lines)
+   Dedicated class instead of inline function
+   Separate methods for COG and SHP
+   Color gradient enhancement
+   Multiple encoding attempts (UTF-8, latin-1, iso-8859-1, cp1252)
+   Better error recovery
+   
+5. BETTER ERROR HANDLING
+   Plugin wraps most operations in try-except
+   Plugin has _debug_print() for conditional logging
+   DAG has more print() statements (less clean)
+
+================================================================================
+7. DAG FEATURES NOT IN PLUGIN
+================================================================================
+
+1. AIRFLOW ORCHESTRATION
+   DAG scheduling, task dependencies, retries
+   Cloud-native deployment (Kubernetes, etc.)
+   Plugin runs on-demand via HTTP API
+   
+2. CKAN RESOURCE UPLOAD (Lines 771-850)
+   Automatically uploads generated JSON as CKAN resource
+   Creates version history
+   Manages resource metadata
+   Plugin returns JSON to caller (doesn't upload)
+   
+3. AUTOMATIC FILE NAMING (Lines 793-821)
+   Organization files: {org_name}.json
+   Tag files: tag_{tag_name}.json
+   Main file: IHP-WINS.json
+   Includes descriptions for each type
+   
+4. FALLBACK STYLING LOGIC (Lines 543-603)
+   If style_config incomplete, creates basic categorical styling
+   Creates styles from legend-only data
+   Handles edge cases better
+   Plugin is stricter
+
+================================================================================
+8. MIGRATION / COMPATIBILITY CHECKLIST
+================================================================================
+
+Before switching from Plugin to DAG or vice versa:
+
+✅ JSON Structure (GUARANTEED COMPATIBLE):
+  [ ] Root {"catalog", "name"} matches
+  [ ] Org hierarchy structure matches
+  [ ] Resource base fields identical
+  [ ] Info sections and ordering same
+
+⚠️ SLD Processing (TEST REQUIRED):
+  [ ] COG colormap rendering looks same (watch for gradient differences)
+  [ ] SHP categorical styling matches
+  [ ] Transparent values filter correctly
+  [ ] Legend items display same titles/colors
+
+⚠️ Edge Cases (TEST REQUIRED):
+  [ ] Multi-view resources render correctly
+  [ ] Missing resource names generate same IDs
+  [ ] Encoding issues in SLD files handled similarly
+  [ ] Custom config from gist files works same way
+  [ ] ElseFilter rules skipped identically
+
+⚠️ Deployment Differences (MANUAL WORK):
+  [ ] Plugin: Cache behavior acceptable?
+  [ ] DAG: File upload to CKAN working?
+  [ ] Plugin: Can add CKAN upload feature
+  [ ] DAG: Can add caching layer (Redis)
+
+================================================================================
+9. RISK ASSESSMENT
+================================================================================
+
+LOW RISK (High Compatibility):
+  ✅ Core JSON structure identical
+  ✅ Resource fields identical
+  ✅ Multi-view handling identical
+  ✅ Custom config logic identical
+  ✅ URL construction identical
+  ✅ Org metadata handling identical
+
+MEDIUM RISK (Test Required):
+  ⚠️ COG gradient enhancement may produce visual differences
+  ⚠️ Interpolation type detection may affect smooth colormaps
+  ⚠️ Caching in plugin may serve stale data
+  ⚠️ DAG fallback styling may apply inappropriate styles
+
+LOW RISK BUT ARCHITECTURAL:
+  ✅ Deployment approach different (plugin vs DAG)
+  ✅ DAG uploads, plugin doesn't
+  ✅ Plugin caches, DAG doesn't
+  ✅ Both produce compatible outputs despite differences
+
+================================================================================
+10. SPECIFIC CODE SNIPPETS FOR VERIFICATION
+================================================================================
+
+To verify compatibility, compare these snippets:
+
+BASE RESOURCE OBJECT:
+  Plugin lines 121-145 vs DAG lines 337-361 → Should be 100% identical
+
+INFO SECTION ORDER:
+  Plugin lines 137-143 vs DAG lines 353-359 → Should be identical
+
+SHP STYLING:
+  Plugin sld_processor.py vs DAG lines 480-533 → Should be same structure
+  (enum mapping logic identical)
+
+COG RENDERING:
+  Plugin sld_processor.py vs DAG lines 410-451 → Should be same structure
+  (watch for gradient enhancement differences)
+
+CUSTOM CONFIG:
+  Plugin lines 233-278 vs DAG lines 612-665 → Should be identical
+
+================================================================================
+11. CONCLUSION
+================================================================================
+
+The two systems are FUNDAMENTALLY COMPATIBLE:
+  • Same JSON output structure
+  • Same resource fields and values
+  • Same SLD processing logic (mostly)
+  • Same custom config handling
+  • Same org metadata display
+
+But they have IMPORTANT DIFFERENCES:
+  • Plugin: Class-based, cached, on-demand, HTTP API
+  • DAG: Function-based, batch-processed, scheduled, file upload
+  • Plugin: More sophisticated SLD with gradients
+  • DAG: Simpler SLD, fallback styling, CKAN integration
+  • Plugin: Modular output option
+  • DAG: Flat hierarchy
+
+Migration between them is LOW-RISK IF:
+  1. You test COG gradient rendering (visual verification)
+  2. You verify SHP categorical classification (test with sample data)
+  3. You handle deployment differences (DAG upload vs plugin API)
+  4. You adjust for caching behavior (plugin: faster but stale; DAG: slower but current)
+
+================================================================================
