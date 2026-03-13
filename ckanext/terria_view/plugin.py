@@ -44,8 +44,22 @@ def new_resource_view_list(plugin_instance, context, data_dict):
     try:
         resource_id = data_dict.get('id')
         
+        # Ensure 'model' is in context (required by CKAN actions outside request context)
+        if 'model' not in context:
+            import ckan.model as _model
+            context['model'] = _model
+        if 'session' not in context:
+            import ckan.model as _model
+            context['session'] = _model.Session
+        
         # Check if there's an activity_id in the URL, so it doesn't try to create anything
-        if 'activity_id' in request.args:
+        # Guard against missing request context (e.g. background threads, CLI)
+        try:
+            has_activity_id = 'activity_id' in request.args
+        except RuntimeError:
+            has_activity_id = False
+        
+        if has_activity_id:
             import os
             if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
                 print("Activity ID detected, skipping resource view creation.")
