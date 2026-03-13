@@ -4,6 +4,7 @@ API endpoints for Terria JSON generation.
 """
 import json
 import os
+import threading
 from flask import Blueprint, jsonify, request, Response, send_file
 import ckan.plugins.toolkit as toolkit
 from ckan.common import config
@@ -14,6 +15,9 @@ from .terria_json_generator import TerriaJSONGenerator
 # Create Blueprint for our API endpoints
 terria_api = Blueprint('terria_api', __name__)
 
+# Lock to prevent concurrent regeneration of the full catalog
+_catalog_regen_lock = threading.Lock()
+
 
 class TerriaAPIController:
     """Controller for Terria API endpoints."""
@@ -21,6 +25,21 @@ class TerriaAPIController:
     def __init__(self):
         """Initialize the controller."""
         self.generator = TerriaJSONGenerator()
+
+    @staticmethod
+    def _get_user_context() -> dict:
+        """Build a CKAN context dict for the current user (CKAN 2.10+ compatible)."""
+        try:
+            user = toolkit.current_user
+            return {
+                'user': user.name if hasattr(user, 'name') else str(user),
+                'auth_user_obj': user
+            }
+        except (AttributeError, RuntimeError):
+            return {
+                'user': getattr(toolkit.g, 'user', ''),
+                'auth_user_obj': getattr(toolkit.g, 'userobj', None)
+            }
     
     def _create_json_response(self, data: dict, status_code: int = 200) -> Response:
         """
@@ -138,19 +157,33 @@ class TerriaAPIController:
     def full_catalog_json(self):
         """
         Generate full catalog Terria JSON.
+        Uses stale-while-revalidate: returns cached data (even if stale) while
+        regenerating in background.
         
         Returns:
             JSON response with full Terria configuration
         """
         try:
-            # Generate configuration
-            config = self.generator.generate_full_catalog_json()
-            
-            # Convert sets to lists for JSON serialization
-            config = self.generator.convert_sets_to_lists(config)
-            
-            return self._create_json_response(config)
-            
+            # Try file cache (allow stale)
+            filepath, is_fresh = self.generator.file_cache_manager.get_cached_file_allow_stale(
+                'full', 'catalog'
+            )
+
+            if filepath:
+                if not is_fresh:
+                    self._trigger_background_regeneration()
+                # Read and return the cached JSON
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                return self._create_json_response(data)
+
+            # No cache — trigger background regen and return 202
+            self._trigger_background_regeneration()
+            return self._create_json_response({
+                'status': 'generating',
+                'message': 'Full catalog is being generated. Please retry in a few minutes.'
+            }, 202)
+
         except Exception as e:
             return self._create_error_response(f'Error generating full catalog JSON: {str(e)}')
     
@@ -342,41 +375,72 @@ class TerriaAPIController:
     def full_catalog_json_file(self):
         """
         Generate and serve full catalog JSON as file.
+        Uses stale-while-revalidate: serves stale cache immediately
+        while triggering background regeneration.
         
         Returns:
-            File response with JSON or JSON response if file caching disabled
+            File response with JSON, or 202 if catalog is still being generated
         """
         try:
-            # Get or generate cached file
-            file_path = self.generator.get_or_generate_file(
-                'full', 'catalog',
-                self.generator.generate_full_catalog_json
+            # Use stale-while-revalidate to avoid harakiri timeouts
+            filepath, is_fresh = self.generator.file_cache_manager.get_cached_file_allow_stale(
+                'full', 'catalog'
             )
-            
-            if file_path and os.path.exists(file_path):
-                # Serve file with Flask version compatibility
-                try:
-                    return send_file(
-                        file_path,
-                        mimetype='application/json',
-                        as_attachment=False,
-                        download_name='ihp-wins.json'
-                    )
-                except TypeError:
-                    # Fallback for older Flask versions without download_name
-                    return send_file(
-                        file_path,
-                        mimetype='application/json',
-                        as_attachment=False
-                    )
-            else:
-                # Fallback to JSON response if file caching failed/disabled
-                config = self.generator.generate_full_catalog_json()
-                config = self.generator.convert_sets_to_lists(config)
-                return self._create_json_response(config)
-            
+
+            if filepath and is_fresh:
+                # Cache is fresh — serve directly
+                return self._send_json_file(filepath, 'ihp-wins.json')
+
+            if filepath and not is_fresh:
+                # Cache is stale — serve it now but trigger background regeneration
+                self._trigger_background_regeneration()
+                return self._send_json_file(filepath, 'ihp-wins.json')
+
+            # No cache at all — trigger regeneration and return 202
+            self._trigger_background_regeneration()
+            return self._create_json_response({
+                'status': 'generating',
+                'message': 'Full catalog is being generated. Please retry in a few minutes.'
+            }, 202)
+
         except Exception as e:
             return self._create_error_response(f'Error generating full catalog file: {str(e)}')
+
+    def _send_json_file(self, file_path: str, download_name: str) -> Response:
+        """Send a JSON file as response with Flask version compatibility."""
+        try:
+            return send_file(
+                file_path,
+                mimetype='application/json',
+                as_attachment=False,
+                download_name=download_name
+            )
+        except TypeError:
+            return send_file(
+                file_path,
+                mimetype='application/json',
+                as_attachment=False
+            )
+
+    def _trigger_background_regeneration(self):
+        """Trigger full catalog regeneration in a background thread (non-blocking)."""
+        if not _catalog_regen_lock.acquire(blocking=False):
+            # Another regeneration is already in progress
+            return
+
+        def _regenerate():
+            try:
+                self.generator.get_or_generate_file(
+                    'full', 'catalog',
+                    self.generator.generate_full_catalog_json
+                )
+            except Exception as e:
+                print(f"[terria_view] Background catalog regeneration failed: {e}")
+            finally:
+                _catalog_regen_lock.release()
+
+        thread = threading.Thread(target=_regenerate, daemon=True)
+        thread.start()
     
     def invalidate_cache(self):
         """
@@ -447,12 +511,14 @@ class TerriaAPIController:
             custom_config_url = data.get('custom_config_url')
             if not custom_config_url:
                 return self._create_error_response('custom_config_url is required', 400)
+
+            # Validate URL scheme to prevent stored XSS / javascript: URIs
+            if not isinstance(custom_config_url, str) or not custom_config_url.strip().startswith(('http://', 'https://')):
+                return self._create_error_response('custom_config_url must be an HTTP(S) URL', 400)
+            custom_config_url = custom_config_url.strip()
             
             # Get current user context
-            context = {
-                'user': toolkit.g.user,
-                'auth_user_obj': toolkit.g.userobj
-            }
+            context = self._get_user_context()
             
             # Get current view data
             try:
@@ -500,15 +566,10 @@ class TerriaAPIController:
         """
         try:
             # Check if user is logged in
-            user = toolkit.g.user
+            context = self._get_user_context()
+            user = context.get('user')
             if not user:
                 return self._create_error_response('Authentication required. Please log in.', 401)
-            
-            # Get user context
-            context = {
-                'user': user,
-                'auth_user_obj': toolkit.g.userobj
-            }
             
             # Search for private datasets the user can access
             try:

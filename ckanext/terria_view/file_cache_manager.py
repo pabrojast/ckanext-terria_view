@@ -144,6 +144,25 @@ class FileCacheManager:
                 self._debug_print(f"Error removing cache file: {e}")
         
         return None
+
+    def get_cached_file_allow_stale(self, cache_type: str, identifier: str):
+        """
+        Get cached file path, distinguishing fresh vs stale vs missing.
+
+        Returns:
+            (filepath, is_fresh) if a file exists (fresh or stale),
+            (None, False) if no cached file at all.
+        """
+        if self.cache_subdir is None:
+            return None, False
+
+        filepath = self._get_cache_path(cache_type, identifier)
+
+        if not os.path.exists(filepath):
+            return None, False
+
+        is_fresh = self._is_cache_valid(filepath)
+        return filepath, is_fresh
     
     def get_cached_json(self, cache_type: str, identifier: str) -> Optional[Dict]:
         """

@@ -453,20 +453,15 @@ class TerriaJSONGenerator:
                                 )
                                 datasets_by_title[dataset_title].append(additional_item)
             
-            # Build catalog structure
+            # Build catalog structure — always wrap datasets in a group
             org_members = []
             for dataset_title, items in datasets_by_title.items():
-                if len(items) == 1:
-                    # Single item, add directly
-                    org_members.extend(items)
-                else:
-                    # Multiple items, group them
-                    dataset_group = {
-                        "name": dataset_title,
-                        "type": "group",
-                        "members": items
-                    }
-                    org_members.append(dataset_group)
+                dataset_group = {
+                    "name": dataset_title,
+                    "type": "group",
+                    "members": items
+                }
+                org_members.append(dataset_group)
             
             # Create final configuration
             config = {
@@ -629,7 +624,10 @@ class TerriaJSONGenerator:
                     try:
                         org_config = self.generate_organization_json(org_name)
                         if org_config and org_config.get('catalog'):
-                            catalog_members.extend(org_config['catalog'])
+                            # Filter out organizations with no valid resource items
+                            org_group = org_config['catalog'][0]
+                            if org_group.get('members'):
+                                catalog_members.extend(org_config['catalog'])
                     except Exception as e:
                         self._debug_print(f"Error generating config for organization {org_name}: {e}")
                         continue
@@ -663,6 +661,7 @@ class TerriaJSONGenerator:
                            generator_func, *args, **kwargs) -> Optional[str]:
         """
         Get cached file or generate new one.
+        Writes new data atomically so stale files remain serveable until replaced.
         
         Args:
             cache_type: Type of cache
@@ -673,20 +672,22 @@ class TerriaJSONGenerator:
         Returns:
             Path to JSON file or None if file caching is disabled
         """
-        # Try to get from file cache first
-        cached_file = self.file_cache_manager.get_cached_file(cache_type, identifier)
-        if cached_file:
+        # Check if fresh cache exists (don't delete stale files)
+        filepath, is_fresh = self.file_cache_manager.get_cached_file_allow_stale(
+            cache_type, identifier
+        )
+        if filepath and is_fresh:
             self._debug_print(f"Serving cached file for {cache_type}:{identifier}")
-            return cached_file
+            return filepath
         
-        # Generate new data
+        # Generate new data (stale file remains on disk during generation)
         self._debug_print(f"Generating new data for {cache_type}:{identifier}")
         data = generator_func(*args, **kwargs)
         
         # Convert sets to lists
         data = self.convert_sets_to_lists(data)
         
-        # Try to cache to file (may return None if file caching disabled)
+        # Write new cache (overwrites stale file atomically)
         cached_file = self.file_cache_manager.cache_json(cache_type, identifier, data)
         
         return cached_file

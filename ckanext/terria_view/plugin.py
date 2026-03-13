@@ -463,11 +463,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self._debug_print(f"TerriaView: Resource format: {resource.get('format', 'unknown')}")
         self._debug_print(f"TerriaView: Style URL: {view_style}")
         
-        # User context
-        user_context = {
-            'user': toolkit.g.user,
-            'auth_user_obj': toolkit.g.userobj
-        }
+        # User context (CKAN 2.10+ compatible)
+        try:
+            current_user = toolkit.current_user
+            user_context = {
+                'user': current_user.name if hasattr(current_user, 'name') else str(current_user),
+                'auth_user_obj': current_user
+            }
+        except (AttributeError, RuntimeError):
+            user_context = {
+                'user': getattr(toolkit.g, 'user', ''),
+                'auth_user_obj': getattr(toolkit.g, 'userobj', None)
+            }
         
         # Get resource URL
         resource_url = self.resource_utils.get_resource_url(resource, package, user_context)
@@ -588,10 +595,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         Register additional plugin actions.
         
         Returns:
-            Dictionary with plugin actions
+            Dictionary with plugin actions (only those initialized)
         """
-        return {
-            'resource_view_list': self.resource_view_list_callback,
-            'package_show': self.package_show_callback,
-            'resource_show': self.resource_show_callback,
-        }
+        actions = {}
+        if self.resource_view_list_callback is not None:
+            actions['resource_view_list'] = self.resource_view_list_callback
+        if self.package_show_callback is not None:
+            actions['package_show'] = self.package_show_callback
+        if self.resource_show_callback is not None:
+            actions['resource_show'] = self.resource_show_callback
+        return actions

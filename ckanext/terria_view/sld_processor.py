@@ -60,9 +60,11 @@ class SLDProcessor:
     def __init__(self):
         """Initialize the SLD processor."""
         import os
+        # URL-level cache to avoid re-fetching the same SLD files
+        self._sld_content_cache: Dict[str, Optional[bytes]] = {}
+        self._sld_result_cache: Dict[str, Dict[str, Any]] = {}
         if os.environ.get('TERRIA_DEBUG', 'false').lower() == 'true':
             print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
-        pass
     
     def _debug_print(self, message: str):
         """
@@ -320,6 +322,7 @@ class SLDProcessor:
     def fetch_sld_content(self, sld_url: str) -> Optional[bytes]:
         """
         Download the content of an SLD file from a URL with robust error handling.
+        Uses an in-memory cache to avoid re-fetching the same URL.
         
         Args:
             sld_url: URL of the SLD file
@@ -337,17 +340,24 @@ class SLDProcessor:
             self._debug_print("Empty SLD URL provided")
             return None
         
-        # Handle different URL schemes
+        # Check content cache first
+        if sld_url in self._sld_content_cache:
+            self._debug_print(f"SLD content cache hit for: {sld_url}")
+            return self._sld_content_cache[sld_url]
+        
+        # Fetch and cache result
+        content = None
         if sld_url.startswith(('http://', 'https://')):
-            return self._fetch_http_content(sld_url)
+            content = self._fetch_http_content(sld_url)
         elif sld_url.startswith('file://'):
-            return self._fetch_file_content(sld_url)
+            content = self._fetch_file_content(sld_url)
         elif sld_url.startswith('/') or (':\\' in sld_url and len(sld_url) > 3):
-            # Local file path
-            return self._fetch_local_file_content(sld_url)
+            content = self._fetch_local_file_content(sld_url)
         else:
-            # Assume it's a local file path relative to current directory
-            return self._fetch_local_file_content(sld_url)
+            content = self._fetch_local_file_content(sld_url)
+        
+        self._sld_content_cache[sld_url] = content
+        return content
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
         """Fetch content from HTTP/HTTPS URL."""
@@ -524,6 +534,7 @@ class SLDProcessor:
     def process_cog_sld(self, sld_url: str) -> Dict[str, Any]:
         """
         Process an SLD file for COG (Cloud Optimized GeoTIFF) resources with enhanced gradient support.
+        Uses result caching to avoid reprocessing the same SLD URL.
         
         Args:
             sld_url: URL of the SLD file
@@ -531,12 +542,20 @@ class SLDProcessor:
         Returns:
             Dictionary with style information for COG
         """
+        # Check result cache
+        cache_key = f"cog:{sld_url}"
+        if cache_key in self._sld_result_cache:
+            self._debug_print(f"SLD result cache hit (COG): {sld_url}")
+            return self._sld_result_cache[cache_key]
+        
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
+            self._sld_result_cache[cache_key] = {}
             return {}
         
         root = self.parse_sld_xml(sld_content)
         if root is None:
+            self._sld_result_cache[cache_key] = {}
             return {}
         
         colors = []
@@ -688,11 +707,13 @@ class SLDProcessor:
 
             result["renderOptions"] = render_options
         
+        self._sld_result_cache[cache_key] = result
         return result
     
     def process_shp_sld(self, sld_url: str) -> Dict[str, Any]:
         """
         Process an SLD file for Shapefile resources following QGIS approach with enhanced TerriaJS compatibility.
+        Uses result caching to avoid reprocessing the same SLD URL.
         
         Args:
             sld_url: URL of the SLD file
@@ -710,15 +731,23 @@ class SLDProcessor:
             print("No valid SLD URL provided")
             return {}
         
+        # Check result cache
+        cache_key = f"shp:{sld_url}"
+        if cache_key in self._sld_result_cache:
+            self._debug_print(f"SLD result cache hit (SHP): {sld_url}")
+            return self._sld_result_cache[cache_key]
+        
         # Fetch and parse SLD content
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
             print(f"Failed to fetch SLD content from: {sld_url}")
+            self._sld_result_cache[cache_key] = {}
             return {}
         
         root = self.parse_sld_xml(sld_content)
         if root is None:
             print(f"Failed to parse SLD XML from: {sld_url}")
+            self._sld_result_cache[cache_key] = {}
             return {}
         
         try:
@@ -726,6 +755,7 @@ class SLDProcessor:
             user_styles = self._find_user_styles(root)
             if not user_styles:
                 print("No UserStyle elements found in SLD")
+                self._sld_result_cache[cache_key] = {}
                 return {}
             
             # Process all UserStyle elements and merge rules
@@ -750,13 +780,17 @@ class SLDProcessor:
                 return {}
             
             # Build TerriaJS result based on renderer type
-            return self._build_terria_result(renderer_type, processed_data)
+            result = self._build_terria_result(renderer_type, processed_data)
+            self._sld_result_cache[cache_key] = result
+            return result
             
         except Exception as e:
             print(f"Error processing SHP SLD: {e}")
             import traceback
             traceback.print_exc()
-            return self._create_fallback_result([])
+            fallback = self._create_fallback_result([])
+            self._sld_result_cache[cache_key] = fallback
+            return fallback
     
     def _find_user_styles(self, root) -> List:
         """

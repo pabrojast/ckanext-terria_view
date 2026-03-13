@@ -121,7 +121,7 @@ class CachePreloader:
             })
             
             preloaded_count = 0
-            for org in orgs[:5]:  # Limit to top 5 organizations
+            for org in orgs:  # Preload ALL organizations with datasets
                 if org.get('package_count', 0) > 0:
                     try:
                         org_name = org.get('name')
