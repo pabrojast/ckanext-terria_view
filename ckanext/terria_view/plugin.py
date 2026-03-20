@@ -361,6 +361,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         return data_dict
 
+    # Bump this version whenever the config generation/processing logic changes
+    # to invalidate stale cached configs.
+    _CONFIG_PROCESSING_VERSION = 2
+
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):
         """
@@ -369,6 +373,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         This avoids rebuilding (and re-fetching SLDs) when inputs haven't changed.
         """
         signature_payload = {
+            "config_version": self._CONFIG_PROCESSING_VERSION,
             "resource": {
                 "id": resource.get('id'),
                 "name": resource.get('name', ''),

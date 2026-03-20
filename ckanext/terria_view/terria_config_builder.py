@@ -347,9 +347,19 @@ class TerriaConfigBuilder:
             # already exist in the Terria instance, causing duplicates.
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
+                    original_keys = set(init_source['models'].keys())
                     init_source['models'] = self._strip_orphaned_group_models(
                         init_source['models']
                     )
+                    stripped_keys = original_keys - set(init_source['models'].keys())
+
+                    # Remove previewedItemId when it references a stripped model
+                    if stripped_keys and init_source.get('previewedItemId') in stripped_keys:
+                        self._debug_print(
+                            f"Removing previewedItemId '{init_source['previewedItemId']}' "
+                            f"(references stripped model)"
+                        )
+                        del init_source['previewedItemId']
             
             # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
