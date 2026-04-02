@@ -7,7 +7,8 @@ import json
 import tempfile
 import hashlib
 import time
-from typing import Dict, Optional, Any
+import uuid
+from typing import Dict, Optional, Any, Tuple
 import ckan.plugins.toolkit as toolkit
 from ckan.common import config
 
@@ -148,10 +149,11 @@ class FileCacheManager:
     def get_cached_file_allow_stale(self, cache_type: str, identifier: str):
         """
         Get cached file path, distinguishing fresh vs stale vs missing.
+        Validates JSON integrity before returning.
 
         Returns:
-            (filepath, is_fresh) if a file exists (fresh or stale),
-            (None, False) if no cached file at all.
+            (filepath, is_fresh) if a valid file exists (fresh or stale),
+            (None, False) if no cached file or file is corrupted.
         """
         if self.cache_subdir is None:
             return None, False
@@ -161,8 +163,35 @@ class FileCacheManager:
         if not os.path.exists(filepath):
             return None, False
 
+        # Validate JSON integrity before serving
+        if not self._validate_json_file(filepath):
+            self._debug_print(f"Corrupted cache file detected, removing: {filepath}")
+            try:
+                os.remove(filepath)
+            except OSError:
+                pass
+            return None, False
+
         is_fresh = self._is_cache_valid(filepath)
         return filepath, is_fresh
+
+    def _validate_json_file(self, filepath: str) -> bool:
+        """
+        Validate that a JSON cache file is not corrupted.
+        
+        Args:
+            filepath: Path to JSON file
+            
+        Returns:
+            True if file contains valid JSON, False otherwise
+        """
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                json.load(f)
+            return True
+        except (json.JSONDecodeError, IOError, OSError) as e:
+            self._debug_print(f"JSON validation failed for {filepath}: {e}")
+            return False
     
     def get_cached_json(self, cache_type: str, identifier: str) -> Optional[Dict]:
         """
@@ -198,6 +227,9 @@ class FileCacheManager:
         """
         Cache JSON data to file.
         
+        Uses a unique temp filename (PID + UUID) to prevent race conditions
+        when multiple uWSGI workers or pods write concurrently.
+        
         Args:
             cache_type: Type of cache
             identifier: Identifier
@@ -212,14 +244,23 @@ class FileCacheManager:
             
         filepath = self._get_cache_path(cache_type, identifier)
         
+        # Unique temp file per writer to prevent cross-process collisions
+        unique_suffix = f".tmp.{os.getpid()}.{uuid.uuid4().hex[:8]}"
+        temp_path = filepath + unique_suffix
+        
         try:
-            # Write to temporary file first, then move to avoid corruption
-            temp_path = filepath + '.tmp'
+            # Write to uniquely-named temporary file
             with open(temp_path, 'w', encoding='utf-8') as f:
                 json.dump(data, f, ensure_ascii=False, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
             
-            # Atomic move
-            os.rename(temp_path, filepath)
+            # Validate the written file before promoting it
+            with open(temp_path, 'r', encoding='utf-8') as f:
+                json.load(f)
+            
+            # Atomic replace (safe even on NFS when src/dest are same dir)
+            os.replace(temp_path, filepath)
             
             self._debug_print(f"Cached {cache_type}:{identifier} to {filepath}")
             return filepath
@@ -227,7 +268,6 @@ class FileCacheManager:
         except Exception as e:
             self._debug_print(f"Error caching JSON: {e}")
             # Clean up temp file if it exists
-            temp_path = filepath + '.tmp'
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
@@ -396,7 +436,7 @@ class FileCacheManager:
     
     def cleanup_expired_files(self) -> int:
         """
-        Clean up expired cache files.
+        Clean up expired cache files and orphaned temp files.
         
         Returns:
             Number of files cleaned up
@@ -407,19 +447,30 @@ class FileCacheManager:
         cleaned_files = 0
         
         try:
-            files = [f for f in os.listdir(self.cache_subdir) 
-                    if f.startswith('terria_') and f.endswith('.json')]
-            
-            for filename in files:
+            for filename in os.listdir(self.cache_subdir):
                 filepath = os.path.join(self.cache_subdir, filename)
                 
-                if not self._is_cache_valid(filepath):
+                # Clean orphaned temp files older than 10 minutes
+                if '.tmp.' in filename:
                     try:
-                        os.remove(filepath)
-                        cleaned_files += 1
-                        self._debug_print(f"Cleaned up expired file: {filename}")
+                        file_age = time.time() - os.path.getmtime(filepath)
+                        if file_age > 600:
+                            os.remove(filepath)
+                            cleaned_files += 1
+                            self._debug_print(f"Cleaned up orphaned temp file: {filename}")
                     except Exception as e:
-                        self._debug_print(f"Error cleaning up {filename}: {e}")
+                        self._debug_print(f"Error cleaning up temp file {filename}: {e}")
+                    continue
+                
+                # Clean expired cache files
+                if filename.startswith('terria_') and filename.endswith('.json'):
+                    if not self._is_cache_valid(filepath):
+                        try:
+                            os.remove(filepath)
+                            cleaned_files += 1
+                            self._debug_print(f"Cleaned up expired file: {filename}")
+                        except Exception as e:
+                            self._debug_print(f"Error cleaning up {filename}: {e}")
             
             self._debug_print(f"Cleaned up {cleaned_files} expired files")
             

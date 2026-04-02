@@ -164,7 +164,7 @@ class TerriaAPIController:
             JSON response with full Terria configuration
         """
         try:
-            # Try file cache (allow stale)
+            # Try file cache (allow stale, validates JSON integrity)
             filepath, is_fresh = self.generator.file_cache_manager.get_cached_file_allow_stale(
                 'full', 'catalog'
             )
@@ -172,12 +172,18 @@ class TerriaAPIController:
             if filepath:
                 if not is_fresh:
                     self._trigger_background_regeneration()
-                # Read and return the cached JSON
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                return self._create_json_response(data)
+                try:
+                    with open(filepath, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                    return self._create_json_response(data)
+                except (json.JSONDecodeError, IOError) as e:
+                    # File corrupted between validation and read (unlikely but possible)
+                    try:
+                        os.remove(filepath)
+                    except OSError:
+                        pass
 
-            # No cache — trigger background regen and return 202
+            # No cache or corrupted — trigger background regen and return 202
             self._trigger_background_regeneration()
             return self._create_json_response({
                 'status': 'generating',
@@ -382,7 +388,7 @@ class TerriaAPIController:
             File response with JSON, or 202 if catalog is still being generated
         """
         try:
-            # Use stale-while-revalidate to avoid harakiri timeouts
+            # Use stale-while-revalidate (validates JSON integrity)
             filepath, is_fresh = self.generator.file_cache_manager.get_cached_file_allow_stale(
                 'full', 'catalog'
             )
@@ -396,7 +402,7 @@ class TerriaAPIController:
                 self._trigger_background_regeneration()
                 return self._send_json_file(filepath, 'ihp-wins.json')
 
-            # No cache at all — trigger regeneration and return 202
+            # No cache at all (or was corrupted and removed) — trigger regeneration
             self._trigger_background_regeneration()
             return self._create_json_response({
                 'status': 'generating',
