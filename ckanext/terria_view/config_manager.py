@@ -81,6 +81,18 @@ class ConfigManager:
         """
         return resource.get("format", "").lower() == 'shp'
     
+    def is_geojson_resource(self, resource: Dict) -> bool:
+        """
+        Verifica si un recurso es de tipo GeoJSON.
+        
+        Args:
+            resource: Diccionario con datos del recurso
+            
+        Returns:
+            True si es un GeoJSON, False en caso contrario
+        """
+        return resource.get("format", "").lower() == 'geojson'
+    
     def is_tiff_resource(self, resource: Dict) -> bool:
         """
         Verifica si un recurso es de tipo TIFF/GeoTIFF.

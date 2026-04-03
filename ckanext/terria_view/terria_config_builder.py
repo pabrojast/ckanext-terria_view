@@ -183,6 +183,48 @@ class TerriaConfigBuilder:
         
         return json.dumps(config_dict)
     
+    def create_geojson_config(self, resource_name: str, resource_url: str, bounds: tuple,
+                              sld_url: Optional[str] = None) -> str:
+        """
+        Crea configuración para recursos GeoJSON.
+        
+        Args:
+            resource_name: Nombre del recurso
+            resource_url: URL del recurso
+            bounds: Tupla con (ymax, xmax, ymin, xmin)
+            sld_url: URL del archivo SLD (opcional)
+            
+        Returns:
+            Configuración JSON como string
+        """
+        catalog_item = {
+            "name": resource_name,
+            "type": "geojson",
+            "id": resource_name,
+            "url": resource_url,
+            "cacheDuration": "5m",
+            "isOpenInWorkbench": True,
+            "opacity": 0.8,
+            "clampToGround": False,
+            "enableManualRegionMapping": False
+        }
+        
+        # Apply SLD styles if available (same vector styling as SHP)
+        if sld_url:
+            self._debug_print(f"Processing SLD for geojson: {sld_url}")
+            sld_styles = self.sld_processor.process_shp_sld(sld_url)
+            self._debug_print(f"SLD processing result: {sld_styles}")
+            
+            if sld_styles:
+                for key, value in sld_styles.items():
+                    catalog_item[key] = value
+                    self._debug_print(f"Applied SLD property {key}: {value}")
+        
+        config_dict = self.create_base_config(resource_name, bounds)
+        config_dict["initSources"][0]["catalog"] = [catalog_item]
+        
+        return json.dumps(config_dict)
+    
     def create_generic_config(self, resource_name: str, resource_url: str, 
                             resource_format: str, bounds: tuple) -> str:
         """
@@ -292,6 +334,8 @@ class TerriaConfigBuilder:
             return self.create_cog_config(resource_name, resource_url, bounds, sld_url)
         elif self.config_manager.is_shp_resource(resource):
             return self.create_shp_config(resource_name, resource_url, bounds, sld_url)
+        elif self.config_manager.is_geojson_resource(resource):
+            return self.create_geojson_config(resource_name, resource_url, bounds, sld_url)
         else:
             return self.create_generic_config(resource_name, resource_url, resource_format, bounds)
     
@@ -337,7 +381,7 @@ class TerriaConfigBuilder:
             
             # Get SLD styles if available
             sld_styles = None
-            if sld_url and resource_format in ['shp', 'tif', 'tiff', 'geotiff', 'cog']:
+            if sld_url and resource_format in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
                 self._debug_print(f"Processing SLD for resource format: {resource_format}")
                 sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
                 self._debug_print(f"SLD styles result: {sld_styles}")
@@ -371,15 +415,15 @@ class TerriaConfigBuilder:
                             self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
                             
                             # Apply SLD styles if available
-                            if sld_styles and resource_format.lower() in ['shp', 'tif', 'tiff', 'geotiff', 'cog']:
+                            if sld_styles and resource_format.lower() in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
                                 self._debug_print(f"Applying SLD styles to model {model_key}")
                                 # Always apply legends if available
                                 if 'legends' in sld_styles:
                                     model_value['legends'] = sld_styles['legends']
                                     self._debug_print(f"Applied legends to model {model_key}")
                                 
-                                # Apply styles for SHP resources
-                                if resource_format.lower() == 'shp' and 'styles' in sld_styles:
+                                # Apply styles for SHP/GeoJSON resources
+                                if resource_format.lower() in ['shp', 'geojson'] and 'styles' in sld_styles:
                                     model_value['styles'] = sld_styles['styles']
                                     if 'activeStyle' in sld_styles:
                                         model_value['activeStyle'] = sld_styles['activeStyle']

@@ -76,7 +76,10 @@ class TerriaJSONGenerator:
         
         # Configuration
         self.TIMEOUT_SECONDS = 120
-        self.formatos_permitidos = ['KML', 'tif', 'tiff', 'geotiff', 'csv', 'wms', 'wmts', 'shape', 'shp']
+        self.formatos_permitidos = [
+            'KML', 'tif', 'tiff', 'geotiff', 'cog', 'csv', 'wms', 'wmts',
+            'wfs', 'shape', 'shp', 'geojson', 'czml', 'esri rest', 'json'
+        ]
     
     def _debug_print(self, message: str):
         """Print debug messages when TERRIA_DEBUG is enabled."""
@@ -113,6 +116,8 @@ class TerriaJSONGenerator:
         # Adjust the type if necessary
         if resource_format in ["tif", "tiff", "geotiff"]:
             resource_format = "cog"
+        elif resource_format == "shape":
+            resource_format = "shp"
         
         # Get site URL from config
         site_url = self.config_manager.site_url or toolkit.config.get('ckan.site_url', '')
