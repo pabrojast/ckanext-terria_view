@@ -78,7 +78,7 @@ class TerriaJSONGenerator:
         self.TIMEOUT_SECONDS = 120
         self.formatos_permitidos = [
             'KML', 'tif', 'tiff', 'geotiff', 'cog', 'csv', 'wms', 'wmts',
-            'wfs', 'shape', 'shp', 'geojson', 'czml', 'esri rest', 'json'
+            'wfs', 'shape', 'shp', 'geojson', 'czml', 'esri rest'
         ]
     
     def _debug_print(self, message: str):

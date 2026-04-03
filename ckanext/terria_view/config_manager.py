@@ -13,7 +13,7 @@ class ConfigManager:
     # Formats supported by the plugin
     SUPPORTED_FORMATS = [
         'shp', 'wms', 'wfs', 'kml', 'esri rest', 'geojson', 'czml', 
-        'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'cog', 'csv', 'json'
+        'csv-geo-*', 'wmts', 'tif', 'tiff', 'geotiff', 'cog', 'csv'
     ]
     
     # Filter expression for searches
