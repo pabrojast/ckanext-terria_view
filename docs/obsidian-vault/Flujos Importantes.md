@@ -129,6 +129,34 @@ Secuencia:
 2. Se espera un delay configurable.
 3. Se intentan precargar catálogo modular, organizaciones, datasets recientes, tags populares y catálogo completo.
 
+## 9. Inyección de datasets privados en la vista
+
+Entrada:
+
+- un usuario autenticado abre una vista `terria_view`.
+
+Secuencia:
+
+1. `setup_template_variables()` detecta el usuario autenticado (CKAN 2.10+ compatible).
+2. Llama a `_get_private_datasets_catalog(user_context)`.
+3. Este método ejecuta `package_search(include_private=True)` con el contexto del usuario.
+4. Filtra recursos compatibles y genera items Terria usando `format_dataset_item(package=..., user_context=...)`.
+5. Las URLs de recursos privados se resuelven vía `resource_utils.get_resource_url()` usando el uploader de CKAN.
+6. El catálogo privado se pasa a la template como `private_catalog_data`.
+7. `terria.html` carga el iframe sin `#start=` (para evitar doble inicialización).
+8. Al recibir el mensaje `ready` del iframe (con validación de `event.origin` y `event.source`), envía la configuración completa (pública + privada) vía `postMessage`.
+
+Resultado:
+
+- el usuario ve sus datasets privados integrados en la vista del mapa junto con los públicos.
+- la información privada no se cachea ni se persiste en la vista del recurso.
+
+Notas:
+
+- el `postMessage` nunca usa `'*'` como targetOrigin para datos privados;
+- si la URL de la instancia Terria no puede parsearse, la inyección se deshabilita;
+- el catálogo privado se genera on-demand por request, no se cachea.
+
 ## Pendiente por confirmar
 
 - si el warmup corre de forma fiable bajo todos los servidores WSGI usados por CKAN;

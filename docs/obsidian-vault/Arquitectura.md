@@ -76,12 +76,23 @@ Hay dos niveles:
 
 Además existe `CachePreloader`, que intenta calentar catálogos al inicio en un hilo de fondo.
 
+### 5. Capa de datasets privados
+
+Usuarios autenticados pueden visualizar sus datasets privados en la vista Terria.
+
+- Los catálogos públicos (`ihp-wins.json`, `/api/terria/*`) **nunca** incluyen datos privados. Las cachés (`CacheManager`, `FileCacheManager`) son estrictamente públicas.
+- Cuando un usuario autenticado abre una vista, `setup_template_variables()` invoca `_get_private_datasets_catalog()` que busca datasets privados del usuario vía `package_search(include_private=True)`.
+- El catálogo privado se inyecta **inline** en la template y se envía al iframe de TerriaJS vía `postMessage` con validación de origen. El iframe se carga sin `#start=` para evitar doble inicialización.
+- Las URLs de recursos privados se resuelven server-side usando `ckan.lib.uploader`, evitando problemas de CORS entre el portal CKAN y la instancia Terria externa.
+- La configuración cacheada en `resource_view` (`cached_config`) se omite para paquetes privados para evitar filtración de URLs sensibles o temporales.
+
 ## Decisiones observables en código
 
 - La vista Terria se autogenera desde `resource_view_list`, no solo manualmente.
 - El catálogo completo y los archivos JSON grandes se sirven con patrón stale-while-revalidate.
 - La extensión filtra datasets privados o inactivos en varios generadores públicos.
 - Para payloads CKAN grandes, `action_filters.py` elimina extras pesados de recursos.
+- Los datos privados nunca se cachean ni persisten; se generan on-demand por request.
 
 ## Integraciones externas
 
