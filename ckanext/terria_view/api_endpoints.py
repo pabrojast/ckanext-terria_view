@@ -624,7 +624,8 @@ class TerriaAPIController:
                         # Format resource as Terria item with styles
                         try:
                             formatted_item, total_views = self.generator.format_dataset_item(
-                                resource, dataset_id, notes, org_info, 0
+                                resource, dataset_id, notes, org_info, 0,
+                                package=dataset, user_context=context
                             )
                             dataset_members.append(formatted_item)
                             
@@ -632,7 +633,8 @@ class TerriaAPIController:
                             if total_views > 1:
                                 for vi in range(1, total_views):
                                     additional_item, _ = self.generator.format_dataset_item(
-                                        resource, dataset_id, notes, org_info, vi
+                                        resource, dataset_id, notes, org_info, vi,
+                                        package=dataset, user_context=context
                                     )
                                     dataset_members.append(additional_item)
                         except Exception as e:

@@ -533,7 +533,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
 
             # Persist cached configuration so we avoid future external calls
-            self._update_view_cached_config(context, view, encoded_config, current_signature)
+            # Skip caching for private packages — their resolved URLs may be
+            # user-specific or temporary and must not leak across requests.
+            if not package.get('private'):
+                self._update_view_cached_config(context, view, encoded_config, current_signature)
         
         return {
             'title': view_title,
@@ -542,7 +545,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'origin': self.config_manager.site_url,
             'custom_config': view_custom_config,
             'view_id': view.get('id'),
-            'resource_id': resource.get('id')
+            'resource_id': resource.get('id'),
+            'user_logged_in': bool(user_context.get('user')),
+            'private_catalog_data': self._get_private_datasets_catalog(user_context) if user_context.get('user') else None
         }
     
     def view_template(self, context, data_dict):
@@ -589,6 +594,118 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             data_dict['available_sld_files'] = []
         
         return 'terria_instance_url.html'
+    
+    def _get_private_datasets_catalog(self, user_context):
+        """
+        Get private datasets accessible to the current user as inline Terria catalog data.
+        
+        Loaded server-side to avoid cross-origin authentication issues when
+        TerriaJS tries to fetch data from a different domain.
+        
+        Args:
+            user_context: Dictionary with user and auth_user_obj
+            
+        Returns:
+            Dictionary with Terria catalog configuration or None if no private datasets
+        """
+        try:
+            user = user_context.get('user')
+            if not user:
+                return None
+            
+            context = {
+                'user': user,
+                'auth_user_obj': user_context.get('auth_user_obj')
+            }
+            
+            search_result = toolkit.get_action('package_search')(context, {
+                'include_private': True,
+                'rows': 1000,
+                'q': '*:*'
+            })
+            
+            catalog_members = []
+            generator = TerriaJSONGenerator()
+            
+            for dataset in search_result.get('results', []):
+                if not dataset.get('private', False):
+                    continue
+                
+                dataset_id = dataset.get('id')
+                dataset_title = dataset.get('title', dataset.get('name', 'Unknown'))
+                notes = dataset.get('notes', '')
+                resources = dataset.get('resources', [])
+                
+                org = dataset.get('organization', {})
+                org_info = {
+                    'display_name': org.get('title', 'Unknown Organization') if org else 'Unknown Organization',
+                    'description': org.get('description', '') if org else '',
+                    'image_display_url': org.get('image_display_url', '') if org else ''
+                }
+                
+                dataset_members = []
+                
+                for resource in resources:
+                    resource_format = resource.get('format', '').lower()
+                    if resource_format not in [f.lower() for f in generator.formatos_permitidos]:
+                        continue
+                    
+                    try:
+                        formatted_item, total_views = generator.format_dataset_item(
+                            resource, dataset_id, notes, org_info, 0,
+                            package=dataset, user_context=user_context
+                        )
+                        dataset_members.append(formatted_item)
+                        
+                        if total_views > 1:
+                            for vi in range(1, total_views):
+                                additional_item, _ = generator.format_dataset_item(
+                                    resource, dataset_id, notes, org_info, vi,
+                                    package=dataset, user_context=user_context
+                                )
+                                dataset_members.append(additional_item)
+                    except Exception:
+                        continue
+                
+                if dataset_members:
+                    catalog_members.append({
+                        "name": dataset_title,
+                        "type": "group",
+                        "members": dataset_members,
+                        "description": notes[:500] if notes else '',
+                        "info": [{
+                            "name": "About Dataset",
+                            "content": notes or ''
+                        }, {
+                            "name": "Organization",
+                            "content": org_info.get('display_name', '')
+                        }, {
+                            "name": "Access",
+                            "content": "Private Dataset"
+                        }],
+                        "infoSectionOrder": ["About Dataset", "Organization", "Access"]
+                    })
+            
+            if not catalog_members:
+                return None
+            
+            config = {
+                "catalog": [{
+                    "name": f"Private Datasets ({user})",
+                    "type": "group",
+                    "members": catalog_members,
+                    "description": f"Private datasets accessible to {user}",
+                    "isOpen": True
+                }]
+            }
+            
+            config = generator.convert_sets_to_lists(config)
+            
+            return config
+            
+        except Exception as e:
+            self._debug_print(f"Error getting private datasets catalog: {e}")
+            return None
     
     def _initialize_cache_preloader(self):
         """Initialize and start the cache preloader."""

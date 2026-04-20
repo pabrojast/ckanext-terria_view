@@ -132,7 +132,7 @@ class ResourceUtils:
         if self.config_manager.is_valid_domain(resource_url):
             if self.config_manager.is_accepted_format(resource):
                 # Fix para datasets privados
-                if user_context['user'] and package.get("private") == True:
+                if user_context.get('user') and package.get("private") == True:
                     upload = uploader.get_resource_uploader(resource)
                     uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
                 else:

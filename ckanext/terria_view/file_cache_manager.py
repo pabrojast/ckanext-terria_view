@@ -1,6 +1,10 @@
 # encoding: utf-8
 """
 File-based cache manager for pre-generated Terria JSON files.
+
+IMPORTANT: This cache stores ONLY public dataset configurations.
+Private datasets are loaded on-demand per-request in the plugin's
+_get_private_datasets_catalog() method and are never stored here.
 """
 import os
 import json
