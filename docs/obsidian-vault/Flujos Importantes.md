@@ -117,7 +117,7 @@ Disparadores:
 
 Secuencia:
 
-1. `after_create`, `after_update` o `after_delete` invalidan caché por `resource_id`.
+1. Las acciones encadenadas `resource_view_create`, `resource_view_update` y `resource_view_delete` invalidan caché por `resource_id`.
 2. Se limpian entradas de dataset, organización, tags y catálogo completo.
 3. Los endpoints regeneran a demanda en la siguiente solicitud.
 

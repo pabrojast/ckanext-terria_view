@@ -36,6 +36,8 @@ Revisar:
 - logs con `TERRIA_DEBUG=true`;
 - tests en [[Testing]] orientados a SLD;
 - si el problema está en el nombre de columna del shapefile.
+- si el estilo cambió y no se refleja en `ihp-wins.json`, invalidar caché con `POST /api/terria/cache/invalidate` y reintentar.
+- si se actualizó el archivo SLD en la misma URL, confirmar que se ejecutó una invalidación (los resultados SLD se cachean en memoria por URL).
 
 ## El catálogo completo responde `202 generating`
 

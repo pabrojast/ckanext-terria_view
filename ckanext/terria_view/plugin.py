@@ -271,11 +271,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             context: View context
             data_dict: Dictionary with view data
         """
-        resource_id = data_dict.get('resource_id')
-        if resource_id:
-            self.cache_manager.invalidate_by_resource_id(resource_id)
-            self.file_cache_manager.invalidate_by_resource_id(resource_id)
-            self._debug_print(f"Cache invalidated for resource {resource_id} after view creation")
+        self._invalidate_resource_related_cache(
+            data_dict.get('resource_id'),
+            'after view creation'
+        )
     
     def after_update(self, context, data_dict):
         """
@@ -286,11 +285,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             context: View context
             data_dict: Dictionary with view data
         """
-        resource_id = data_dict.get('resource_id')
-        if resource_id:
-            self.cache_manager.invalidate_by_resource_id(resource_id)
-            self.file_cache_manager.invalidate_by_resource_id(resource_id)
-            self._debug_print(f"Cache invalidated for resource {resource_id} after view update")
+        self._invalidate_resource_related_cache(
+            data_dict.get('resource_id'),
+            'after view update'
+        )
     
     def after_delete(self, context, data_dict):
         """
@@ -301,11 +299,112 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             context: View context
             data_dict: Dictionary with view data
         """
-        resource_id = data_dict.get('resource_id')
-        if resource_id:
+        self._invalidate_resource_related_cache(
+            data_dict.get('resource_id'),
+            'after view deletion'
+        )
+
+    def _invalidate_resource_related_cache(self, resource_id, reason=''):
+        """Invalidate memory/file caches related to a resource."""
+        if not resource_id:
+            return
+        try:
             self.cache_manager.invalidate_by_resource_id(resource_id)
             self.file_cache_manager.invalidate_by_resource_id(resource_id)
-            self._debug_print(f"Cache invalidated for resource {resource_id} after view deletion")
+            self._clear_sld_result_caches()
+            if reason:
+                self._debug_print(
+                    f"Cache invalidated for resource {resource_id} {reason}"
+                )
+            else:
+                self._debug_print(
+                    f"Cache invalidated for resource {resource_id}"
+                )
+        except Exception as e:
+            self._debug_print(
+                f"Failed to invalidate cache for resource {resource_id}: {e}"
+            )
+
+    def _clear_sld_result_caches(self):
+        """
+        Clear SLD in-memory caches used by view rendering and catalog generation.
+
+        SLD processors cache by URL; when a style file is updated in-place
+        (same URL, different content), stale style results can persist.
+        """
+        processors = [getattr(self, 'sld_processor', None)]
+        try:
+            processors.append(TerriaJSONGenerator().sld_processor)
+        except Exception:
+            pass
+
+        seen = set()
+        for processor in processors:
+            if not processor:
+                continue
+            processor_id = id(processor)
+            if processor_id in seen:
+                continue
+            seen.add(processor_id)
+            try:
+                if hasattr(processor, '_sld_content_cache'):
+                    processor._sld_content_cache.clear()
+                if hasattr(processor, '_sld_result_cache'):
+                    processor._sld_result_cache.clear()
+            except Exception as e:
+                self._debug_print(f"Could not clear SLD cache: {e}")
+
+    def _resolve_resource_id_from_view(self, view_id):
+        """
+        Resolve resource_id from a resource view id.
+
+        Useful for update/delete action payloads that only include the view id.
+        """
+        if not view_id:
+            return None
+        try:
+            view_data = toolkit.get_action('resource_view_show')(
+                {'ignore_auth': True}, {'id': view_id}
+            )
+            return view_data.get('resource_id')
+        except Exception:
+            return None
+
+    @toolkit.chained_action
+    def resource_view_create(self, next_action, context, data_dict):
+        """
+        Chain resource_view_create to invalidate Terria caches after success.
+        """
+        result = next_action(context, data_dict)
+        resource_id = result.get('resource_id') or data_dict.get('resource_id')
+        self._invalidate_resource_related_cache(resource_id, 'after action create')
+        return result
+
+    @toolkit.chained_action
+    def resource_view_update(self, next_action, context, data_dict):
+        """
+        Chain resource_view_update to invalidate Terria caches after success.
+        """
+        result = next_action(context, data_dict)
+        resource_id = (
+            result.get('resource_id')
+            or data_dict.get('resource_id')
+            or self._resolve_resource_id_from_view(result.get('id') or data_dict.get('id'))
+        )
+        self._invalidate_resource_related_cache(resource_id, 'after action update')
+        return result
+
+    @toolkit.chained_action
+    def resource_view_delete(self, next_action, context, data_dict):
+        """
+        Chain resource_view_delete to invalidate Terria caches after success.
+        """
+        resource_id = data_dict.get('resource_id') or self._resolve_resource_id_from_view(
+            data_dict.get('id')
+        )
+        result = next_action(context, data_dict)
+        self._invalidate_resource_related_cache(resource_id, 'after action deletion')
+        return result
     
     def _process_form_data(self, data_dict):
         """
@@ -736,6 +835,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         actions = {}
         if self.resource_view_list_callback is not None:
             actions['resource_view_list'] = self.resource_view_list_callback
+        actions['resource_view_create'] = self.resource_view_create
+        actions['resource_view_update'] = self.resource_view_update
+        actions['resource_view_delete'] = self.resource_view_delete
         if self.package_show_callback is not None:
             actions['package_show'] = self.package_show_callback
         if self.resource_show_callback is not None:

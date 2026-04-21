@@ -237,6 +237,22 @@ def test_api_endpoint_passes_context_to_format_dataset_item():
     print("  PASS: API endpoint passes package and user_context to format_dataset_item")
 
 
+def test_plugin_registers_resource_view_cache_invalidation_actions():
+    """Ensure resource_view chained actions are registered to invalidate cache on style updates."""
+    with open('ckanext/terria_view/plugin.py', 'r') as f:
+        content = f.read()
+
+    assert 'def resource_view_create(self, next_action, context, data_dict):' in content
+    assert 'def resource_view_update(self, next_action, context, data_dict):' in content
+    assert 'def resource_view_delete(self, next_action, context, data_dict):' in content
+    assert "actions['resource_view_create']" in content
+    assert "actions['resource_view_update']" in content
+    assert "actions['resource_view_delete']" in content
+    assert 'def _clear_sld_result_caches(self):' in content
+    assert 'self._clear_sld_result_caches()' in content
+    print("  PASS: Plugin registers resource_view chained actions for cache invalidation")
+
+
 if __name__ == '__main__':
     print("\n=== Private Dataset Tests ===\n")
 
@@ -251,6 +267,7 @@ if __name__ == '__main__':
         test_private_uploaded_resource_uses_uploader_and_absolute_url,
         test_relative_resource_url_is_normalized_to_absolute,
         test_api_endpoint_passes_context_to_format_dataset_item,
+        test_plugin_registers_resource_view_cache_invalidation_actions,
     ]
 
     passed = 0
