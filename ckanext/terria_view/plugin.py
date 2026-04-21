@@ -84,7 +84,7 @@ def new_resource_view_list(plugin_instance, context, data_dict):
     has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
     
     if not has_plugin:
-        if 'resource' in context and plugin_instance.config_manager.can_view_resource(context['resource'].__dict__):
+        if resource and plugin_instance.config_manager.can_view_resource(resource):
             data_dict2 = {
                 'resource_id': data_dict['id'],
                 'title': plugin_instance.config_manager.default_title,

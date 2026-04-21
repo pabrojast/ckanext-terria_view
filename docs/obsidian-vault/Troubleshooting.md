@@ -26,6 +26,7 @@ Revisar:
 - instancia Terria configurada en `terria_instance_url`;
 - CORS entre CKAN y Terria.
 - en datasets privados, que la URL final del recurso no quede relativa (`/dataset/...`) y que se esté resolviendo vía uploader con URL absoluta de `ckan.site_url`.
+- si se usa `custom_config`, verificar que en el `#start` final exista al menos un item de datos en `initSources[].workbench` (si queda vacío, el mapa no abre capas por defecto).
 
 ## El estilo SLD no se aplica
 
@@ -38,6 +39,14 @@ Revisar:
 - si el problema está en el nombre de columna del shapefile.
 - si el estilo cambió y no se refleja en `ihp-wins.json`, invalidar caché con `POST /api/terria/cache/invalidate` y reintentar.
 - si se actualizó el archivo SLD en la misma URL, confirmar que se ejecutó una invalidación (los resultados SLD se cachean en memoria por URL).
+
+## Error `KeyError: 'url'` en `resource_view_list`
+
+Revisar:
+
+- recursos incompletos o históricos sin `url`/`format` al pasar por `can_view_resource`;
+- que la validación de formato no asuma siempre `resource['url']` presente;
+- que la autogeneración de vista use el `resource_show` actual del recurso y no `context['resource'].__dict__`.
 
 ## El catálogo completo responde `202 generating`
 

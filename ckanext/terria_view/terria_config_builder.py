@@ -408,11 +408,15 @@ class TerriaConfigBuilder:
             # Update URLs and apply styles
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
+                    updated_model_ids = []
                     for model_key, model_value in init_source['models'].items():
                         if isinstance(model_value, dict) and 'url' in model_value:
                             # Actualizar la URL
                             model_value['url'] = resource_url
+                            model_value.setdefault('isOpenInWorkbench', True)
+                            model_value.setdefault('show', True)
                             self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
+                            updated_model_ids.append(model_key)
                             
                             # Apply SLD styles if available
                             if sld_styles and resource_format.lower() in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
@@ -437,12 +441,69 @@ class TerriaConfigBuilder:
                                 elif resource_format.lower() in ['tif', 'tiff', 'geotiff', 'cog'] and 'renderOptions' in sld_styles:
                                     model_value['renderOptions'] = sld_styles['renderOptions']
                                     self._debug_print(f"Applied renderOptions to model {model_key}")
+                            self._sanitize_model_styles(model_value)
+
+                    # Ensure data items are visible on map by default
+                    # (saved share links may sometimes have an empty workbench list)
+                    if updated_model_ids:
+                        workbench = init_source.get('workbench')
+                        if not isinstance(workbench, list):
+                            workbench = []
+                        for model_id in updated_model_ids:
+                            if model_id not in workbench:
+                                workbench.append(model_id)
+                        init_source['workbench'] = workbench
             
             return json.dumps(start_data)
             
         except Exception as e:
             self._debug_print(f"Error processing custom config: {e}")
             return None
+
+    def _sanitize_model_styles(self, model_value: Dict) -> None:
+        """
+        Normalize table style blocks to avoid Terria parse/runtime errors.
+
+        Some saved custom configs contain partial style definitions
+        (for example enumColors without mapType/colorColumn). This method
+        fills safe defaults when they can be inferred.
+        """
+        styles = model_value.get('styles')
+        if not isinstance(styles, list):
+            return
+
+        style_ids = []
+        for style in styles:
+            if not isinstance(style, dict):
+                continue
+            style_id = style.get('id')
+            if isinstance(style_id, str):
+                style_ids.append(style_id)
+
+            color = style.get('color')
+            if not isinstance(color, dict):
+                continue
+
+            enum_colors = color.get('enumColors')
+            bin_colors = color.get('binColors')
+            has_enum = isinstance(enum_colors, list) and len(enum_colors) > 0
+            has_bin = isinstance(bin_colors, list) and len(bin_colors) > 0
+
+            if not color.get('mapType'):
+                if has_enum:
+                    color['mapType'] = 'enum'
+                elif has_bin:
+                    color['mapType'] = 'bin'
+
+            # Infer colorColumn from style id when missing (common in legacy share links)
+            if (has_enum or has_bin or color.get('mapType')) and not color.get('colorColumn'):
+                inferred_column = style_id or model_value.get('activeStyle')
+                if inferred_column:
+                    color['colorColumn'] = inferred_column
+
+        active_style = model_value.get('activeStyle')
+        if style_ids and (not active_style or active_style not in style_ids):
+            model_value['activeStyle'] = style_ids[0]
     
     def _strip_orphaned_group_models(self, models: Dict) -> Dict:
         """

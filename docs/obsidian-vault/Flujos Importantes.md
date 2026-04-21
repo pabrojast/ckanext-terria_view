@@ -55,6 +55,7 @@ Secuencia:
 3. Se persiste `style` como `NA`, URL custom o URL de un SLD detectado en el dataset.
 4. En render posterior, `TerriaConfigBuilder` toma esa config y la adapta al recurso actual.
 5. Si hay SLD, `SLDProcessor` genera estilos/leyendas y se inyectan a la config.
+6. La configuración adaptada garantiza que los modelos de datos queden en `workbench` y normaliza estilos incompletos (por ejemplo `enumColors` sin `mapType`/`colorColumn`) para evitar fallos de parseo en Terria.
 
 ## 4. Guardar configuración desde la UI
 

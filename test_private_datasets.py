@@ -9,6 +9,7 @@ These tests use mocking to avoid requiring a full CKAN installation.
 import json
 import sys
 import types
+import urllib.parse
 from unittest.mock import MagicMock, patch, PropertyMock
 
 # Mock CKAN modules before importing our code
@@ -237,6 +238,16 @@ def test_api_endpoint_passes_context_to_format_dataset_item():
     print("  PASS: API endpoint passes package and user_context to format_dataset_item")
 
 
+def test_can_view_resource_handles_missing_url_without_crashing():
+    """ConfigManager.can_view_resource should return False (not raise) when url is missing."""
+    from ckanext.terria_view.config_manager import ConfigManager
+
+    manager = ConfigManager()
+    assert manager.can_view_resource({'format': ''}) is False
+    assert manager.can_view_resource({}) is False
+    print("  PASS: can_view_resource handles missing url safely")
+
+
 def test_plugin_registers_resource_view_cache_invalidation_actions():
     """Ensure resource_view chained actions are registered to invalidate cache on style updates."""
     with open('ckanext/terria_view/plugin.py', 'r') as f:
@@ -253,6 +264,75 @@ def test_plugin_registers_resource_view_cache_invalidation_actions():
     print("  PASS: Plugin registers resource_view chained actions for cache invalidation")
 
 
+def test_resource_view_list_uses_resource_show_payload_for_can_view():
+    """Auto-view creation should evaluate the fetched resource dict, not context['resource'] internals."""
+    with open('ckanext/terria_view/plugin.py', 'r') as f:
+        content = f.read()
+
+    assert "plugin_instance.config_manager.can_view_resource(resource)" in content
+    assert "context['resource'].__dict__" not in content
+    print("  PASS: resource_view_list checks can_view_resource against resource_show payload")
+
+
+def test_process_custom_config_populates_workbench_and_sanitizes_styles():
+    """Custom config processing should keep data model in workbench and normalize incomplete styles."""
+    from ckanext.terria_view.terria_config_builder import TerriaConfigBuilder
+    from ckanext.terria_view.config_manager import ConfigManager
+
+    class DummySLDProcessor:
+        def process_sld_for_resource(self, *_args, **_kwargs):
+            return None
+
+    builder = TerriaConfigBuilder(ConfigManager(), DummySLDProcessor())
+
+    start_data = {
+        "version": "8.0.0",
+        "initSources": [{
+            "stratum": "user",
+            "models": {
+                "/": {"type": "group", "members": ["member states"]},
+                "member states": {
+                    "type": "csv",
+                    "url": "https://old.example.org/file.csv",
+                    "knownContainerUniqueIds": ["/"],
+                    "styles": [{
+                        "id": "rf",
+                        "color": {
+                            "enumColors": [{"value": "A", "color": "#ffffff"}]
+                        }
+                    }],
+                    "activeStyle": "rf"
+                }
+            },
+            "workbench": []
+        }]
+    }
+
+    custom_url = "https://ihp-wins.unesco.org/terria/#start=" + urllib.parse.quote(
+        json.dumps(start_data)
+    )
+
+    result = builder.process_custom_config(
+        custom_url,
+        "https://data.dev-wins.com/dataset/x/resource/y/download/file.csv",
+        "csv",
+        None
+    )
+
+    processed = json.loads(result)
+    source = processed["initSources"][0]
+    model = source["models"]["member states"]
+    style = model["styles"][0]
+
+    assert "member states" in source["workbench"]
+    assert model["url"].startswith("https://data.dev-wins.com/")
+    assert model["show"] is True
+    assert model["isOpenInWorkbench"] is True
+    assert style["color"]["mapType"] == "enum"
+    assert style["color"]["colorColumn"] == "rf"
+    print("  PASS: process_custom_config keeps workbench items and sanitizes table styles")
+
+
 if __name__ == '__main__':
     print("\n=== Private Dataset Tests ===\n")
 
@@ -267,7 +347,10 @@ if __name__ == '__main__':
         test_private_uploaded_resource_uses_uploader_and_absolute_url,
         test_relative_resource_url_is_normalized_to_absolute,
         test_api_endpoint_passes_context_to_format_dataset_item,
+        test_can_view_resource_handles_missing_url_without_crashing,
         test_plugin_registers_resource_view_cache_invalidation_actions,
+        test_resource_view_list_uses_resource_show_payload_for_can_view,
+        test_process_custom_config_populates_workbench_and_sanitizes_styles,
     ]
 
     passed = 0

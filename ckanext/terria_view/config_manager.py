@@ -52,9 +52,12 @@ class ConfigManager:
         Returns:
             True si el recurso puede ser visualizado, False en caso contrario
         """
-        format_ = resource.get('format', '')
+        format_ = (resource or {}).get('format', '') or ''
         if format_ == '':
-            format_ = os.path.splitext(resource['url'])[1][1:]
+            resource_url = (resource or {}).get('url', '') or ''
+            if not resource_url:
+                return False
+            format_ = os.path.splitext(resource_url)[1][1:]
         return re.match(self.SUPPORTED_FORMATS_REGEX, format_.lower()) is not None
     
     def is_valid_domain(self, url: str) -> bool:
