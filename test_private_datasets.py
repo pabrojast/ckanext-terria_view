@@ -171,6 +171,61 @@ def test_setup_template_variables_returns_private_fields():
     print("  PASS: setup_template_variables returns user_logged_in and private_catalog_data")
 
 
+def test_private_uploaded_resource_uses_uploader_and_absolute_url():
+    """Private uploaded resources should resolve via uploader and return absolute URL."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    ckan_plugins_toolkit_mock.config = {'ckan.site_url': 'https://test.example.org'}
+
+    config = ConfigManager(site_url='https://test.example.org')
+    utils = ResourceUtils(config)
+
+    mock_upload = MagicMock()
+    mock_upload.get_url_from_filename.return_value = '/dataset/pkg/resource/res/download/member-states.csv?token=abc'
+    ckan_lib_uploader_mock.get_resource_uploader.return_value = mock_upload
+
+    resource = {
+        'id': 'res',
+        'format': 'csv',
+        'url': '/dataset/pkg/resource/res/download/member-states.csv',
+        'url_type': 'upload'
+    }
+    package = {'id': 'pkg', 'private': True}
+    user_ctx = {'user': 'tester'}
+
+    resolved = utils.get_resource_url(resource, package, user_ctx)
+
+    ckan_lib_uploader_mock.get_resource_uploader.assert_called_once_with(resource)
+    assert resolved == 'https://test.example.org/dataset/pkg/resource/res/download/member-states.csv?token=abc'
+    print("  PASS: private uploaded resource resolves through uploader with absolute URL")
+
+
+def test_relative_resource_url_is_normalized_to_absolute():
+    """Relative CKAN resource URLs should be normalized for cross-domain Terria iframe."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    ckan_plugins_toolkit_mock.config = {'ckan.site_url': 'https://test.example.org'}
+
+    config = ConfigManager(site_url='https://test.example.org')
+    utils = ResourceUtils(config)
+
+    resource = {
+        'id': 'res2',
+        'format': 'csv',
+        'url': '/dataset/pkg/resource/res/download/file.csv',
+        'url_type': 'link'
+    }
+    package = {'id': 'pkg', 'private': False}
+    user_ctx = {}
+
+    resolved = utils.get_resource_url(resource, package, user_ctx)
+
+    assert resolved == 'https://test.example.org/dataset/pkg/resource/res/download/file.csv'
+    print("  PASS: relative resource URL is normalized to absolute")
+
+
 def test_api_endpoint_passes_context_to_format_dataset_item():
     """Verify API endpoint passes package and user_context to format_dataset_item."""
     with open('ckanext/terria_view/api_endpoints.py', 'r') as f:
@@ -193,6 +248,8 @@ if __name__ == '__main__':
         test_template_has_private_catalog_injection,
         test_template_private_only_for_logged_in,
         test_setup_template_variables_returns_private_fields,
+        test_private_uploaded_resource_uses_uploader_and_absolute_url,
+        test_relative_resource_url_is_normalized_to_absolute,
         test_api_endpoint_passes_context_to_format_dataset_item,
     ]
 

@@ -25,6 +25,7 @@ Revisar:
 - `custom_config` guardado;
 - instancia Terria configurada en `terria_instance_url`;
 - CORS entre CKAN y Terria.
+- en datasets privados, que la URL final del recurso no quede relativa (`/dataset/...`) y que se esté resolviendo vía uploader con URL absoluta de `ckan.site_url`.
 
 ## El estilo SLD no se aplica
 

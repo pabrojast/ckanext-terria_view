@@ -141,7 +141,7 @@ Secuencia:
 2. Llama a `_get_private_datasets_catalog(user_context)`.
 3. Este método ejecuta `package_search(include_private=True)` con el contexto del usuario.
 4. Filtra recursos compatibles y genera items Terria usando `format_dataset_item(package=..., user_context=...)`.
-5. Las URLs de recursos privados se resuelven vía `resource_utils.get_resource_url()` usando el uploader de CKAN.
+5. Las URLs de recursos privados subidos (incluyendo CSV) se resuelven vía `resource_utils.get_resource_url()` usando el uploader de CKAN y se normalizan a URL absoluta con `ckan.site_url` para compatibilidad cross-domain con el iframe de Terria.
 6. El catálogo privado se pasa a la template como `private_catalog_data`.
 7. `terria.html` carga el iframe sin `#start=` (para evitar doble inicialización).
 8. Al recibir el mensaje `ready` del iframe (con validación de `event.origin` y `event.source`), envía la configuración completa (pública + privada) vía `postMessage`.

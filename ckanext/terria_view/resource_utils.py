@@ -21,6 +21,35 @@ class ResourceUtils:
             config_manager: Instancia del gestor de configuraciones
         """
         self.config_manager = config_manager
+
+    def _to_absolute_url(self, url: str) -> str:
+        """
+        Convierte una URL relativa en absoluta usando ckan.site_url.
+
+        Args:
+            url: URL a normalizar
+
+        Returns:
+            URL absoluta si se puede resolver, si no la original
+        """
+        if not url:
+            return url
+
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme and parsed.netloc:
+            return url
+
+        site_url = self.config_manager.site_url or toolkit.config.get('ckan.site_url', '')
+        if not site_url:
+            return url
+
+        site_url = site_url.rstrip('/') + '/'
+
+        if url.startswith('//'):
+            scheme = urllib.parse.urlparse(site_url).scheme or 'https'
+            return f"{scheme}:{url}"
+
+        return urllib.parse.urljoin(site_url, url.lstrip('/'))
     
     def get_sld_files_from_dataset(self, package_id: str) -> List[Dict]:
         """
@@ -126,23 +155,25 @@ class ResourceUtils:
         Returns:
             URL del recurso
         """
-        resource_url = resource.get("url", "")
+        resource_url = resource.get("url") or ""
         
-        # Check if it's a valid domain and accepted format
-        if self.config_manager.is_valid_domain(resource_url):
-            if self.config_manager.is_accepted_format(resource):
-                # Fix para datasets privados
-                if user_context.get('user') and package.get("private") == True:
-                    upload = uploader.get_resource_uploader(resource)
-                    uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
-                else:
-                    uploaded_url = resource_url
-            else:
+        is_private_dataset = package.get("private") is True
+        is_logged_user = bool(user_context.get('user'))
+        is_uploaded_resource = resource.get('url_type') == 'upload' or resource_url.startswith('/')
+
+        # Para recursos privados subidos, usar uploader de CKAN para obtener la URL
+        # correcta (incluye casos de CSV y rutas internas).
+        if is_private_dataset and is_logged_user and is_uploaded_resource:
+            try:
+                upload = uploader.get_resource_uploader(resource)
+                uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
+            except Exception:
                 uploaded_url = resource_url
         else:
             uploaded_url = resource_url
-        
-        return uploaded_url
+
+        # Terria suele correr en otro dominio; las rutas relativas deben salir absolutas.
+        return self._to_absolute_url(uploaded_url)
     
     def decode_names_in_object(self, obj: Any) -> Any:
         """
