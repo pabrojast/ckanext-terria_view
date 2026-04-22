@@ -274,6 +274,15 @@ def test_resource_view_list_uses_resource_show_payload_for_can_view():
     print("  PASS: resource_view_list checks can_view_resource against resource_show payload")
 
 
+def test_private_catalog_injection_is_limited_to_private_package_views():
+    """Private catalog should only be injected for private package views."""
+    with open('ckanext/terria_view/plugin.py', 'r') as f:
+        content = f.read()
+
+    assert "include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))" in content
+    print("  PASS: private catalog injection is limited to private package views")
+
+
 def test_process_custom_config_populates_workbench_and_sanitizes_styles():
     """Custom config processing should keep data model in workbench and normalize incomplete styles."""
     from ckanext.terria_view.terria_config_builder import TerriaConfigBuilder
@@ -333,6 +342,62 @@ def test_process_custom_config_populates_workbench_and_sanitizes_styles():
     print("  PASS: process_custom_config keeps workbench items and sanitizes table styles")
 
 
+def test_process_custom_config_sanitizes_palette_only_style():
+    """Palette-only color style should infer continuous mapType and colorColumn."""
+    from ckanext.terria_view.terria_config_builder import TerriaConfigBuilder
+    from ckanext.terria_view.config_manager import ConfigManager
+
+    class DummySLDProcessor:
+        def process_sld_for_resource(self, *_args, **_kwargs):
+            return None
+
+    builder = TerriaConfigBuilder(ConfigManager(), DummySLDProcessor())
+
+    start_data = {
+        "version": "8.0.0",
+        "initSources": [{
+            "stratum": "user",
+            "models": {
+                "/": {"type": "group", "members": ["Hourly Data"]},
+                "Hourly Data": {
+                    "type": "csv",
+                    "url": "https://old.example.org/file.csv",
+                    "knownContainerUniqueIds": ["/"],
+                    "styles": [{
+                        "id": "rf",
+                        "color": {
+                            "binColors": [],
+                            "enumColors": [],
+                            "colorPalette": "Blues"
+                        }
+                    }],
+                    "activeStyle": "rf"
+                }
+            },
+            "workbench": []
+        }]
+    }
+
+    custom_url = "https://ihp-wins.unesco.org/terria/#start=" + urllib.parse.quote(
+        json.dumps(start_data)
+    )
+
+    result = builder.process_custom_config(
+        custom_url,
+        "https://data.dev-wins.com/dataset/x/resource/y/download/file.csv",
+        "csv",
+        None
+    )
+
+    processed = json.loads(result)
+    model = processed["initSources"][0]["models"]["Hourly Data"]
+    color = model["styles"][0]["color"]
+
+    assert color["mapType"] == "continuous"
+    assert color["colorColumn"] == "rf"
+    print("  PASS: process_custom_config sanitizes palette-only styles")
+
+
 if __name__ == '__main__':
     print("\n=== Private Dataset Tests ===\n")
 
@@ -350,7 +415,9 @@ if __name__ == '__main__':
         test_can_view_resource_handles_missing_url_without_crashing,
         test_plugin_registers_resource_view_cache_invalidation_actions,
         test_resource_view_list_uses_resource_show_payload_for_can_view,
+        test_private_catalog_injection_is_limited_to_private_package_views,
         test_process_custom_config_populates_workbench_and_sanitizes_styles,
+        test_process_custom_config_sanitizes_palette_only_style,
     ]
 
     passed = 0

@@ -488,15 +488,20 @@ class TerriaConfigBuilder:
             bin_colors = color.get('binColors')
             has_enum = isinstance(enum_colors, list) and len(enum_colors) > 0
             has_bin = isinstance(bin_colors, list) and len(bin_colors) > 0
+            has_palette = bool(color.get('colorPalette'))
 
             if not color.get('mapType'):
                 if has_enum:
                     color['mapType'] = 'enum'
                 elif has_bin:
                     color['mapType'] = 'bin'
+                elif has_palette:
+                    # Terria table styles commonly use palette-only color blocks
+                    # with a numeric column and no explicit mapType.
+                    color['mapType'] = 'continuous'
 
             # Infer colorColumn from style id when missing (common in legacy share links)
-            if (has_enum or has_bin or color.get('mapType')) and not color.get('colorColumn'):
+            if isinstance(color, dict) and not color.get('colorColumn'):
                 inferred_column = style_id or model_value.get('activeStyle')
                 if inferred_column:
                     color['colorColumn'] = inferred_column

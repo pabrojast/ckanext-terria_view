@@ -462,7 +462,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     # Bump this version whenever the config generation/processing logic changes
     # to invalidate stale cached configs.
-    _CONFIG_PROCESSING_VERSION = 2
+    _CONFIG_PROCESSING_VERSION = 3
 
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):
@@ -637,6 +637,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             if not package.get('private'):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
         
+        include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))
+
         return {
             'title': view_title,
             'terria_instance_url': view_terria_instance_url,
@@ -646,7 +648,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'view_id': view.get('id'),
             'resource_id': resource.get('id'),
             'user_logged_in': bool(user_context.get('user')),
-            'private_catalog_data': self._get_private_datasets_catalog(user_context) if user_context.get('user') else None
+            'private_catalog_data': self._get_private_datasets_catalog(user_context) if include_private_catalog else None
         }
     
     def view_template(self, context, data_dict):
