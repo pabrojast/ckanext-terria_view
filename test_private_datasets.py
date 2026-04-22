@@ -145,9 +145,24 @@ def test_template_has_private_catalog_injection():
     assert 'private_catalog_data' in content, "Template should reference private_catalog_data"
     assert 'user_logged_in' in content, "Template should check user_logged_in"
     assert 'terriaPrivateCatalog' in content, "Template should have JS var terriaPrivateCatalog"
-    assert 'postConfigToIframe' in content, "Template should have postConfigToIframe function"
+    assert 'postPrivateCatalogToIframe' in content, "Template should have postPrivateCatalogToIframe function"
     assert 'terria-iframe' in content, "Template should have id=terria-iframe on iframes"
     print("  PASS: Template has private catalog injection logic")
+
+
+def test_template_private_mode_uses_hash_start_for_main_resource():
+    """Private view iframe must load the resource via ``#start=`` so workbench populates."""
+    with open('ckanext/terria_view/templates/terria.html', 'r') as f:
+        content = f.read()
+
+    # The iframe for private views must carry ``#start={{ encoded_config }}`` —
+    # otherwise TerriaJS receives the resource config via postMessage only,
+    # which does not populate ``workbench``/``timeline`` the same way.
+    assert 'src="{{ terria_instance_url }}#start={{ encoded_config }}"' in content, (
+        "Template must load the resource via #start= in the iframe src for both public "
+        "and private views; only the private catalog goes via postMessage."
+    )
+    print("  PASS: private view iframe still uses #start= for the main resource")
 
 
 def test_template_private_only_for_logged_in():
@@ -597,6 +612,7 @@ if __name__ == '__main__':
         test_cache_manager_docstring_mentions_public_only,
         test_file_cache_manager_docstring_mentions_public_only,
         test_template_has_private_catalog_injection,
+        test_template_private_mode_uses_hash_start_for_main_resource,
         test_template_private_only_for_logged_in,
         test_setup_template_variables_returns_private_fields,
         test_private_uploaded_resource_returns_proxy_url,

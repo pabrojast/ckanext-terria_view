@@ -143,10 +143,10 @@ Secuencia:
 2. Llama a `_get_private_datasets_catalog(user_context)`.
 3. Este método ejecuta `package_search(include_private=True)` con el contexto del usuario.
 4. Filtra recursos compatibles y genera items Terria usando `format_dataset_item(package=..., user_context=...)`.
-5. Las URLs de recursos privados subidos se resuelven vía `resource_utils.get_resource_url()`, que devuelve una URL **proxy firmada** `GET /api/terria/resource/<id>/content?token=<token>`. El proxy vive en el mismo dominio que CKAN, descarga el blob desde Azure server-side con el uploader y responde con `Access-Control-Allow-Origin: *`, evitando depender de la configuración CORS del Storage Account.
+5. Las URLs de recursos privados subidos se resuelven vía `resource_utils.get_resource_url()`, que devuelve una URL **proxy firmada** `GET /api/terria/resource/<id>/content/<filename>?token=<token>`. El proxy vive en el mismo dominio que CKAN, descarga el blob desde Azure server-side con el uploader y responde con `Access-Control-Allow-Origin: *`, evitando depender de la configuración CORS del Storage Account.
 6. El catálogo privado se pasa a la template como `private_catalog_data`.
-7. `terria.html` carga el iframe sin `#start=` (para evitar doble inicialización).
-8. Al recibir el mensaje `ready` del iframe (con validación de `event.origin` y `event.source`), envía la configuración completa (pública + privada) vía `postMessage`.
+7. `terria.html` carga el iframe con `#start={{ encoded_config }}` **también en modo privado** — de ese modo el recurso actual entra al `workbench`/`timeline` igual que en vistas públicas. El catálogo privado adicional (otros datasets visibles al usuario) se envía como un init source separado vía `postMessage` cuando el iframe emite `ready`.
+8. El postMessage solo transporta el `private_catalog_data`, no la config completa del recurso, para evitar que Terria sobreescriba/no active el workbench ya inicializado por `#start=`.
 
 Resultado:
 
@@ -156,10 +156,11 @@ Resultado:
 Notas:
 
 - el `postMessage` nunca usa `'*'` como targetOrigin para datos privados;
-- si la URL de la instancia Terria no puede parsearse, la inyección se deshabilita;
+- si la URL de la instancia Terria no puede parsearse, la inyección del catálogo privado se deshabilita pero la vista del recurso igual funciona;
 - el catálogo privado se genera on-demand por request, no se cachea;
 - los tokens del proxy expiran en 1h por defecto y están firmados con el secret CKAN (`beaker.session.secret` o `SECRET_KEY`);
-- el proxy ejecuta `resource_show` con `ignore_auth=True` porque la autorización ya fue validada vía el token firmado.
+- el proxy ejecuta `resource_show` con `ignore_auth=True` porque la autorización ya fue validada vía el token firmado;
+- el segmento `<filename>` en la URL del proxy preserva la extensión para que TerriaJS acepte el recurso (shapefiles exigen `.zip`, GeoJSON exige `.geojson`).
 
 ## Pendiente por confirmar
 
