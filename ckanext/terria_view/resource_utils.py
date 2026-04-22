@@ -5,6 +5,7 @@ Módulo con utilidades para manejo de recursos.
 import json
 import urllib.request
 import urllib.parse
+import os.path
 from typing import Dict, List, Optional, Tuple, Any
 from ckan.lib import uploader
 from ckan.plugins import toolkit
@@ -50,6 +51,33 @@ class ResourceUtils:
             return f"{scheme}:{url}"
 
         return urllib.parse.urljoin(site_url, url.lstrip('/'))
+
+    def _extract_upload_filename(self, resource: Dict, resource_url: str) -> str:
+        """
+        Extrae el nombre de archivo para uploads privados.
+
+        ckanext-cloudstorage espera un ``filename`` (ej. ``data.csv``) en
+        ``get_url_from_filename``, no la URL completa del endpoint download.
+        """
+        candidates = []
+        raw_resource_url = resource.get('url')
+        if isinstance(raw_resource_url, str) and raw_resource_url:
+            candidates.append(raw_resource_url)
+        if isinstance(resource_url, str) and resource_url:
+            candidates.append(resource_url)
+
+        for candidate in candidates:
+            parsed = urllib.parse.urlparse(candidate)
+            path = parsed.path or candidate
+            if '/download/' in path:
+                filename = path.rsplit('/download/', 1)[-1]
+            else:
+                filename = os.path.basename(path.rstrip('/'))
+            filename = urllib.parse.unquote(filename or '')
+            if filename:
+                return filename
+
+        return ''
     
     def get_sld_files_from_dataset(self, package_id: str) -> List[Dict]:
         """
@@ -166,7 +194,12 @@ class ResourceUtils:
         if is_private_dataset and is_logged_user and is_uploaded_resource:
             try:
                 upload = uploader.get_resource_uploader(resource)
-                uploaded_url = upload.get_url_from_filename(resource['id'], resource_url)
+                filename = self._extract_upload_filename(resource, resource_url)
+                uploaded_url = upload.get_url_from_filename(
+                    resource['id'],
+                    filename or resource_url,
+                    content_type=resource.get('mimetype')
+                ) or resource_url
             except Exception:
                 uploaded_url = resource_url
         else:

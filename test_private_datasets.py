@@ -198,6 +198,9 @@ def test_private_uploaded_resource_uses_uploader_and_absolute_url():
     resolved = utils.get_resource_url(resource, package, user_ctx)
 
     ckan_lib_uploader_mock.get_resource_uploader.assert_called_once_with(resource)
+    mock_upload.get_url_from_filename.assert_called_once_with(
+        'res', 'member-states.csv', content_type=None
+    )
     assert resolved == 'https://test.example.org/dataset/pkg/resource/res/download/member-states.csv?token=abc'
     print("  PASS: private uploaded resource resolves through uploader with absolute URL")
 
@@ -246,6 +249,25 @@ def test_can_view_resource_handles_missing_url_without_crashing():
     assert manager.can_view_resource({'format': ''}) is False
     assert manager.can_view_resource({}) is False
     print("  PASS: can_view_resource handles missing url safely")
+
+
+def test_resource_utils_extracts_filename_from_download_urls():
+    """Upload filename extraction should return plain filename from CKAN download URLs."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    utils = ResourceUtils(ConfigManager(site_url='https://test.example.org'))
+    resource = {
+        'id': 'res',
+        'url': '/dataset/pkg/resource/res/download/member-states.csv',
+        'url_type': 'upload'
+    }
+    filename = utils._extract_upload_filename(
+        resource,
+        'https://test.example.org/dataset/pkg/resource/res/download/member-states.csv'
+    )
+    assert filename == 'member-states.csv'
+    print("  PASS: resource_utils extracts upload filename from download URLs")
 
 
 def test_plugin_registers_resource_view_cache_invalidation_actions():
@@ -413,6 +435,7 @@ if __name__ == '__main__':
         test_relative_resource_url_is_normalized_to_absolute,
         test_api_endpoint_passes_context_to_format_dataset_item,
         test_can_view_resource_handles_missing_url_without_crashing,
+        test_resource_utils_extracts_filename_from_download_urls,
         test_plugin_registers_resource_view_cache_invalidation_actions,
         test_resource_view_list_uses_resource_show_payload_for_can_view,
         test_private_catalog_injection_is_limited_to_private_package_views,
