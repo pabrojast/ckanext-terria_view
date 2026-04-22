@@ -28,6 +28,7 @@ Revisar:
 - en datasets privados, que la URL final del recurso no quede relativa (`/dataset/...`) y que se esté resolviendo vía uploader con URL absoluta de `ckan.site_url`.
 - en datasets privados con `ckanext-cloudstorage`, confirmar que la URL resultante del recurso sea SAS directa de blob (no el endpoint `/dataset/.../download/...`), porque Terria carga desde otro dominio y un `download` protegido devuelve `401`.
 - si se usa `custom_config`, verificar que en el `#start` final exista al menos un item de datos en `initSources[].workbench` (si queda vacío, el mapa no abre capas por defecto).
+- en CSV con estilos custom, evitar combinaciones inconsistentes como `mapType: "continuous"` junto a paletas `Category*` para columnas categóricas; en ese caso usar `mapType: "enum"` y `colorColumn`.
 
 ## El estilo SLD no se aplica
 

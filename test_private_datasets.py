@@ -293,6 +293,7 @@ def test_resource_view_list_uses_resource_show_payload_for_can_view():
 
     assert "plugin_instance.config_manager.can_view_resource(resource)" in content
     assert "context['resource'].__dict__" not in content
+    assert "resource = None" in content
     print("  PASS: resource_view_list checks can_view_resource against resource_show payload")
 
 
@@ -420,6 +421,60 @@ def test_process_custom_config_sanitizes_palette_only_style():
     print("  PASS: process_custom_config sanitizes palette-only styles")
 
 
+def test_process_custom_config_category_palette_forces_enum_maptype():
+    """Category palettes should not keep continuous mapType in CSV categorical styles."""
+    from ckanext.terria_view.terria_config_builder import TerriaConfigBuilder
+    from ckanext.terria_view.config_manager import ConfigManager
+
+    class DummySLDProcessor:
+        def process_sld_for_resource(self, *_args, **_kwargs):
+            return None
+
+    builder = TerriaConfigBuilder(ConfigManager(), DummySLDProcessor())
+
+    start_data = {
+        "version": "8.0.0",
+        "initSources": [{
+            "stratum": "user",
+            "models": {
+                "/": {"type": "group", "members": ["member states"]},
+                "member states": {
+                    "type": "csv",
+                    "url": "https://old.example.org/file.csv",
+                    "knownContainerUniqueIds": ["/"],
+                    "styles": [{
+                        "id": "Electoral Group",
+                        "color": {
+                            "mapType": "continuous",
+                            "colorPalette": "Category10"
+                        }
+                    }],
+                    "activeStyle": "Electoral Group"
+                }
+            },
+            "workbench": []
+        }]
+    }
+
+    custom_url = "https://ihp-wins.unesco.org/terria/#start=" + urllib.parse.quote(
+        json.dumps(start_data)
+    )
+
+    result = builder.process_custom_config(
+        custom_url,
+        "https://data.dev-wins.com/dataset/x/resource/y/download/file.csv",
+        "csv",
+        None
+    )
+
+    processed = json.loads(result)
+    color = processed["initSources"][0]["models"]["member states"]["styles"][0]["color"]
+
+    assert color["mapType"] == "enum"
+    assert color["colorColumn"] == "Electoral Group"
+    print("  PASS: category palette styles are normalized to enum mapType")
+
+
 if __name__ == '__main__':
     print("\n=== Private Dataset Tests ===\n")
 
@@ -441,6 +496,7 @@ if __name__ == '__main__':
         test_private_catalog_injection_is_limited_to_private_package_views,
         test_process_custom_config_populates_workbench_and_sanitizes_styles,
         test_process_custom_config_sanitizes_palette_only_style,
+        test_process_custom_config_category_palette_forces_enum_maptype,
     ]
 
     passed = 0

@@ -41,6 +41,8 @@ def new_resource_view_list(plugin_instance, context, data_dict):
     Returns:
         List of resource views
     """
+    resource = None
+    ret = []
     try:
         resource_id = data_dict.get('id')
         
@@ -78,10 +80,12 @@ def new_resource_view_list(plugin_instance, context, data_dict):
         import os
         if os.getenv("TERRIA_DEBUG", "false").lower() == "true":
             print(f"Error retrieving resource view list: {e}")
-        ret = []
     
     # Check if a plugin view already exists
-    has_plugin = len([r for r in ret if r['view_type'] == PLUGIN_NAME]) > 0
+    has_plugin = any(
+        isinstance(r, dict) and r.get('view_type') == PLUGIN_NAME
+        for r in ret
+    )
     
     if not has_plugin:
         if resource and plugin_instance.config_manager.can_view_resource(resource):

@@ -489,6 +489,8 @@ class TerriaConfigBuilder:
             has_enum = isinstance(enum_colors, list) and len(enum_colors) > 0
             has_bin = isinstance(bin_colors, list) and len(bin_colors) > 0
             has_palette = bool(color.get('colorPalette'))
+            palette_name = (color.get('colorPalette') or '').lower()
+            is_category_palette = palette_name.startswith('category')
 
             if not color.get('mapType'):
                 if has_enum:
@@ -496,9 +498,13 @@ class TerriaConfigBuilder:
                 elif has_bin:
                     color['mapType'] = 'bin'
                 elif has_palette:
-                    # Terria table styles commonly use palette-only color blocks
-                    # with a numeric column and no explicit mapType.
-                    color['mapType'] = 'continuous'
+                    # Category palettes are intended for discrete values.
+                    color['mapType'] = 'enum' if is_category_palette else 'continuous'
+
+            # Guardrail: some saved configs force continuous + category palette,
+            # which can break categorical CSV columns.
+            if color.get('mapType') == 'continuous' and is_category_palette:
+                color['mapType'] = 'enum'
 
             # Infer colorColumn from style id when missing (common in legacy share links)
             if isinstance(color, dict) and not color.get('colorColumn'):
