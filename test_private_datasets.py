@@ -155,17 +155,78 @@ def test_template_has_iframe_with_hash_start():
 
 
 def test_plugin_merges_private_catalog_into_encoded_config():
-    """setup_template_variables must merge private_catalog_data into encoded_config."""
+    """setup_template_variables must merge private catalog entries into the resource initSource."""
     with open('ckanext/terria_view/plugin.py', 'r') as f:
         content = f.read()
 
     assert '_merge_private_catalog_into_encoded_config' in content, (
         "plugin.py should define _merge_private_catalog_into_encoded_config"
     )
-    assert 'init_sources.append(private_catalog_data)' in content, (
-        "merge helper must append the private catalog as an initSource"
+    # Entries are now merged into the resource's existing initSource catalog to
+    # avoid TerriaJS re-initializing the workbench when it processes a second
+    # init source.
+    assert 'catalog.extend(private_entries)' in content, (
+        "merge helper must extend the primary initSource catalog with private entries"
     )
     print("  PASS: plugin merges private catalog into encoded_config server-side")
+
+
+def test_merge_helper_preserves_workbench_and_catalog_structure():
+    """Live roundtrip: merging must keep initSources[0] workbench intact and add catalog entries."""
+    # Ensure ckan.plugins.SingletonPlugin exists in the mock so plugin.py imports cleanly.
+    class _StubBase:
+        pass
+    import ckan.plugins as _ckp
+    for attr in ('SingletonPlugin', 'implements'):
+        if not hasattr(_ckp, attr) or getattr(_ckp, attr) is None:
+            setattr(_ckp, attr, _StubBase if attr == 'SingletonPlugin' else (lambda *a, **k: None))
+    for iface in ('IConfigurer', 'IBlueprint', 'ITemplateHelpers', 'IConfigurable',
+                  'IResourceView', 'IActions'):
+        if not hasattr(_ckp, iface):
+            setattr(_ckp, iface, _StubBase)
+
+    # Call the unbound method directly so we don't need to instantiate the full
+    # CKAN SingletonPlugin (which pulls in more mocks than we set up here).
+    from ckanext.terria_view.plugin import Terria_ViewPlugin
+    merge_fn = Terria_ViewPlugin.__dict__['_merge_private_catalog_into_encoded_config']
+
+    class _Dummy:
+        def _debug_print(self, msg):
+            pass
+
+    base_config = {
+        'version': '8.0.0',
+        'initSources': [{
+            'stratum': 'user',
+            'catalog': [{'name': 'R1', 'type': 'csv', 'id': 'r1', 'url': 'https://u/1.csv'}],
+            'workbench': ['r1'],
+            'viewerMode': '3D'
+        }]
+    }
+    encoded = urllib.parse.quote(json.dumps(base_config))
+    private = {
+        'catalog': [{
+            'name': 'Private Datasets (alice)',
+            'type': 'group',
+            'members': [{'name': 'P1', 'type': 'csv', 'id': 'p1', 'url': 'https://u/p1.csv'}]
+        }]
+    }
+
+    merged_encoded = merge_fn(_Dummy(), encoded, private)
+    merged = json.loads(urllib.parse.unquote(merged_encoded))
+
+    # There must still be exactly one initSource (merged inside, not appended).
+    assert len(merged['initSources']) == 1, (
+        f'Expected exactly 1 initSource after merge, got {len(merged["initSources"])}'
+    )
+    primary = merged['initSources'][0]
+    # Workbench must survive untouched.
+    assert primary['workbench'] == ['r1']
+    # Catalog now contains original resource + private group.
+    assert len(primary['catalog']) == 2
+    assert primary['catalog'][0]['id'] == 'r1'
+    assert primary['catalog'][1]['name'].startswith('Private Datasets')
+    print("  PASS: merge preserves workbench and extends catalog in place")
 
 
 def test_template_private_only_for_logged_in():
@@ -383,6 +444,38 @@ def test_resource_content_endpoint_is_registered():
     assert "def resource_content_endpoint" in content
     assert 'verify_resource_token' in content
     print("  PASS: resource content proxy endpoint is registered")
+
+
+def test_terria_friendly_content_type_overrides_octet_stream():
+    """CSV/GeoJSON over octet-stream must be rewritten to TerriaJS-friendly mimetypes."""
+    # Reimport with mimetypes/os mocks cleared so the helper sees the real module.
+    real_mimetypes = __import__('mimetypes')
+    real_os = __import__('os')
+    sys.modules['mimetypes'] = real_mimetypes
+    sys.modules['os'] = real_os
+
+    from ckanext.terria_view.api_endpoints import _terria_friendly_content_type
+
+    # Classic regression: upstream returns octet-stream for a CSV — we must fix it.
+    assert _terria_friendly_content_type(
+        'hourly_precipitation_data.csv', 'application/octet-stream'
+    ) == 'text/csv'
+    assert _terria_friendly_content_type(
+        'country.geojson', 'application/octet-stream'
+    ) == 'application/geo+json'
+    assert _terria_friendly_content_type(
+        'dem.tif', 'application/octet-stream'
+    ) == 'image/tiff'
+    assert _terria_friendly_content_type(
+        'layer.czml', 'application/octet-stream'
+    ) == 'application/json'
+    # Shapefile: upstream may say zip — keep it, Terria is fine with it.
+    assert _terria_friendly_content_type(
+        'member-states.zip', 'application/zip'
+    ) == 'application/zip'
+    # Falls through when we don't know: return whatever fallback we had.
+    assert _terria_friendly_content_type(None, 'text/plain') == 'text/plain'
+    print("  PASS: _terria_friendly_content_type overrides octet-stream with per-extension mimetype")
 
 
 def test_relative_resource_url_is_normalized_to_absolute():
@@ -665,6 +758,7 @@ if __name__ == '__main__':
         test_file_cache_manager_docstring_mentions_public_only,
         test_template_has_iframe_with_hash_start,
         test_plugin_merges_private_catalog_into_encoded_config,
+        test_merge_helper_preserves_workbench_and_catalog_structure,
         test_template_private_only_for_logged_in,
         test_setup_template_variables_returns_private_fields,
         test_private_uploaded_resource_returns_proxy_url,
@@ -675,6 +769,7 @@ if __name__ == '__main__':
         test_expired_resource_token_is_rejected,
         test_resource_token_tampering_is_rejected,
         test_resource_content_endpoint_is_registered,
+        test_terria_friendly_content_type_overrides_octet_stream,
         test_relative_resource_url_is_normalized_to_absolute,
         test_api_endpoint_passes_context_to_format_dataset_item,
         test_can_view_resource_handles_missing_url_without_crashing,

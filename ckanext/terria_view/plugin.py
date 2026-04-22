@@ -671,7 +671,15 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     def _merge_private_catalog_into_encoded_config(self, encoded_config, private_catalog_data):
         """
-        Append the private catalog as an additional initSource inside encoded_config.
+        Merge the private catalog groups into the resource's existing initSource.
+
+        We extend ``initSources[0].catalog`` with the private catalog entries
+        instead of appending a new initSource. Adding a standalone initSource
+        that doesn't declare ``workbench`` can cause TerriaJS to reset the
+        resource's workbench entries while processing init sources in order;
+        merging inside the same initSource keeps the main resource's workbench
+        untouched while still exposing the user's private datasets in the
+        catalog tree.
 
         Returns the re-encoded (URL-quoted) config string. On any error, returns
         the original ``encoded_config`` so the main resource view still loads.
@@ -679,10 +687,31 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         try:
             decoded = urllib.parse.unquote(encoded_config)
             config_dict = json.loads(decoded)
-            if isinstance(config_dict, dict):
-                init_sources = config_dict.setdefault('initSources', [])
-                if isinstance(init_sources, list) and private_catalog_data:
-                    init_sources.append(private_catalog_data)
+            if not isinstance(config_dict, dict):
+                return encoded_config
+
+            private_entries = []
+            if isinstance(private_catalog_data, dict):
+                private_entries = private_catalog_data.get('catalog') or []
+            if not private_entries:
+                return encoded_config
+
+            init_sources = config_dict.get('initSources')
+            if not isinstance(init_sources, list) or not init_sources:
+                # Fallback: preserve previous behaviour by appending a full init source.
+                config_dict['initSources'] = [private_catalog_data]
+                return urllib.parse.quote(json.dumps(config_dict))
+
+            primary = init_sources[0]
+            if not isinstance(primary, dict):
+                return encoded_config
+
+            catalog = primary.get('catalog')
+            if not isinstance(catalog, list):
+                catalog = []
+                primary['catalog'] = catalog
+            catalog.extend(private_entries)
+
             return urllib.parse.quote(json.dumps(config_dict))
         except Exception as e:
             self._debug_print(f"Could not merge private catalog into encoded_config: {e}")

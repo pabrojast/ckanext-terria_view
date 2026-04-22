@@ -3,12 +3,52 @@
 API endpoints for Terria JSON generation.
 """
 import json
+import mimetypes
 import os
 import threading
 import urllib.parse
 
 import requests
 from flask import Blueprint, jsonify, request, Response, send_file
+
+
+# Supplement mimetypes for formats TerriaJS cares about. Many CKAN resources
+# have no ``mimetype`` set, and Azure Blob Storage defaults uploads to
+# ``application/octet-stream``; TerriaJS then refuses to parse them (e.g. a CSV
+# item silently stays out of the workbench).
+_TERRIA_CONTENT_TYPES = {
+    '.csv': 'text/csv',
+    '.tsv': 'text/tab-separated-values',
+    '.geojson': 'application/geo+json',
+    '.json': 'application/json',
+    '.czml': 'application/json',
+    '.kml': 'application/vnd.google-earth.kml+xml',
+    '.kmz': 'application/vnd.google-earth.kmz',
+    '.zip': 'application/zip',
+    '.tif': 'image/tiff',
+    '.tiff': 'image/tiff',
+    '.cog': 'image/tiff',
+}
+
+
+def _terria_friendly_content_type(filename, fallback):
+    """
+    Return a mimetype TerriaJS recognises, preferring the filename extension.
+
+    Azure Blob responses commonly default to ``application/octet-stream`` even
+    for CSV/GeoJSON, which causes TerriaJS to silently ignore the resource.
+    We prefer an extension-based hint over such generic upstream values.
+    """
+    if filename:
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in _TERRIA_CONTENT_TYPES:
+            return _TERRIA_CONTENT_TYPES[ext]
+        guessed, _ = mimetypes.guess_type(filename)
+        if guessed:
+            return guessed
+    if fallback and fallback.lower() != 'application/octet-stream':
+        return fallback
+    return fallback or 'application/octet-stream'
 import ckan.plugins.toolkit as toolkit
 from ckan.common import config
 
@@ -633,11 +673,14 @@ class TerriaAPIController:
                     502
                 )
 
-            resolved_type = (
-                content_type
-                or upstream.headers.get('Content-Type')
-                or 'application/octet-stream'
+            # Prefer filename extension over upstream Content-Type: Azure Blob
+            # frequently returns ``application/octet-stream`` for uploaded CSVs,
+            # which causes TerriaJS to drop the item silently (no CSV parser).
+            upstream_ct = upstream.headers.get('Content-Type')
+            resolved_type = _terria_friendly_content_type(
+                filename, content_type or upstream_ct
             )
+            _debug(f"content-type resolved to {resolved_type!r} (upstream={upstream_ct!r})")
 
             def _stream():
                 try:
