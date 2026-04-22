@@ -38,11 +38,20 @@ Causa: Terria (en otro dominio) intenta hacer `fetch` directo a la URL SAS de Az
 
 Fix en el plugin:
 
-- `ResourceUtils.get_resource_url()` devuelve una URL proxy CKAN firmada en lugar de la SAS directa. Flujo: `GET /api/terria/resource/<id>/content?token=<token>` → CKAN resuelve la SAS server-side y stremea el contenido con `Access-Control-Allow-Origin: *`.
+- `ResourceUtils.get_resource_url()` devuelve una URL proxy CKAN firmada en lugar de la SAS directa. Flujo: `GET /api/terria/resource/<id>/content/<filename>?token=<token>` → CKAN resuelve la SAS server-side y stremea el contenido con `Access-Control-Allow-Origin: *`.
+- El segmento `<filename>` se conserva intencionalmente en el path para que pase la validación cliente de TerriaJS (p. ej. `shp` exige `.zip`, `geojson` exige `.geojson`). La autorización no depende del filename, solo del token.
 - Verificar que el endpoint esté accesible y responda `200` al hacer `GET` con token válido. Si devuelve `401` con `Invalid or expired token`, revisar `beaker.session.secret`/`SECRET_KEY` y que el mismo proceso CKAN haya generado el token (tokens firmados con otro secret no verifican).
 - Si responde `502`, es que Azure rechazó la SAS: token del uploader expirado, permisos cambiados, o el blob fue movido.
 
 Alternativa sin cambios en código: configurar CORS en el Storage Account (allowed origins = dominio del Terria) para que la URL SAS directa funcione. En ese caso el proxy queda como defensa en profundidad.
+
+## Dataset privado con shapefile: "Invalid URL: Only zipped shapefiles are supported"
+
+Síntoma: al cargar un `.zip` shapefile privado aparece en el iframe Terria el error `Invalid URL: Only zipped shapefiles are supported (the extension must be '.zip')`.
+
+Causa: TerriaJS valida **la extensión de la URL** antes de intentar fetchear. Si el recurso se sirve vía el proxy, la URL debe terminar en `.zip` (o `.geojson`, `.csv`, etc. según el tipo).
+
+Fix: asegurarse de que `ResourceUtils.build_proxy_resource_url` esté emitiendo el filename en el path (`/api/terria/resource/<id>/content/<filename.ext>?token=...`). `get_resource_url` usa `_extract_upload_filename(resource, resource_url)` para obtenerlo; si el resource tiene `url_type: upload` pero la URL no expone `/download/<filename>`, `_extract_upload_filename` puede devolver vacío y caer al path sin extensión. En ese caso, verificar que el recurso tenga una URL válida con el archivo en el path.
 
 ## El estilo SLD no se aplica
 

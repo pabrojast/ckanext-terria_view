@@ -200,11 +200,60 @@ def test_private_uploaded_resource_returns_proxy_url():
 
     # Proxy route is preferred so Terria's cross-origin iframe can fetch without
     # depending on Azure Storage CORS configuration for the Terria origin.
-    assert resolved.startswith('https://test.example.org/api/terria/resource/res/content?token=')
+    # Filename is included in the path so TerriaJS URL-extension validations don't reject it.
+    assert resolved.startswith(
+        'https://test.example.org/api/terria/resource/res/content/member-states.csv?token='
+    )
     assert 'token=' in resolved
     # Uploader should NOT be invoked in this path — the endpoint resolves the SAS itself.
     ckan_lib_uploader_mock.get_resource_uploader.assert_not_called()
-    print("  PASS: private uploaded resource returns CKAN proxy URL with token")
+    print("  PASS: private uploaded resource returns CKAN proxy URL with filename and token")
+
+
+def test_private_shapefile_proxy_url_preserves_zip_extension():
+    """Shapefiles must expose a .zip URL even through the proxy (Terria client check)."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    ckan_plugins_toolkit_mock.config = {
+        'ckan.site_url': 'https://test.example.org',
+        'beaker.session.secret': 'shp-secret'
+    }
+    ckan_lib_uploader_mock.reset_mock()
+
+    utils = ResourceUtils(ConfigManager(site_url='https://test.example.org'))
+    resource = {
+        'id': 'shp-1',
+        'format': 'shp',
+        'url': '/dataset/pkg/resource/shp-1/download/member-states.zip',
+        'url_type': 'upload'
+    }
+    package = {'id': 'pkg', 'private': True}
+    user_ctx = {'user': 'tester'}
+
+    resolved = utils.get_resource_url(resource, package, user_ctx)
+
+    # Strip the token query string before inspecting path to avoid false-positive matches.
+    url_without_query = resolved.split('?', 1)[0]
+    assert url_without_query.endswith('.zip'), (
+        f'Expected proxy URL to preserve .zip extension, got: {url_without_query}'
+    )
+    assert '/api/terria/resource/shp-1/content/member-states.zip' in resolved
+    print("  PASS: shapefile proxy URL preserves .zip extension for TerriaJS validation")
+
+
+def test_proxy_url_without_filename_still_valid():
+    """When the filename cannot be extracted, the proxy URL falls back to the bare path."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    ckan_plugins_toolkit_mock.config = {'beaker.session.secret': 'bare-secret'}
+
+    utils = ResourceUtils(ConfigManager(site_url='https://test.example.org'))
+    url = utils.build_proxy_resource_url('res-bare', filename=None)
+    assert '/api/terria/resource/res-bare/content?token=' in url
+    assert '/api/terria/resource/res-bare/content/None' not in url
+    print("  PASS: proxy URL builder works without a filename segment")
 
 
 def test_generate_and_verify_resource_token_roundtrip():
@@ -551,6 +600,8 @@ if __name__ == '__main__':
         test_template_private_only_for_logged_in,
         test_setup_template_variables_returns_private_fields,
         test_private_uploaded_resource_returns_proxy_url,
+        test_private_shapefile_proxy_url_preserves_zip_extension,
+        test_proxy_url_without_filename_still_valid,
         test_generate_and_verify_resource_token_roundtrip,
         test_expired_resource_token_is_rejected,
         test_resource_token_tampering_is_rejected,

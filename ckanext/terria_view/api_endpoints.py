@@ -5,6 +5,7 @@ API endpoints for Terria JSON generation.
 import json
 import os
 import threading
+import urllib.parse
 
 import requests
 from flask import Blueprint, jsonify, request, Response, send_file
@@ -574,17 +575,33 @@ class TerriaAPIController:
         token itself (not cookies) because the Terria iframe requesting this
         URL lives on a different origin and cannot forward the CKAN session.
         """
+        debug = os.getenv("TERRIA_DEBUG", "false").lower() == "true"
+
+        def _debug(msg):
+            if debug:
+                print(f"[terria_view.proxy] {msg}")
+
         try:
             token = request.args.get('token', '')
             resource_utils = self.generator.resource_utils
             if not resource_utils.verify_resource_token(resource_id, token):
-                return self._create_error_response('Invalid or expired token', 401)
+                _debug(f"reject: invalid/expired token for {resource_id}")
+                return self._create_cors_error_response('Invalid or expired token', 401)
 
             source = resource_utils.resolve_private_resource_source(resource_id)
             if not source:
-                return self._create_error_response('Resource not found', 404)
+                _debug(f"reject: could not resolve upstream for {resource_id}")
+                return self._create_cors_error_response(
+                    'Resource not resolvable (missing url/filename or not accessible)',
+                    404
+                )
 
             upstream_url, content_type, filename = source
+            _debug(
+                f"resolved upstream for {resource_id}: "
+                f"filename={filename!r} content_type={content_type!r} "
+                f"upstream_host={urllib.parse.urlparse(upstream_url).netloc}"
+            )
 
             # Azure/S3 only accept GET/HEAD for blob SAS; don't forward cookies or auth.
             upstream_method = 'HEAD' if request.method == 'HEAD' else 'GET'
@@ -597,7 +614,8 @@ class TerriaAPIController:
                     allow_redirects=True,
                 )
             except requests.RequestException as exc:
-                return self._create_error_response(
+                _debug(f"upstream request failed: {exc}")
+                return self._create_cors_error_response(
                     f'Error fetching resource from storage: {exc}', 502
                 )
 
@@ -607,7 +625,10 @@ class TerriaAPIController:
                     body = upstream.text[:500]
                 except Exception:
                     pass
-                return self._create_error_response(
+                _debug(
+                    f"upstream returned {upstream.status_code} for {resource_id}: {body!r}"
+                )
+                return self._create_cors_error_response(
                     f'Storage backend returned {upstream.status_code}: {body}',
                     502
                 )
@@ -651,9 +672,23 @@ class TerriaAPIController:
             return response
 
         except Exception as exc:
-            return self._create_error_response(
+            _debug(f"unexpected error: {exc}")
+            return self._create_cors_error_response(
                 f'Error streaming resource content: {exc}'
             )
+
+    def _create_cors_error_response(self, message: str, status_code: int = 500) -> Response:
+        """
+        Build an error response with CORS headers so the Terria iframe can read the body.
+
+        Without CORS, ``fetch`` from a cross-origin iframe hides the status and body
+        of error responses from client code — making proxy failures opaque in the
+        user's browser console.
+        """
+        response = self._create_error_response(message, status_code)
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
+        return response
 
     def user_private_datasets(self):
         """
@@ -898,8 +933,15 @@ def user_private_datasets_endpoint():
 
 
 @terria_api.route('/api/terria/resource/<resource_id>/content', methods=['GET', 'HEAD'])
-def resource_content_endpoint(resource_id):
-    """Stream a private resource through CKAN with open CORS (token-gated)."""
+@terria_api.route('/api/terria/resource/<resource_id>/content/<path:filename>', methods=['GET', 'HEAD'])
+def resource_content_endpoint(resource_id, filename=None):
+    """Stream a private resource through CKAN with open CORS (token-gated).
+
+    ``filename`` is purely cosmetic — TerriaJS validates URL extensions
+    client-side before fetching (e.g. shapefiles must end in ``.zip``), so we
+    let callers embed the filename in the path. Authorization stays on the
+    signed ``token`` query parameter.
+    """
     return get_controller().resource_content(resource_id)
 
 

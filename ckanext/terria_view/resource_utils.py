@@ -88,7 +88,8 @@ class ResourceUtils:
         return hmac.compare_digest(signature, expected)
 
     def build_proxy_resource_url(self, resource_id: str,
-                                 ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL) -> str:
+                                 ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL,
+                                 filename: Optional[str] = None) -> str:
         """
         Build the CKAN-hosted proxy URL for a private resource.
 
@@ -96,11 +97,27 @@ class ResourceUtils:
         resolve the Azure SAS) and returns it with open CORS headers, so the
         cross-domain Terria iframe can load it without depending on the
         Storage Account's CORS configuration.
+
+        The ``filename`` segment is appended to the path so that TerriaJS
+        client-side validations that inspect the URL extension (e.g. the
+        shapefile catalog item requires a ``.zip`` URL, GeoJSON expects
+        ``.geojson``) don't reject the proxy URL. The filename is not used
+        for authorization — the signed token alone gates access.
         """
         site_url = (self.config_manager.site_url
                     or toolkit.config.get('ckan.site_url', '') or '').rstrip('/')
         token = self.generate_resource_token(resource_id, ttl_seconds=ttl_seconds)
-        return f"{site_url}/api/terria/resource/{resource_id}/content?token={token}"
+
+        path = f"/api/terria/resource/{resource_id}/content"
+        if filename:
+            # Preserve extension (important for Terria validations) while making
+            # the segment URL-safe. quote() leaves ``.`` unchanged so ``file.zip``
+            # stays ``file.zip``.
+            safe_filename = urllib.parse.quote(filename, safe='.-_')
+            if safe_filename:
+                path = f"{path}/{safe_filename}"
+
+        return f"{site_url}{path}?token={token}"
 
     def _to_absolute_url(self, url: str) -> str:
         """
@@ -274,7 +291,13 @@ class ResourceUtils:
         # devuelve el archivo con CORS abierto y sin depender de esa configuración.
         if is_private_dataset and is_logged_user and is_uploaded_resource and resource.get('id'):
             try:
-                return self.build_proxy_resource_url(resource['id'])
+                # Preserve the original filename in the URL path so TerriaJS
+                # client-side extension checks (e.g. shp requires .zip, geojson
+                # requires .geojson) don't reject the proxy URL.
+                proxy_filename = self._extract_upload_filename(resource, resource_url)
+                return self.build_proxy_resource_url(
+                    resource['id'], filename=proxy_filename or None
+                )
             except Exception:
                 # Proxy URL couldn't be built (e.g. missing site_url). Fall through
                 # to the uploader-resolved SAS so we at least return something usable
@@ -333,17 +356,26 @@ class ResourceUtils:
             return None
 
         raw_url = resource.get('url') or ''
-        filename = self._extract_upload_filename(resource, raw_url) or os.path.basename(raw_url or '')
+        filename = self._extract_upload_filename(resource, raw_url)
+        if not filename and raw_url:
+            # Last-ditch basename in case upload URL is neither ``/download/`` nor
+            # a clean path (e.g. already-SAS-style URL in ``resource.url``).
+            filename = os.path.basename(urllib.parse.urlparse(raw_url).path or '')
+
         content_type = resource.get('mimetype')
 
         if resource.get('url_type') == 'upload' or raw_url.startswith('/'):
+            # cloudstorage.get_url_from_filename expects a plain basename
+            # (``foo.csv``) — passing a full URL here builds a broken SAS path.
+            if not filename:
+                return None
             try:
                 upload = uploader.get_resource_uploader(resource)
                 resolved = upload.get_url_from_filename(
-                    resource['id'], filename or raw_url, content_type=content_type
+                    resource['id'], filename, content_type=content_type
                 )
                 if resolved:
-                    return resolved, content_type, filename or None
+                    return resolved, content_type, filename
             except Exception:
                 pass
 

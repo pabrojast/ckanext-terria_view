@@ -101,7 +101,8 @@ Uso:
 ### Proxy de recursos privados
 
 - `GET /api/terria/resource/<resource_id>/content?token=<token>`
-- `HEAD /api/terria/resource/<resource_id>/content?token=<token>`
+- `GET /api/terria/resource/<resource_id>/content/<filename>?token=<token>`
+- `HEAD` en ambas variantes.
 
 Uso:
 
@@ -111,6 +112,7 @@ Comportamiento:
 
 - exige un `token` HMAC firmado por `ResourceUtils.generate_resource_token`.
 - el token está atado al `resource_id` y a una expiración (default 1 hora); no es transferible entre recursos y no puede falsificarse sin el secret de CKAN.
+- el segmento `<filename>` es **cosmético**: TerriaJS valida la extensión de la URL antes de hacer fetch (p. ej. shapefiles requieren `.zip`, GeoJSON espera `.geojson`). Se preserva en el path para no romper esas validaciones; la autorización sigue siendo solo el token.
 - CKAN resuelve la URL SAS server-side usando el uploader, descarga el blob con `ignore_auth=True`, y devuelve el contenido con `Access-Control-Allow-Origin: *`.
 - se conservan `Content-Length`, `ETag`, `Last-Modified`, `Accept-Ranges`, `Content-Disposition` cuando el upstream los expone.
 - si el upstream responde `>= 400`, el endpoint devuelve `502` con el cuerpo recortado del error para facilitar debugging.
