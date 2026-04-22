@@ -642,6 +642,20 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
         
         include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))
+        private_catalog_data = (
+            self._get_private_datasets_catalog(user_context)
+            if include_private_catalog else None
+        )
+
+        # Merge private catalog as an extra init source into the same encoded_config
+        # so TerriaJS sees everything in the original ``#start=`` payload. This keeps
+        # the cross-origin iframe flow identical to public views (workbench and
+        # timeline populate reliably) while still making the user's private datasets
+        # available in the catalog tree.
+        if encoded_config and private_catalog_data:
+            encoded_config = self._merge_private_catalog_into_encoded_config(
+                encoded_config, private_catalog_data
+            )
 
         return {
             'title': view_title,
@@ -652,8 +666,27 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'view_id': view.get('id'),
             'resource_id': resource.get('id'),
             'user_logged_in': bool(user_context.get('user')),
-            'private_catalog_data': self._get_private_datasets_catalog(user_context) if include_private_catalog else None
+            'private_catalog_data': private_catalog_data
         }
+
+    def _merge_private_catalog_into_encoded_config(self, encoded_config, private_catalog_data):
+        """
+        Append the private catalog as an additional initSource inside encoded_config.
+
+        Returns the re-encoded (URL-quoted) config string. On any error, returns
+        the original ``encoded_config`` so the main resource view still loads.
+        """
+        try:
+            decoded = urllib.parse.unquote(encoded_config)
+            config_dict = json.loads(decoded)
+            if isinstance(config_dict, dict):
+                init_sources = config_dict.setdefault('initSources', [])
+                if isinstance(init_sources, list) and private_catalog_data:
+                    init_sources.append(private_catalog_data)
+            return urllib.parse.quote(json.dumps(config_dict))
+        except Exception as e:
+            self._debug_print(f"Could not merge private catalog into encoded_config: {e}")
+            return encoded_config
     
     def view_template(self, context, data_dict):
         """

@@ -25,7 +25,17 @@
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)",
-      "Bash(python3 test_private_datasets.py)"
+      "Bash(python3 test_private_datasets.py)",
+      "Bash(kubectl get *)",
+      "Bash(kubectl -n ckan get pods -o wide)",
+      "Bash(kubectl -n ckan describe deployment ckan)",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- grep -c \"postPrivateCatalogToIframe\\\\|postConfigToIframe\" /srv/app/src_extensions/ckanext-terria_view/ckanext/terria_view/templates/terria.html)",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- find /srv/app -name terria.html)",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- find / -name \"terria.html\")",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- grep -c \"postPrivateCatalogToIframe\\\\|postConfigToIframe\" /app/src/ckanext-terria-view/ckanext/terria_view/templates/terria.html)",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- grep -n \"terria_instance_url }}#start={{ encoded_config }}\" /app/src/ckanext-terria-view/ckanext/terria_view/templates/terria.html)",
+      "Bash(kubectl -n ckan exec ckan-577495f8d-v5bcj -- grep -nE \"content/|content\\\\?\" /app/src/ckanext-terria-view/ckanext/terria_view/resource_utils.py)",
+      "Bash(kubectl *)"
     ],
     "deny": [],
     "ask": [],

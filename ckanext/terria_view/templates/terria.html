@@ -39,11 +39,9 @@
   }
 
   {% if encoded_config %}
-  // Base Terria config for the current resource view. Always loaded via
-  // ``#start=`` so the resource model ends up in the workbench exactly the
-  // same way public views do. The private catalog (other datasets visible to
-  // the user) is injected separately via postMessage so the URL fragment
-  // doesn't bloat.
+  // Config sent to a popup window when user clicks "View in separate window".
+  // The same encoded_config already includes the private catalog (merged
+  // server-side) when the viewer sits on a private package.
   var terriaStartConfig = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
 
   window.terriaJSPreview = function()
@@ -55,13 +53,6 @@
     }
     var destination = new (URL || webkitURL)(url);
     var message = JSON.parse(JSON.stringify(terriaStartConfig));
-    {% if user_logged_in and private_catalog_data %}
-    // Popup path can't rely on postMessage timing, embed the private catalog.
-    var terriaPrivateCatalogPopup = {{ private_catalog_data | tojson }};
-    if (message.initSources && terriaPrivateCatalogPopup) {
-      message.initSources.push(terriaPrivateCatalogPopup);
-    }
-    {% endif %}
     makePopupSendMessage(message, destination.origin, destination.pathname);
   };
   {% endif %}
@@ -84,50 +75,12 @@
   var terriaIframeReady = false;
   var pendingShareDataCallbacks = {};
 
-  {% if user_logged_in and private_catalog_data and encoded_config %}
-  // Private catalog (datasets visible to the logged-in user) — sent to the
-  // iframe AFTER it is ready, as an additional init source. The main resource
-  // view itself was already loaded via ``#start=`` on the iframe src.
-  var terriaPrivateCatalog = {{ private_catalog_data | tojson }};
-  var terriaPrivateCatalogDelivered = false;
-
-  var terriaTargetOrigin;
-  try { terriaTargetOrigin = new URL(terriaInstanceUrl, window.location.href).origin; } catch (e) {
-    console.warn('Could not parse TerriaJS origin, private catalog injection disabled');
-  }
-
-  function postPrivateCatalogToIframe() {
-    if (!terriaTargetOrigin || terriaPrivateCatalogDelivered) return;
-    var iframe = document.getElementById('terria-iframe');
-    if (!iframe || !iframe.contentWindow || !terriaPrivateCatalog) {
-      return;
-    }
-    var payload = JSON.parse(JSON.stringify(terriaPrivateCatalog));
-    payload.allowOrigin = window.location.origin;
-    iframe.contentWindow.postMessage(payload, terriaTargetOrigin);
-    terriaPrivateCatalogDelivered = true;
-  }
-  {% endif %}
-
   // Listen for messages from TerriaJS iframe
   window.addEventListener('message', function(event) {
-    {% if user_logged_in and private_catalog_data and encoded_config %}
-    // Origin check applies only for flows where we actually post private data.
-    if (terriaTargetOrigin && event.origin !== terriaTargetOrigin) {
-      return;
-    }
-    {% endif %}
-
     // Handle "ready" message from TerriaJS
     if (event.data === 'ready') {
       terriaIframeReady = true;
       console.log('TerriaJS iframe is ready');
-      {% if user_logged_in and private_catalog_data and encoded_config %}
-      var iframe = document.getElementById('terria-iframe');
-      if (iframe && event.source === iframe.contentWindow) {
-        postPrivateCatalogToIframe();
-      }
-      {% endif %}
       return;
     }
 
@@ -241,29 +194,12 @@
       saveBtn.disabled = false;
     }
   }
-
-  {% if user_logged_in and private_catalog_data and encoded_config %}
-  // Fallback: if the ``ready`` message is missed, still try to deliver the
-  // private catalog once the iframe finishes loading.
-  document.addEventListener('DOMContentLoaded', function() {
-    var iframe = document.getElementById('terria-iframe');
-    if (iframe) {
-      iframe.addEventListener('load', function() {
-        setTimeout(postPrivateCatalogToIframe, 1500);
-      });
-    }
-  });
-  {% endif %}
-
 </script>
 <div style="margin-bottom: 10px;" class="pull-right">
   <a class="btn"
     target="_blank"
     {% if resource and resource.format and resource.format.lower() == 'json' %}
     href="{{ terria_instance_url }}#{{ resource.url }}"
-    {% elif encoded_config and user_logged_in and private_catalog_data %}
-    href="{{ terria_instance_url }}"
-    onclick="window.terriaJSPreview(); return false;"
     {% elif encoded_config %}
     href="{{ terria_instance_url }}#start={{ encoded_config }}"
     {% else %}
@@ -291,9 +227,9 @@
     allowFullScreen mozAllowFullScreen webkitAllowFullScreen>
   </iframe>
 {% elif encoded_config %}
-  {# Always load the current resource via #start= — this is what populates
-     the workbench/timeline. Private mode adds an extra init source (other
-     private datasets visible to the user) via postMessage on ``ready``. #}
+  {# Same #start= flow for public and private views. Private catalog is
+     merged into encoded_config server-side so no postMessage dance is
+     needed; this is what reliably populates workbench/timeline. #}
   <iframe
     id="terria-iframe"
     src="{{ terria_instance_url }}#start={{ encoded_config }}"

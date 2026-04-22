@@ -137,42 +137,51 @@ def test_file_cache_manager_docstring_mentions_public_only():
     print("  PASS: FileCacheManager documents public-only cache policy")
 
 
-def test_template_has_private_catalog_injection():
-    """Test that template contains private catalog injection logic."""
+def test_template_has_iframe_with_hash_start():
+    """Template must always load the resource via #start= so TerriaJS populates workbench."""
     with open('ckanext/terria_view/templates/terria.html', 'r') as f:
         content = f.read()
 
-    assert 'private_catalog_data' in content, "Template should reference private_catalog_data"
-    assert 'user_logged_in' in content, "Template should check user_logged_in"
-    assert 'terriaPrivateCatalog' in content, "Template should have JS var terriaPrivateCatalog"
-    assert 'postPrivateCatalogToIframe' in content, "Template should have postPrivateCatalogToIframe function"
-    assert 'terria-iframe' in content, "Template should have id=terria-iframe on iframes"
-    print("  PASS: Template has private catalog injection logic")
-
-
-def test_template_private_mode_uses_hash_start_for_main_resource():
-    """Private view iframe must load the resource via ``#start=`` so workbench populates."""
-    with open('ckanext/terria_view/templates/terria.html', 'r') as f:
-        content = f.read()
-
-    # The iframe for private views must carry ``#start={{ encoded_config }}`` —
-    # otherwise TerriaJS receives the resource config via postMessage only,
-    # which does not populate ``workbench``/``timeline`` the same way.
     assert 'src="{{ terria_instance_url }}#start={{ encoded_config }}"' in content, (
         "Template must load the resource via #start= in the iframe src for both public "
-        "and private views; only the private catalog goes via postMessage."
+        "and private views. Private catalog is merged server-side into encoded_config."
     )
-    print("  PASS: private view iframe still uses #start= for the main resource")
+    # The legacy postMessage private-catalog dance should no longer be in the template —
+    # server-side merge replaces it.
+    assert 'postConfigToIframe' not in content
+    assert 'postPrivateCatalogToIframe' not in content
+    assert 'terria-iframe' in content
+    print("  PASS: template uses #start= consistently (no postMessage private-catalog path)")
+
+
+def test_plugin_merges_private_catalog_into_encoded_config():
+    """setup_template_variables must merge private_catalog_data into encoded_config."""
+    with open('ckanext/terria_view/plugin.py', 'r') as f:
+        content = f.read()
+
+    assert '_merge_private_catalog_into_encoded_config' in content, (
+        "plugin.py should define _merge_private_catalog_into_encoded_config"
+    )
+    assert 'init_sources.append(private_catalog_data)' in content, (
+        "merge helper must append the private catalog as an initSource"
+    )
+    print("  PASS: plugin merges private catalog into encoded_config server-side")
 
 
 def test_template_private_only_for_logged_in():
-    """Test that private injection is conditional on user being logged in."""
-    with open('ckanext/terria_view/templates/terria.html', 'r') as f:
+    """Private catalog generation/merge must be conditional on user+private package."""
+    # Since the template now only sees a pre-merged encoded_config, the
+    # conditional lives in plugin.py: we only generate/merge private_catalog_data
+    # when both user_context.user is set and the package is private.
+    with open('ckanext/terria_view/plugin.py', 'r') as f:
         content = f.read()
 
-    # Check that private catalog injection is guarded by user_logged_in
-    assert '{% if user_logged_in and private_catalog_data' in content
-    print("  PASS: Private catalog injection is conditional on user_logged_in")
+    assert (
+        "include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))"
+        in content
+    )
+    assert 'if encoded_config and private_catalog_data' in content
+    print("  PASS: Private catalog generation is guarded by user+private conditions")
 
 
 def test_setup_template_variables_returns_private_fields():
@@ -255,6 +264,49 @@ def test_private_shapefile_proxy_url_preserves_zip_extension():
     )
     assert '/api/terria/resource/shp-1/content/member-states.zip' in resolved
     print("  PASS: shapefile proxy URL preserves .zip extension for TerriaJS validation")
+
+
+def test_proxy_url_preserves_extension_for_all_uploaded_formats():
+    """Proxy URL must preserve every upload extension TerriaJS validates client-side."""
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    ckan_plugins_toolkit_mock.config = {
+        'ckan.site_url': 'https://test.example.org',
+        'beaker.session.secret': 'multi-fmt-secret'
+    }
+    utils = ResourceUtils(ConfigManager(site_url='https://test.example.org'))
+    package = {'id': 'pkg', 'private': True}
+    user_ctx = {'user': 'tester'}
+
+    # (format, filename, expected extension in proxy URL path)
+    cases = [
+        ('csv', 'hourly_precipitation_data.csv', '.csv'),
+        ('geojson', 'country-boundaries.geojson', '.geojson'),
+        ('tif', 'dem.tif', '.tif'),
+        ('tiff', 'ndvi.tiff', '.tiff'),
+        ('geotiff', 'elevation.tiff', '.tiff'),
+        ('cog', 'landcover.tif', '.tif'),
+        ('kml', 'markers.kml', '.kml'),
+        ('czml', 'flight.czml', '.czml'),
+    ]
+
+    for fmt, fname, expected_ext in cases:
+        resource = {
+            'id': f'res-{fmt}',
+            'format': fmt,
+            'url': f'/dataset/pkg/resource/res-{fmt}/download/{fname}',
+            'url_type': 'upload'
+        }
+        resolved = utils.get_resource_url(resource, package, user_ctx)
+        path = resolved.split('?', 1)[0]
+        assert path.endswith(expected_ext), (
+            f"format={fmt!r}: expected proxy URL to end with {expected_ext}, got {path!r}"
+        )
+        assert f'/api/terria/resource/res-{fmt}/content/{fname}' in resolved, (
+            f"format={fmt!r}: proxy URL did not include filename segment (got {resolved!r})"
+        )
+    print(f"  PASS: proxy URL preserves extension for {len(cases)} uploaded formats")
 
 
 def test_proxy_url_without_filename_still_valid():
@@ -611,12 +663,13 @@ if __name__ == '__main__':
         test_format_dataset_item_uses_resource_utils_for_url,
         test_cache_manager_docstring_mentions_public_only,
         test_file_cache_manager_docstring_mentions_public_only,
-        test_template_has_private_catalog_injection,
-        test_template_private_mode_uses_hash_start_for_main_resource,
+        test_template_has_iframe_with_hash_start,
+        test_plugin_merges_private_catalog_into_encoded_config,
         test_template_private_only_for_logged_in,
         test_setup_template_variables_returns_private_fields,
         test_private_uploaded_resource_returns_proxy_url,
         test_private_shapefile_proxy_url_preserves_zip_extension,
+        test_proxy_url_preserves_extension_for_all_uploaded_formats,
         test_proxy_url_without_filename_still_valid,
         test_generate_and_verify_resource_token_roundtrip,
         test_expired_resource_token_is_rejected,
