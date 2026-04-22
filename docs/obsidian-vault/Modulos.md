@@ -48,13 +48,16 @@ Responsabilidades:
 
 - descubrir SLDs dentro de un dataset;
 - extraer bounds desde `spatial` GeoJSON;
-- resolver URL efectiva del recurso;
+- resolver URL efectiva del recurso (público directo vs proxy CKAN firmado para privados);
+- firmar y verificar tokens HMAC del proxy de recursos privados;
+- resolver la URL upstream (SAS) que el proxy debe stremear;
 - decodificar nombres y parsear URLs de configuración custom.
 
 Tocar aquí cuando:
 
 - cambie la procedencia de bounds;
 - cambie la lógica para recursos privados o subidos a CKAN;
+- cambie el formato/TTL del token del proxy o el secret utilizado para firmarlo;
 - cambie el tratamiento de URLs `#start` o `#share`.
 
 ### `ckanext/terria_view/terria_config_builder.py`
@@ -116,16 +119,18 @@ Blueprint Flask que expone la API.
 Responsabilidades:
 
 - endpoints JSON y endpoints de archivo;
-- respuestas CORS;
+- respuestas CORS (incluye preflight con `Range`);
 - regeneración asíncrona del catálogo completo;
 - guardado de `custom_config` desde la UI;
-- catálogo de datasets privados del usuario.
+- catálogo de datasets privados del usuario;
+- proxy streaming de recursos privados (`/api/terria/resource/<id>/content`) validado por token firmado.
 
 Tocar aquí cuando:
 
 - cambien rutas o contratos HTTP;
 - haya que reforzar seguridad o autorización;
-- cambie la forma de servir archivos cacheados.
+- cambie la forma de servir archivos cacheados;
+- se quiera soportar `Range` requests o caching avanzado en el proxy.
 
 ### `ckanext/terria_view/cache_manager.py`
 

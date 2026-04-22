@@ -24,7 +24,8 @@
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view\\ckanext\\terria_view/**)",
       "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)",
-      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)"
+      "Read(/C:\\Users\\pablo\\Proyectos\\ckanext-terria_view/**)",
+      "Bash(python3 test_private_datasets.py)"
     ],
     "deny": [],
     "ask": [],

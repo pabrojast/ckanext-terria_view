@@ -2,26 +2,105 @@
 """
 Módulo con utilidades para manejo de recursos.
 """
+import hashlib
+import hmac
 import json
-import urllib.request
-import urllib.parse
 import os.path
-from typing import Dict, List, Optional, Tuple, Any
+import time
+import urllib.parse
+import urllib.request
+from typing import Any, Dict, List, Optional, Tuple
 from ckan.lib import uploader
 from ckan.plugins import toolkit
 
 
+# Shared token TTL for private resource proxy URLs (in seconds).
+RESOURCE_PROXY_TOKEN_TTL = 3600
+
+
 class ResourceUtils:
     """Utilidades para manejo de recursos."""
-    
+
     def __init__(self, config_manager):
         """
         Inicializa las utilidades de recursos.
-        
+
         Args:
             config_manager: Instancia del gestor de configuraciones
         """
         self.config_manager = config_manager
+
+    def _get_token_secret(self) -> bytes:
+        """
+        Retrieve the HMAC secret used to sign resource proxy tokens.
+
+        Falls back across common CKAN secret keys so tokens stay valid across
+        environments. Returning bytes for HMAC compatibility.
+        """
+        for key in ('beaker.session.secret', 'SECRET_KEY', 'flask.secret_key'):
+            value = toolkit.config.get(key) if toolkit.config else None
+            if value:
+                return str(value).encode('utf-8')
+        # Last-resort fallback; CKAN deployments should always set a secret.
+        return b'ckanext-terria-view-proxy-fallback'
+
+    def generate_resource_token(self, resource_id: str,
+                                ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL) -> str:
+        """
+        Generate a signed access token for the resource proxy endpoint.
+
+        Token format: ``<expiry_unix>.<hex_hmac_sha256>``. Anyone holding the
+        token can fetch the resource until expiry, similar in spirit to a SAS
+        token but served by CKAN with open CORS.
+        """
+        if not resource_id:
+            raise ValueError('resource_id is required to generate a token')
+
+        expiry = int(time.time()) + max(60, int(ttl_seconds))
+        payload = f"{resource_id}|{expiry}".encode('utf-8')
+        signature = hmac.new(
+            self._get_token_secret(), payload, hashlib.sha256
+        ).hexdigest()
+        return f"{expiry}.{signature}"
+
+    def verify_resource_token(self, resource_id: str, token: str) -> bool:
+        """
+        Validate a signed proxy token for a specific resource.
+
+        Uses constant-time comparison to resist timing attacks.
+        """
+        if not resource_id or not token or '.' not in token:
+            return False
+        expiry_str, _, signature = token.partition('.')
+        if not signature:
+            return False
+        try:
+            expiry = int(expiry_str)
+        except (TypeError, ValueError):
+            return False
+        if expiry < int(time.time()):
+            return False
+
+        payload = f"{resource_id}|{expiry}".encode('utf-8')
+        expected = hmac.new(
+            self._get_token_secret(), payload, hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(signature, expected)
+
+    def build_proxy_resource_url(self, resource_id: str,
+                                 ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL) -> str:
+        """
+        Build the CKAN-hosted proxy URL for a private resource.
+
+        The proxy streams the file server-side (using the CKAN uploader to
+        resolve the Azure SAS) and returns it with open CORS headers, so the
+        cross-domain Terria iframe can load it without depending on the
+        Storage Account's CORS configuration.
+        """
+        site_url = (self.config_manager.site_url
+                    or toolkit.config.get('ckan.site_url', '') or '').rstrip('/')
+        token = self.generate_resource_token(resource_id, ttl_seconds=ttl_seconds)
+        return f"{site_url}/api/terria/resource/{resource_id}/content?token={token}"
 
     def _to_absolute_url(self, url: str) -> str:
         """
@@ -174,23 +253,34 @@ class ResourceUtils:
     def get_resource_url(self, resource: Dict, package: Dict, user_context: Dict) -> str:
         """
         Obtiene la URL apropiada para un recurso considerando permisos y ubicación.
-        
+
         Args:
             resource: Diccionario con datos del recurso
             package: Diccionario con datos del paquete
             user_context: Contexto del usuario
-            
+
         Returns:
             URL del recurso
         """
         resource_url = resource.get("url") or ""
-        
+
         is_private_dataset = package.get("private") is True
         is_logged_user = bool(user_context.get('user'))
         is_uploaded_resource = resource.get('url_type') == 'upload' or resource_url.startswith('/')
 
-        # Para recursos privados subidos, usar uploader de CKAN para obtener la URL
-        # correcta (incluye casos de CSV y rutas internas).
+        # Recursos privados subidos: servirlos vía el proxy CKAN con token firmado.
+        # Exponer la URL SAS de Azure directamente falla cross-origin si el Storage
+        # Account no tiene CORS configurado para el dominio de Terria; el proxy
+        # devuelve el archivo con CORS abierto y sin depender de esa configuración.
+        if is_private_dataset and is_logged_user and is_uploaded_resource and resource.get('id'):
+            try:
+                return self.build_proxy_resource_url(resource['id'])
+            except Exception:
+                # Proxy URL couldn't be built (e.g. missing site_url). Fall through
+                # to the uploader-resolved SAS so we at least return something usable
+                # even if it will hit the CORS limitation.
+                pass
+
         if is_private_dataset and is_logged_user and is_uploaded_resource:
             try:
                 upload = uploader.get_resource_uploader(resource)
@@ -207,6 +297,59 @@ class ResourceUtils:
 
         # Terria suele correr en otro dominio; las rutas relativas deben salir absolutas.
         return self._to_absolute_url(uploaded_url)
+
+    def resolve_private_resource_source(self, resource_id: str) -> Optional[Tuple[str, Optional[str], Optional[str]]]:
+        """
+        Resolve the upstream SAS (or equivalent) URL for streaming a private resource.
+
+        Runs with ``ignore_auth`` because the caller (the proxy endpoint) must
+        already have validated the signed token before calling this.
+
+        Returns:
+            Tuple ``(url, content_type, filename)`` or None when the resource
+            can't be resolved.
+        """
+        if not resource_id:
+            return None
+
+        # Build a self-sufficient sysadmin-equivalent context: ``resource_show``
+        # may be invoked outside a request (auth already validated by token).
+        try:
+            import ckan.model as _model
+            lookup_context = {
+                'model': _model,
+                'session': _model.Session,
+                'user': 'ckan.system',
+                'ignore_auth': True,
+            }
+        except Exception:
+            lookup_context = {'ignore_auth': True}
+
+        try:
+            resource = toolkit.get_action('resource_show')(
+                lookup_context, {'id': resource_id}
+            )
+        except Exception:
+            return None
+
+        raw_url = resource.get('url') or ''
+        filename = self._extract_upload_filename(resource, raw_url) or os.path.basename(raw_url or '')
+        content_type = resource.get('mimetype')
+
+        if resource.get('url_type') == 'upload' or raw_url.startswith('/'):
+            try:
+                upload = uploader.get_resource_uploader(resource)
+                resolved = upload.get_url_from_filename(
+                    resource['id'], filename or raw_url, content_type=content_type
+                )
+                if resolved:
+                    return resolved, content_type, filename or None
+            except Exception:
+                pass
+
+        if raw_url:
+            return self._to_absolute_url(raw_url), content_type, filename or None
+        return None
     
     def decode_names_in_object(self, obj: Any) -> Any:
         """

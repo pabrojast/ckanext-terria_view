@@ -30,6 +30,20 @@ Revisar:
 - si se usa `custom_config`, verificar que en el `#start` final exista al menos un item de datos en `initSources[].workbench` (si queda vacío, el mapa no abre capas por defecto).
 - en CSV con estilos custom, evitar combinaciones inconsistentes como `mapType: "continuous"` junto a paletas `Category*` para columnas categóricas; en ese caso usar `mapType: "enum"` y `colorColumn`.
 
+## Dataset privado: el item aparece en `models` pero `workbench` y `timeline` quedan vacíos
+
+Síntoma: al abrir una vista de un dataset **privado**, Terria recibe el config pero el CSV/SHP/COG no carga; el `shareData` muestra el modelo con `show: true` y `url` SAS, pero `workbench: []`, `timeline: []` y faltan `currentTime`/`startTime`/`stopTime`.
+
+Causa: Terria (en otro dominio) intenta hacer `fetch` directo a la URL SAS de Azure. Si el Storage Account no tiene configurado CORS para el origin del iframe Terria, la carga del contenido falla y Terria no completa la inicialización del modelo.
+
+Fix en el plugin:
+
+- `ResourceUtils.get_resource_url()` devuelve una URL proxy CKAN firmada en lugar de la SAS directa. Flujo: `GET /api/terria/resource/<id>/content?token=<token>` → CKAN resuelve la SAS server-side y stremea el contenido con `Access-Control-Allow-Origin: *`.
+- Verificar que el endpoint esté accesible y responda `200` al hacer `GET` con token válido. Si devuelve `401` con `Invalid or expired token`, revisar `beaker.session.secret`/`SECRET_KEY` y que el mismo proceso CKAN haya generado el token (tokens firmados con otro secret no verifican).
+- Si responde `502`, es que Azure rechazó la SAS: token del uploader expirado, permisos cambiados, o el blob fue movido.
+
+Alternativa sin cambios en código: configurar CORS en el Storage Account (allowed origins = dominio del Terria) para que la URL SAS directa funcione. En ese caso el proxy queda como defensa en profundidad.
+
 ## El estilo SLD no se aplica
 
 Revisar:

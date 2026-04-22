@@ -98,6 +98,23 @@ Uso:
 
 - construir un catálogo Terria con datasets privados accesibles al usuario autenticado.
 
+### Proxy de recursos privados
+
+- `GET /api/terria/resource/<resource_id>/content?token=<token>`
+- `HEAD /api/terria/resource/<resource_id>/content?token=<token>`
+
+Uso:
+
+- permite que el iframe de Terria (que vive en otro dominio y no tiene sesión CKAN) descargue recursos privados sin depender de la configuración CORS del Storage Account Azure.
+
+Comportamiento:
+
+- exige un `token` HMAC firmado por `ResourceUtils.generate_resource_token`.
+- el token está atado al `resource_id` y a una expiración (default 1 hora); no es transferible entre recursos y no puede falsificarse sin el secret de CKAN.
+- CKAN resuelve la URL SAS server-side usando el uploader, descarga el blob con `ignore_auth=True`, y devuelve el contenido con `Access-Control-Allow-Origin: *`.
+- se conservan `Content-Length`, `ETag`, `Last-Modified`, `Accept-Ranges`, `Content-Disposition` cuando el upstream los expone.
+- si el upstream responde `>= 400`, el endpoint devuelve `502` con el cuerpo recortado del error para facilitar debugging.
+
 ### Preflight CORS
 
 - `OPTIONS /api/terria/<path:path>`

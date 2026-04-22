@@ -80,6 +80,13 @@ Lista separada por comas de extras a remover.
 
 Usado por `FileCacheManager` como primera opción para guardar JSONs cacheados.
 
+### `beaker.session.secret` / `SECRET_KEY`
+
+Secret HMAC que `ResourceUtils.generate_resource_token` utiliza para firmar los tokens del proxy de recursos privados (`/api/terria/resource/<id>/content`).
+
+- Debe estar seteado; en caso contrario hay un fallback inseguro (`ckanext-terria-view-proxy-fallback`) que invalidaría el propósito del token.
+- Si se rota, todos los tokens emitidos antes del cambio dejan de verificar — las vistas privadas ya cargadas reintentarán con tokens nuevos al recargar.
+
 ## Defaults observados
 
 - `default_title`: `Terria Viewer`
