@@ -4,6 +4,7 @@ Module for processing SLD (Styled Layer Descriptor) files.
 Enhanced for better TerriaJS compatibility.
 """
 import os
+import time
 import urllib.request
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
@@ -355,36 +356,77 @@ class SLDProcessor:
             content = self._fetch_local_file_content(sld_url)
         else:
             content = self._fetch_local_file_content(sld_url)
-        
-        self._sld_content_cache[sld_url] = content
+
+        # Only cache successful fetches. Caching None poisons the cache across
+        # the lifetime of the worker when an upstream (e.g. Varnish) returns a
+        # transient error like 429, silently stripping styles from every
+        # subsequent catalog response.
+        if content:
+            self._sld_content_cache[sld_url] = content
         return content
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
-        """Fetch content from HTTP/HTTPS URL."""
-        try:
-            request = urllib.request.Request(url)
-            request.add_header('User-Agent', 'CKAN-TerriaView/1.0')
-            request.add_header('Accept', 'application/xml, text/xml, */*')
-            
-            with urllib.request.urlopen(request, timeout=30) as response:
-                content = response.read()
-                
-                # Validate content size (prevent extremely large files)
-                if len(content) > 10 * 1024 * 1024:  # 10MB limit
-                    print(f"SLD file too large: {len(content)} bytes")
-                    return None
-                
-                return content
-                
-        except urllib.error.HTTPError as e:
-            print(f"HTTP error fetching SLD from {url}: {e.code} {e.reason}")
-            return None
-        except urllib.error.URLError as e:
-            print(f"URL error fetching SLD from {url}: {e.reason}")
-            return None
-        except Exception as e:
-            print(f"Unexpected error fetching SLD from {url}: {e}")
-            return None
+        """Fetch content from HTTP/HTTPS URL.
+
+        Retries on 429 (honoring Retry-After) and 5xx transient errors.
+        Varnish in front of CKAN throttles download URLs under burst load
+        (e.g. catalog regeneration fetching many SLDs), and a single 429
+        would otherwise leave the style permanently missing.
+        """
+        max_attempts = 4
+        base_backoff = 1.0
+
+        request = urllib.request.Request(url)
+        request.add_header('User-Agent', 'CKAN-TerriaView/1.0')
+        request.add_header('Accept', 'application/xml, text/xml, */*')
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    content = response.read()
+
+                    # Validate content size (prevent extremely large files)
+                    if len(content) > 10 * 1024 * 1024:  # 10MB limit
+                        print(f"SLD file too large: {len(content)} bytes")
+                        return None
+
+                    return content
+
+            except urllib.error.HTTPError as e:
+                retryable = e.code == 429 or 500 <= e.code < 600
+                if retryable and attempt < max_attempts:
+                    retry_after = 0.0
+                    try:
+                        header_value = e.headers.get('Retry-After') if e.headers else None
+                        if header_value:
+                            retry_after = float(header_value)
+                    except (TypeError, ValueError):
+                        retry_after = 0.0
+                    delay = max(retry_after, base_backoff * (2 ** (attempt - 1)))
+                    print(
+                        f"HTTP {e.code} fetching SLD from {url} "
+                        f"(attempt {attempt}/{max_attempts}); retrying in {delay:.1f}s"
+                    )
+                    time.sleep(delay)
+                    continue
+                print(f"HTTP error fetching SLD from {url}: {e.code} {e.reason}")
+                return None
+            except urllib.error.URLError as e:
+                if attempt < max_attempts:
+                    delay = base_backoff * (2 ** (attempt - 1))
+                    print(
+                        f"URL error fetching SLD from {url}: {e.reason} "
+                        f"(attempt {attempt}/{max_attempts}); retrying in {delay:.1f}s"
+                    )
+                    time.sleep(delay)
+                    continue
+                print(f"URL error fetching SLD from {url}: {e.reason}")
+                return None
+            except Exception as e:
+                print(f"Unexpected error fetching SLD from {url}: {e}")
+                return None
+
+        return None
     
     def _fetch_file_content(self, file_url: str) -> Optional[bytes]:
         """Fetch content from file:// URL."""
@@ -550,17 +592,17 @@ class SLDProcessor:
         
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
-            self._sld_result_cache[cache_key] = {}
+            # Don't cache transient fetch failures (e.g. Varnish 429); let the
+            # next call retry instead of silently serving empty styles forever.
             return {}
-        
+
         root = self.parse_sld_xml(sld_content)
         if root is None:
-            self._sld_result_cache[cache_key] = {}
             return {}
-        
+
         colors = []
         legend_items = []
-        
+
         try:
             # Look for ColorMap elements (can contain ColorMapEntry elements)
             color_maps = root.findall('.//sld:ColorMap', self.NAMESPACES)
@@ -706,10 +748,13 @@ class SLDProcessor:
                 render_options["single"]["domain"] = [min_val, max_val]
 
             result["renderOptions"] = render_options
-        
-        self._sld_result_cache[cache_key] = result
+
+        # Only cache meaningful results. An empty dict usually means the fetch
+        # or parse failed for a reason that may be transient.
+        if result:
+            self._sld_result_cache[cache_key] = result
         return result
-    
+
     def process_shp_sld(self, sld_url: str) -> Dict[str, Any]:
         """
         Process an SLD file for Shapefile resources following QGIS approach with enhanced TerriaJS compatibility.
@@ -740,14 +785,14 @@ class SLDProcessor:
         # Fetch and parse SLD content
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
+            # Don't cache transient fetch failures (e.g. Varnish 429); let the
+            # next call retry instead of silently serving empty styles forever.
             print(f"Failed to fetch SLD content from: {sld_url}")
-            self._sld_result_cache[cache_key] = {}
             return {}
-        
+
         root = self.parse_sld_xml(sld_content)
         if root is None:
             print(f"Failed to parse SLD XML from: {sld_url}")
-            self._sld_result_cache[cache_key] = {}
             return {}
         
         try:
@@ -755,7 +800,6 @@ class SLDProcessor:
             user_styles = self._find_user_styles(root)
             if not user_styles:
                 print("No UserStyle elements found in SLD")
-                self._sld_result_cache[cache_key] = {}
                 return {}
             
             # Process all UserStyle elements and merge rules
@@ -781,15 +825,17 @@ class SLDProcessor:
             
             # Build TerriaJS result based on renderer type
             result = self._build_terria_result(renderer_type, processed_data)
-            self._sld_result_cache[cache_key] = result
+            if result:
+                self._sld_result_cache[cache_key] = result
             return result
-            
+
         except Exception as e:
             print(f"Error processing SHP SLD: {e}")
             import traceback
             traceback.print_exc()
             fallback = self._create_fallback_result([])
-            self._sld_result_cache[cache_key] = fallback
+            if fallback:
+                self._sld_result_cache[cache_key] = fallback
             return fallback
     
     def _find_user_styles(self, root) -> List:
