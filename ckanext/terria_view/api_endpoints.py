@@ -756,41 +756,38 @@ class TerriaAPIController:
                     'q': '*:*'
                 })
                 
-                # Filter only private datasets and generate Terria catalog
-                catalog_members = []
-                
+                # Group private datasets by organization so the catalog
+                # tree reflects Org → Dataset → Resources, matching the
+                # public catalog layout.
+                from collections import OrderedDict
+                orgs = OrderedDict()
+
                 for dataset in search_result.get('results', []):
                     if not dataset.get('private', False):
                         continue
-                    
+
                     dataset_id = dataset.get('id')
                     dataset_title = dataset.get('title', dataset.get('name', 'Unknown'))
                     notes = dataset.get('notes', '')
                     resources = dataset.get('resources', [])
-                    
+
                     # Get organization info
-                    org = dataset.get('organization', {})
-                    if org:
-                        org_info = {
-                            'display_name': org.get('title', 'Unknown Organization'),
-                            'description': org.get('description', ''),
-                            'image_display_url': org.get('image_display_url', '')
-                        }
-                    else:
-                        org_info = {
-                            'display_name': 'Unknown Organization',
-                            'description': '',
-                            'image_display_url': ''
-                        }
-                    
+                    org = dataset.get('organization') or {}
+                    org_key = org.get('name') or '__no_org__'
+                    org_info = {
+                        'display_name': org.get('title') or org.get('name') or 'Unknown Organization',
+                        'description': org.get('description', '') or '',
+                        'image_display_url': org.get('image_display_url', '') or ''
+                    }
+
                     # Build dataset group with resources
                     dataset_members = []
-                    
+
                     for resource in resources:
                         resource_format = resource.get('format', '').lower()
                         if resource_format not in [f.lower() for f in self.generator.formatos_permitidos]:
                             continue
-                        
+
                         # Format resource as Terria item with styles
                         try:
                             formatted_item, total_views = self.generator.format_dataset_item(
@@ -798,7 +795,7 @@ class TerriaAPIController:
                                 package=dataset, user_context=context
                             )
                             dataset_members.append(formatted_item)
-                            
+
                             # Add additional views if they exist
                             if total_views > 1:
                                 for vi in range(1, total_views):
@@ -810,27 +807,54 @@ class TerriaAPIController:
                         except Exception as e:
                             # If formatting fails, skip this resource
                             continue
-                    
-                    # Only add dataset if it has Terria-compatible resources
-                    if dataset_members:
-                        catalog_members.append({
-                            "name": dataset_title,
-                            "type": "group",
-                            "members": dataset_members,
-                            "description": notes[:500] if notes else '',
-                            "info": [{
-                                "name": "About Dataset",
-                                "content": notes or ''
-                            }, {
-                                "name": "Organization",
-                                "content": org_info.get('display_name', '')
-                            }, {
-                                "name": "Access",
-                                "content": "Private Dataset"
-                            }],
-                            "infoSectionOrder": ["About Dataset", "Organization", "Access"]
-                        })
-                
+
+                    if not dataset_members:
+                        continue
+
+                    dataset_group = {
+                        "name": dataset_title,
+                        "type": "group",
+                        "members": dataset_members,
+                        "description": notes[:500] if notes else '',
+                        "info": [{
+                            "name": "About Dataset",
+                            "content": notes or ''
+                        }, {
+                            "name": "Organization",
+                            "content": org_info.get('display_name', '')
+                        }, {
+                            "name": "Access",
+                            "content": "Private Dataset"
+                        }],
+                        "infoSectionOrder": ["About Dataset", "Organization", "Access"]
+                    }
+
+                    bucket = orgs.setdefault(org_key, {
+                        'info': org_info,
+                        'datasets': [],
+                    })
+                    bucket['datasets'].append(dataset_group)
+
+                catalog_members = []
+                for org_key, bucket in orgs.items():
+                    org_info = bucket['info']
+                    catalog_members.append({
+                        "name": org_info['display_name'],
+                        "type": "group",
+                        "members": bucket['datasets'],
+                        "description": org_info.get('description', '') or '',
+                        "info": [{
+                            "name": f"Organization: {org_info['display_name']}",
+                            "content": (
+                                f"<img style=\"max-width:300px;width:100%\" "
+                                f"alt=\"{org_info['display_name']}\" "
+                                f"src=\"{org_info.get('image_display_url', '')}\" /><br/>"
+                                f"{org_info.get('description', '') or ''}"
+                            ) if org_info.get('image_display_url') else (org_info.get('description', '') or '')
+                        }],
+                        "infoSectionOrder": [f"Organization: {org_info['display_name']}"]
+                    })
+
                 # Create final Terria catalog configuration
                 config = {
                     "catalog": [{

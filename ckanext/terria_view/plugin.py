@@ -807,39 +807,47 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 'q': '*:*'
             })
             
-            catalog_members = []
             generator = TerriaJSONGenerator()
-            
+
+            # Group dataset entries by organization so the catalog tree
+            # mirrors the public catalog layout (Org → Dataset → Resources).
+            # ``orgs`` is keyed by org name (slug) so we keep stable order;
+            # if the dataset has no organization we bucket it under a
+            # synthetic ``"__no_org__"`` group with a friendlier label.
+            from collections import OrderedDict
+            orgs = OrderedDict()
+
             for dataset in search_result.get('results', []):
                 if not dataset.get('private', False):
                     continue
-                
+
                 dataset_id = dataset.get('id')
                 dataset_title = dataset.get('title', dataset.get('name', 'Unknown'))
                 notes = dataset.get('notes', '')
                 resources = dataset.get('resources', [])
-                
-                org = dataset.get('organization', {})
+
+                org = dataset.get('organization') or {}
+                org_key = org.get('name') or '__no_org__'
                 org_info = {
-                    'display_name': org.get('title', 'Unknown Organization') if org else 'Unknown Organization',
-                    'description': org.get('description', '') if org else '',
-                    'image_display_url': org.get('image_display_url', '') if org else ''
+                    'display_name': org.get('title') or org.get('name') or 'Unknown Organization',
+                    'description': org.get('description', '') or '',
+                    'image_display_url': org.get('image_display_url', '') or ''
                 }
-                
+
                 dataset_members = []
-                
+
                 for resource in resources:
                     resource_format = resource.get('format', '').lower()
                     if resource_format not in [f.lower() for f in generator.formatos_permitidos]:
                         continue
-                    
+
                     try:
                         formatted_item, total_views = generator.format_dataset_item(
                             resource, dataset_id, notes, org_info, 0,
                             package=dataset, user_context=user_context
                         )
                         dataset_members.append(formatted_item)
-                        
+
                         if total_views > 1:
                             for vi in range(1, total_views):
                                 additional_item, _ = generator.format_dataset_item(
@@ -849,29 +857,57 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                                 dataset_members.append(additional_item)
                     except Exception:
                         continue
-                
-                if dataset_members:
-                    catalog_members.append({
-                        "name": dataset_title,
-                        "type": "group",
-                        "members": dataset_members,
-                        "description": notes[:500] if notes else '',
-                        "info": [{
-                            "name": "About Dataset",
-                            "content": notes or ''
-                        }, {
-                            "name": "Organization",
-                            "content": org_info.get('display_name', '')
-                        }, {
-                            "name": "Access",
-                            "content": "Private Dataset"
-                        }],
-                        "infoSectionOrder": ["About Dataset", "Organization", "Access"]
-                    })
-            
-            if not catalog_members:
+
+                if not dataset_members:
+                    continue
+
+                dataset_group = {
+                    "name": dataset_title,
+                    "type": "group",
+                    "members": dataset_members,
+                    "description": notes[:500] if notes else '',
+                    "info": [{
+                        "name": "About Dataset",
+                        "content": notes or ''
+                    }, {
+                        "name": "Organization",
+                        "content": org_info.get('display_name', '')
+                    }, {
+                        "name": "Access",
+                        "content": "Private Dataset"
+                    }],
+                    "infoSectionOrder": ["About Dataset", "Organization", "Access"]
+                }
+
+                bucket = orgs.setdefault(org_key, {
+                    'info': org_info,
+                    'datasets': [],
+                })
+                bucket['datasets'].append(dataset_group)
+
+            if not orgs:
                 return None
-            
+
+            catalog_members = []
+            for org_key, bucket in orgs.items():
+                org_info = bucket['info']
+                catalog_members.append({
+                    "name": org_info['display_name'],
+                    "type": "group",
+                    "members": bucket['datasets'],
+                    "description": org_info.get('description', '') or '',
+                    "info": [{
+                        "name": f"Organization: {org_info['display_name']}",
+                        "content": (
+                            f"<img style=\"max-width:300px;width:100%\" "
+                            f"alt=\"{org_info['display_name']}\" "
+                            f"src=\"{org_info.get('image_display_url', '')}\" /><br/>"
+                            f"{org_info.get('description', '') or ''}"
+                        ) if org_info.get('image_display_url') else (org_info.get('description', '') or '')
+                    }],
+                    "infoSectionOrder": [f"Organization: {org_info['display_name']}"]
+                })
+
             config = {
                 "catalog": [{
                     "name": f"Private Datasets ({user})",
@@ -881,9 +917,9 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     "isOpen": True
                 }]
             }
-            
+
             config = generator.convert_sets_to_lists(config)
-            
+
             return config
             
         except Exception as e:
