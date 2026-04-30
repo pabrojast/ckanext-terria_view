@@ -101,7 +101,11 @@
 
   function requestShareDataFromIframe() {
     return new Promise(function(resolve, reject) {
-      var iframe = document.querySelector('iframe');
+      // Prefer the explicit Terria iframe id over a generic ``iframe``
+      // selector — the page can have other iframes (embeds, captchas)
+      // and we must not post our request to the wrong window.
+      var iframe = document.getElementById('terria-iframe')
+                || document.querySelector('iframe');
       if (!iframe || !iframe.contentWindow) {
         reject(new Error('TerriaJS iframe not found'));
         return;
@@ -126,20 +130,38 @@
         }
       };
 
-      // Send request to iframe
+      // Resolve target origin
       var targetOrigin = '*';
       try {
         var urlObj = new URL(terriaInstanceUrl);
-        targetOrigin = urlObj.origin;
+        if (urlObj && urlObj.origin) {
+          targetOrigin = String(urlObj.origin);
+        }
       } catch (e) {
         // Keep * if URL parsing fails
       }
 
-      iframe.contentWindow.postMessage({
+      // Build the payload from primitives and round-trip through JSON.
+      // We have seen Chrome throw ``Failed to execute 'postMessage' on
+      // 'Window': [object Array] could not be cloned`` here when an
+      // extension/polyfill leaks non-cloneable values into the prototype
+      // chain of plain objects. JSON.parse(JSON.stringify(...)) gives us
+      // a fresh, prototype-clean object containing only primitive
+      // strings — structured clone always accepts that.
+      var payload = JSON.parse(JSON.stringify({
         type: 'requestShareData',
-        requestId: requestId,
-        allowOrigin: window.location.origin
-      }, targetOrigin);
+        requestId: String(requestId),
+        allowOrigin: String(window.location.origin || '')
+      }));
+
+      try {
+        iframe.contentWindow.postMessage(payload, targetOrigin);
+      } catch (postErr) {
+        delete pendingShareDataCallbacks[requestId];
+        clearTimeout(timeout);
+        console.error('postMessage to Terria iframe failed', postErr, payload);
+        reject(postErr);
+      }
     });
   }
 
