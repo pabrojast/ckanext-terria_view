@@ -1,17 +1,29 @@
 # encoding: utf-8
 """
 Tests for stripping injected "Private Datasets (...)" branches out of saved
-TerriaJS configs (see ckanext.terria_view.terria_config_builder).
+TerriaJS configs (see ckanext.terria_view.terria_config_builder) and for the
+``scripts/strip_private_catalog_from_views.py`` cleanup helper.
 
 These exercise only the dependency-free helpers, so they run without CKAN.
 """
+import importlib.util
 import json
+import os
 import urllib.parse
 
 from ckanext.terria_view.terria_config_builder import (
+    payload_has_private_catalog,
     strip_private_catalog_branches,
     strip_private_catalog_from_terria_url,
 )
+
+# Load the standalone cleanup script as a module (no CKAN / psycopg2 needed for
+# its strip + clean_config helpers).
+_CLEANUP_PATH = os.path.join(os.path.dirname(__file__), 'scripts',
+                             'strip_private_catalog_from_views.py')
+_spec = importlib.util.spec_from_file_location('strip_private_catalog_from_views', _CLEANUP_PATH)
+cleanup_script = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(cleanup_script)
 
 
 def _share_state_with_private_catalog():
@@ -150,3 +162,77 @@ def test_strip_from_terria_url_passthrough():
     assert strip_private_catalog_from_terria_url(plain) == plain
     bad = "https://ihp-wins.unesco.org/terria/#start=not-json"
     assert strip_private_catalog_from_terria_url(bad) == bad
+
+
+def test_strip_from_terria_url_no_churn_without_private_catalog():
+    # A valid #start= URL with no private catalog must come back byte-for-byte
+    # identical (don't re-encode / churn the stored value for nothing).
+    state = {"initSources": [{
+        "workbench": ["My Layer"],
+        "models": {
+            "/": {"type": "group", "members": ["My Layer"]},
+            "My Layer": {"type": "csv", "url": "u", "knownContainerUniqueIds": ["/"]},
+        },
+    }]}
+    url = ("https://ihp-wins.unesco.org/terria/#start="
+           + urllib.parse.quote(json.dumps(state)))
+    assert strip_private_catalog_from_terria_url(url) == url
+
+
+def test_payload_has_private_catalog():
+    assert payload_has_private_catalog(_share_state_with_private_catalog()) is True
+    assert payload_has_private_catalog({"initSources": [{"models": {
+        "/": {"type": "group", "members": []}}}]}) is False
+    assert payload_has_private_catalog({"initSources": [{"catalog": [
+        {"name": "Private Datasets (x)", "type": "group"}]}]}) is True
+    assert payload_has_private_catalog("nope") is False
+
+
+# --- cleanup script (scripts/strip_private_catalog_from_views.py) -------------
+
+def _terria_url(state):
+    return "https://ihp-wins.unesco.org/terria/#start=" + urllib.parse.quote(json.dumps(state))
+
+
+def test_cleanup_clean_config_strips_both_fields():
+    url = _terria_url(_share_state_with_private_catalog())
+    config = {
+        "custom_config": url,
+        "style": "NA",
+        "terria_instance_url": "https://ihp-wins.unesco.org/terria/",
+        "filterable": True,
+        "__extras": {"custom_config_option": "custom", "custom_config_url": url},
+    }
+    new_config, changed = cleanup_script.clean_config(config, drop_extras_url=False)
+    assert changed is True
+    assert len(json.dumps(new_config)) < len(json.dumps(config))
+    for field in (new_config["custom_config"], new_config["__extras"]["custom_config_url"]):
+        payload = json.loads(urllib.parse.unquote(field.split("#start=", 1)[1]))
+        assert set(payload["initSources"][0]["models"]) == {"/", "HydroRIVERS - The Nile Basin"}
+    assert "secret" not in json.dumps(new_config)
+    # __extras kept (only the private branches were stripped, key not removed)
+    assert "custom_config_url" in new_config["__extras"]
+    # idempotent
+    assert cleanup_script.clean_config(new_config, drop_extras_url=False)[1] is False
+
+
+def test_cleanup_clean_config_drop_extras_url():
+    url = _terria_url(_share_state_with_private_catalog())
+    config = {"custom_config": url, "__extras": {"custom_config_url": url, "x": 1}}
+    new_config, changed = cleanup_script.clean_config(config, drop_extras_url=True)
+    assert changed is True
+    assert "custom_config_url" not in new_config["__extras"]
+    assert new_config["__extras"] == {"x": 1}
+
+
+def test_cleanup_clean_config_noop_on_plain_config():
+    plain = {"custom_config": "NA", "style": "NA",
+             "terria_instance_url": "x", "filterable": True}
+    assert cleanup_script.clean_config(dict(plain)) == (None, False)
+    # a small non-private custom_config + leftover form field: not touched in
+    # the default mode (no private branch to strip).
+    small = _terria_url({"initSources": [{"models": {
+        "/": {"type": "group", "members": ["L"]},
+        "L": {"type": "csv", "url": "u", "knownContainerUniqueIds": ["/"]}}}]})
+    cfg = {"custom_config": small, "__extras": {"custom_config_url": small}}
+    assert cleanup_script.clean_config(cfg, drop_extras_url=False) == (None, False)

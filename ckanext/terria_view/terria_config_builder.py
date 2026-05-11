@@ -108,6 +108,36 @@ def _strip_private_from_init_source(init_source) -> None:
     _strip_private_from_catalog_list(init_source.get('catalog'))
 
 
+def payload_has_private_catalog(data) -> bool:
+    """Cheap check: does ``data`` carry any ``Private Datasets (...)`` branch?
+
+    Used to avoid re-serializing (and thus churning the encoding of) a saved
+    state that has nothing to strip.
+    """
+    if not isinstance(data, dict):
+        return False
+    init_sources = data.get('initSources')
+    sources = init_sources if isinstance(init_sources, list) else []
+    for init_source in sources:
+        if not isinstance(init_source, dict):
+            continue
+        models = init_source.get('models')
+        if isinstance(models, dict):
+            if any(k != '/' and _looks_like_private_catalog_id(k) for k in models):
+                return True
+        catalog = init_source.get('catalog')
+        if isinstance(catalog, list) and any(
+            isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+        ):
+            return True
+    catalog = data.get('catalog')
+    if isinstance(catalog, list) and any(
+        isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+    ):
+        return True
+    return False
+
+
 def strip_private_catalog_branches(start_data):
     """Remove all ``Private Datasets (...)`` branches from a TerriaJS payload.
 
@@ -127,8 +157,9 @@ def strip_private_catalog_branches(start_data):
 def strip_private_catalog_from_terria_url(url):
     """Strip private-catalog branches from a ``https://.../#start=<json>`` URL.
 
-    Returns the rebuilt URL, or the original value unchanged when it is not a
-    string, has no ``#start=`` fragment, or fails to parse as JSON.
+    Returns the rebuilt URL (compactly re-encoded, like ``JSON.stringify``), or
+    the original value **unchanged** when it is not a string, has no ``#start=``
+    fragment, fails to parse as JSON, or contains no private catalog.
     """
     if not isinstance(url, str) or '#start=' not in url:
         return url
@@ -137,8 +168,12 @@ def strip_private_catalog_from_terria_url(url):
         data = json.loads(urllib.parse.unquote(encoded))
     except (ValueError, TypeError):
         return url
+    if not payload_has_private_catalog(data):
+        return url
     strip_private_catalog_branches(data)
-    return base + '#start=' + urllib.parse.quote(json.dumps(data))
+    return base + '#start=' + urllib.parse.quote(
+        json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    )
 
 
 class TerriaConfigBuilder:

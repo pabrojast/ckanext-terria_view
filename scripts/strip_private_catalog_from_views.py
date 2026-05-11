@@ -20,9 +20,12 @@ stops new bloat. This script cleans up rows that are already bloated.
 
 What it does, per ``terria_view`` row:
   * strips ``Private Datasets (...)`` branches from ``config.custom_config``
-    (the ``https://.../#start=<json>`` URL);
-  * drops the stale ``config.__extras.custom_config_url`` form-field copy;
-  * leaves everything else untouched.
+    AND from the stale ``config.__extras.custom_config_url`` copy (the bloated
+    views carry the same ``#start=`` payload in both fields) -- this is the fix;
+  * with ``--drop-extras-url``, removes ``config.__extras.custom_config_url``
+    entirely instead (a leftover form field that nothing relies on);
+  * leaves everything else untouched, and never rewrites a config it has
+    nothing to do for.
 
 Usage
 -----
@@ -31,6 +34,9 @@ Usage
 
     # actually apply
     python3 strip_private_catalog_from_views.py --apply
+
+    # also drop the stale __extras.custom_config_url duplicates
+    python3 strip_private_catalog_from_views.py --drop-extras-url --apply
 
     # explicit DB URL (otherwise CKAN_SQLALCHEMY_URL / SQLALCHEMY_URL env is used)
     python3 strip_private_catalog_from_views.py --db-url postgresql://user:pass@host/db --apply
@@ -47,14 +53,10 @@ Requires: psycopg2 (already present in CKAN images).
 import argparse
 import json
 import os
-import sys
 import urllib.parse
 
-try:
-    import psycopg2
-except ImportError:  # pragma: no cover
-    sys.stderr.write("psycopg2 is required (it ships with CKAN images)\n")
-    raise
+# psycopg2 is only needed for the DB pass (main()); the strip helpers below
+# stay importable without it.
 
 
 # --- private-catalog stripping (self-contained copy of the plugin helpers) ---
@@ -126,6 +128,30 @@ def _strip_private_from_init_source(init_source):
     _strip_private_from_catalog_list(init_source.get('catalog'))
 
 
+def payload_has_private_catalog(data):
+    if not isinstance(data, dict):
+        return False
+    for init_source in (data.get('initSources') if isinstance(data.get('initSources'), list) else []):
+        if not isinstance(init_source, dict):
+            continue
+        models = init_source.get('models')
+        if isinstance(models, dict) and any(
+            k != '/' and _looks_like_private_catalog_id(k) for k in models
+        ):
+            return True
+        catalog = init_source.get('catalog')
+        if isinstance(catalog, list) and any(
+            isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+        ):
+            return True
+    catalog = data.get('catalog')
+    if isinstance(catalog, list) and any(
+        isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+    ):
+        return True
+    return False
+
+
 def strip_private_catalog_branches(start_data):
     if not isinstance(start_data, dict):
         return start_data
@@ -145,14 +171,25 @@ def strip_private_catalog_from_terria_url(url):
         data = json.loads(urllib.parse.unquote(encoded))
     except (ValueError, TypeError):
         return url
+    if not payload_has_private_catalog(data):
+        return url
     strip_private_catalog_branches(data)
-    return base + '#start=' + urllib.parse.quote(json.dumps(data))
+    return base + '#start=' + urllib.parse.quote(
+        json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    )
 
 
 # --- the cleanup itself -------------------------------------------------------
 
-def clean_config(config):
-    """Return (new_config_dict_or_None, changed_bool). ``config`` is a dict."""
+def clean_config(config, drop_extras_url=False):
+    """Return (new_config_dict_or_None, changed_bool). ``config`` is a dict.
+
+    By default it strips ``Private Datasets (...)`` branches from both
+    ``custom_config`` and the stale ``__extras.custom_config_url`` form-field
+    copy (the bloated views carry the same payload in both). With
+    ``drop_extras_url`` it removes ``__extras.custom_config_url`` entirely
+    instead. It never reports a change for a config that has nothing to do.
+    """
     if not isinstance(config, dict):
         return None, False
     changed = False
@@ -166,12 +203,19 @@ def clean_config(config):
             changed = True
 
     extras = new_config.get('__extras')
-    if isinstance(extras, dict) and 'custom_config_url' in extras:
-        # Stale form-field copy of custom_config; nothing reads it.
-        del extras['custom_config_url']
-        changed = True
-        if not extras:
-            del new_config['__extras']
+    if isinstance(extras, dict) and isinstance(extras.get('custom_config_url'), str):
+        if drop_extras_url:
+            # A leftover form-field copy of custom_config; nothing relies on it.
+            del extras['custom_config_url']
+            changed = True
+            if not extras:
+                del new_config['__extras']
+        else:
+            ccu = extras['custom_config_url']
+            stripped = strip_private_catalog_from_terria_url(ccu)
+            if stripped != ccu:
+                extras['custom_config_url'] = stripped
+                changed = True
 
     return (new_config if changed else None), changed
 
@@ -186,10 +230,19 @@ def main():
                         help='actually write changes (default: dry run)')
     parser.add_argument('--min-bytes', type=int, default=0,
                         help='only consider rows whose config is larger than this many bytes')
+    parser.add_argument('--drop-extras-url', action='store_true',
+                        help='also drop the stale __extras.custom_config_url duplicate '
+                             '(a leftover form field nothing reads; off by default so the '
+                             'script only touches views with an actual private-catalog leak)')
     args = parser.parse_args()
 
     if not args.db_url:
         parser.error('no database URL: pass --db-url or set CKAN_SQLALCHEMY_URL')
+
+    try:
+        import psycopg2
+    except ImportError:
+        parser.error('psycopg2 is required for the DB pass (it ships with CKAN images)')
 
     conn = psycopg2.connect(args.db_url)
     conn.autocommit = False
@@ -212,11 +265,11 @@ def main():
                 print("! %s (resource %s): config is not valid JSON, skipping" % (view_id, resource_id))
                 continue
             scanned += 1
-            new_config, did_change = clean_config(config)
+            new_config, did_change = clean_config(config, drop_extras_url=args.drop_extras_url)
             if not did_change:
                 continue
             changed += 1
-            new_text = json.dumps(new_config)
+            new_text = json.dumps(new_config, separators=(',', ':'), ensure_ascii=False)
             print("%s  resource=%s  %d -> %d bytes (%s)" % (
                 view_id, resource_id, clen, len(new_text),
                 'APPLIED' if args.apply else 'dry-run',
