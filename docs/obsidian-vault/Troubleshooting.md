@@ -104,6 +104,22 @@ Revisar:
 - que la instancia Terria responda al protocolo de `postMessage` esperado;
 - que `custom_config_url` sea HTTP(S).
 
+## La vista Terria de un recurso se vuelve lentísima / el formulario de editar vista tarda 30-60 s
+
+Síntoma: `resource_view.config` crece a varios MB; `GET /dataset/.../edit_view/<id>` tarda 30-60 s y devuelve varios MB de HTML (a veces termina en `SIGPIPE` / `Broken pipe` en uWSGI porque el navegador se rinde); el `#start=` guardado en `custom_config` es una URL de >1 MB que el navegador apenas acepta.
+
+Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`; activo también en vistas públicas si `ckanext.terria_view.inject_private_catalog_on_public_views` no se desactiva). Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa todo ese árbol y queda horneado en `custom_config` — y se re-inyecta en el siguiente render, así que crece sin límite. Además los items privados llevan tokens firmados del proxy que **caducan**, rompiendo la vista guardada; y en una vista pública eso filtra la lista de datasets privados de ese usuario.
+
+Fix en el plugin (`terria_config_builder.strip_private_catalog_*`):
+
+- al procesar un `custom_config` (`process_custom_config`) y al guardarlo (`save_view_config`, `_process_form_data`) se eliminan las ramas `Private Datasets (...)` del estado TerriaJS antes de persistir/re-renderizar;
+- `save_view_config` rechaza configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB) tras la limpieza;
+- `_CONFIG_PROCESSING_VERSION` se subió para invalidar `cached_config` viejos.
+
+Limpiar las vistas ya infladas (no lo hace el plugin solo): `scripts/strip_private_catalog_from_views.py` recorre los `resource_view` `terria_view`, quita las ramas privadas de `config.custom_config` y borra la copia obsoleta `config.__extras.custom_config_url`. Se ejecuta contra la BD de CKAN (`--apply` para escribir; sin él es dry-run); por ejemplo dentro de un pod CKAN con `CKAN_SQLALCHEMY_URL` en el entorno.
+
+Recomendación adicional: poner `ckanext.terria_view.inject_private_catalog_on_public_views = false` si no se quiere que el catálogo privado aparezca en vistas de datasets públicos.
+
 ## `pytest` falla por falta de CKAN
 
 Esperable si no está instalado CKAN en el entorno.

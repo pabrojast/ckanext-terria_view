@@ -15,7 +15,7 @@ import ckan.logic.action.get as get
 from .config_manager import ConfigManager
 from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
-from .terria_config_builder import TerriaConfigBuilder
+from .terria_config_builder import TerriaConfigBuilder, strip_private_catalog_from_terria_url
 from .cache_manager import CacheManager
 from .file_cache_manager import FileCacheManager
 from .api_endpoints import terria_api
@@ -452,21 +452,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             data_dict['style'] = 'NA'
         
+        # Never persist an injected private-dataset catalog inside a view's
+        # custom_config (it bloats the config without bound and embeds
+        # short-lived signed proxy tokens). This covers values pasted/copied
+        # from a logged-in viewer's iframe URL.
+        if data_dict.get('custom_config') and data_dict['custom_config'] != 'NA':
+            data_dict['custom_config'] = strip_private_catalog_from_terria_url(
+                data_dict['custom_config']
+            )
+
         # Clean temporary form fields
         fields_to_remove = [
-            'custom_config_option', 'custom_config_url', 
+            'custom_config_option', 'custom_config_url',
             'style_option', 'style_custom_input',
             'available_sld_files', 'package_id'
         ]
-        
+
         for field in fields_to_remove:
             data_dict.pop(field, None)
-        
+
         return data_dict
 
     # Bump this version whenever the config generation/processing logic changes
     # to invalidate stale cached configs.
-    _CONFIG_PROCESSING_VERSION = 3
+    _CONFIG_PROCESSING_VERSION = 4
 
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):

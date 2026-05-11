@@ -7,6 +7,140 @@ import urllib.parse
 from typing import Dict, List, Optional, Any
 
 
+# --- Private-catalog stripping ------------------------------------------------
+#
+# ``Terria_ViewPlugin.setup_template_variables`` injects the logged-in user's
+# private datasets into ``encoded_config`` so the embedded map's catalog tree
+# shows them. That data must never be *persisted* into a view's
+# ``custom_config``:
+#   * each "Save Configuration" re-captures the full injected tree, which is
+#     then re-injected on the next render -> the config grows without bound;
+#   * the injected resource items embed short-lived signed proxy tokens that
+#     expire, breaking the saved view;
+#   * a public view's config would then leak one user's private-dataset list.
+#
+# These helpers strip those ``Private Datasets (...)`` branches out of a
+# TerriaJS ``#start=`` / init-source payload before it is saved or re-rendered.
+
+_PRIVATE_CATALOG_NAME_PREFIX = 'Private Datasets ('
+
+
+def _looks_like_private_catalog_id(value) -> bool:
+    """True if ``value`` is a Terria model id/name for the injected private catalog.
+
+    Handles both ``//Private Datasets (user)/...`` model ids and the bare
+    ``Private Datasets (user)`` group name, and tolerates the ``+``-for-space
+    encoding some saved share links carry.
+    """
+    if not isinstance(value, str):
+        return False
+    normalized = value.lstrip('/').replace('+', ' ').strip()
+    return normalized.startswith(_PRIVATE_CATALOG_NAME_PREFIX)
+
+
+def _strip_private_from_catalog_list(catalog) -> None:
+    """Drop ``Private Datasets (...)`` groups from an in-place catalog list."""
+    if not isinstance(catalog, list):
+        return
+    catalog[:] = [
+        entry for entry in catalog
+        if not (isinstance(entry, dict) and _looks_like_private_catalog_id(entry.get('name')))
+    ]
+
+
+def _strip_private_from_init_source(init_source) -> None:
+    if not isinstance(init_source, dict):
+        return
+
+    models = init_source.get('models')
+    removed = set()
+    if isinstance(models, dict):
+        # Seed with model keys that are themselves private-catalog ids.
+        for key in list(models.keys()):
+            if key != '/' and _looks_like_private_catalog_id(key):
+                removed.add(key)
+
+        # Propagate to descendants: any model whose container chain leads to a
+        # removed/private model, and any member referenced from a removed group.
+        changed = True
+        while changed:
+            changed = False
+            for key, value in list(models.items()):
+                if key in removed or key == '/' or not isinstance(value, dict):
+                    continue
+                containers = value.get('knownContainerUniqueIds') or []
+                if any(isinstance(c, str) and (c in removed or _looks_like_private_catalog_id(c))
+                       for c in containers):
+                    removed.add(key)
+                    changed = True
+            for key in list(removed):
+                group = models.get(key)
+                if isinstance(group, dict):
+                    for member in group.get('members') or []:
+                        if isinstance(member, str) and member in models and member not in removed:
+                            removed.add(member)
+                            changed = True
+
+        for key in removed:
+            models.pop(key, None)
+
+        # Clean dangling references in surviving models' member lists.
+        for value in models.values():
+            if isinstance(value, dict) and isinstance(value.get('members'), list):
+                value['members'] = [
+                    m for m in value['members']
+                    if not (isinstance(m, str) and (m in removed or _looks_like_private_catalog_id(m)))
+                ]
+
+    # Clean top-level reference lists carried on the init source.
+    for list_key in ('workbench', 'timeline'):
+        lst = init_source.get(list_key)
+        if isinstance(lst, list):
+            init_source[list_key] = [
+                m for m in lst
+                if not (isinstance(m, str) and (m in removed or _looks_like_private_catalog_id(m)))
+            ]
+    previewed = init_source.get('previewedItemId')
+    if isinstance(previewed, str) and (previewed in removed or _looks_like_private_catalog_id(previewed)):
+        init_source.pop('previewedItemId', None)
+
+    # Un-loaded form: a literal ``catalog`` array on the init source.
+    _strip_private_from_catalog_list(init_source.get('catalog'))
+
+
+def strip_private_catalog_branches(start_data):
+    """Remove all ``Private Datasets (...)`` branches from a TerriaJS payload.
+
+    Mutates and returns ``start_data`` (a parsed ``#start=`` state or an init
+    source). Safe (a no-op) on payloads that contain no private catalog.
+    """
+    if not isinstance(start_data, dict):
+        return start_data
+    init_sources = start_data.get('initSources')
+    if isinstance(init_sources, list):
+        for init_source in init_sources:
+            _strip_private_from_init_source(init_source)
+    _strip_private_from_catalog_list(start_data.get('catalog'))
+    return start_data
+
+
+def strip_private_catalog_from_terria_url(url):
+    """Strip private-catalog branches from a ``https://.../#start=<json>`` URL.
+
+    Returns the rebuilt URL, or the original value unchanged when it is not a
+    string, has no ``#start=`` fragment, or fails to parse as JSON.
+    """
+    if not isinstance(url, str) or '#start=' not in url:
+        return url
+    base, _, encoded = url.partition('#start=')
+    try:
+        data = json.loads(urllib.parse.unquote(encoded))
+    except (ValueError, TypeError):
+        return url
+    strip_private_catalog_branches(data)
+    return base + '#start=' + urllib.parse.quote(json.dumps(data))
+
+
 class TerriaConfigBuilder:
     """Constructor de configuraciones para TerriaJS."""
     
@@ -375,10 +509,17 @@ class TerriaConfigBuilder:
             
             # Parsear el JSON
             start_data = json.loads(decoded_param)
-            
+
             # Decode names
             start_data = self._decode_names_in_object(start_data)
-            
+
+            # Drop any "Private Datasets (...)" branches that may have been
+            # captured into this saved state. They are injected at render time
+            # for display only (see Terria_ViewPlugin._merge_private_catalog_*);
+            # persisting and re-rendering them makes the config grow without
+            # bound and embeds short-lived signed resource tokens.
+            start_data = strip_private_catalog_branches(start_data)
+
             # Get SLD styles if available
             sld_styles = None
             if sld_url and resource_format in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:

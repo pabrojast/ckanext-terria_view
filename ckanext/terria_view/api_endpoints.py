@@ -53,6 +53,7 @@ import ckan.plugins.toolkit as toolkit
 from ckan.common import config
 
 from .terria_json_generator import TerriaJSONGenerator
+from .terria_config_builder import strip_private_catalog_from_terria_url
 
 
 # Create Blueprint for our API endpoints
@@ -60,6 +61,11 @@ terria_api = Blueprint('terria_api', __name__)
 
 # Lock to prevent concurrent regeneration of the full catalog
 _catalog_regen_lock = threading.Lock()
+
+# Reject pathologically large saved configs even after stripping injected
+# private-catalog branches: a stored 1MB+ ``#start=`` URL makes the CKAN view
+# edit form unusable and approaches browser URL-length limits.
+MAX_CUSTOM_CONFIG_BYTES = 512 * 1024
 
 
 class TerriaAPIController:
@@ -565,7 +571,23 @@ class TerriaAPIController:
             if not isinstance(custom_config_url, str) or not custom_config_url.strip().startswith(('http://', 'https://')):
                 return self._create_error_response('custom_config_url must be an HTTP(S) URL', 400)
             custom_config_url = custom_config_url.strip()
-            
+
+            # Drop any injected private-dataset catalog branches before we
+            # persist this — saving them bloats the view config without bound
+            # and embeds short-lived signed proxy tokens.
+            custom_config_url = strip_private_catalog_from_terria_url(custom_config_url)
+
+            # Safety net against runaway configs (browser URL limits, slow
+            # CKAN view edit form). Reject rather than silently truncate.
+            if len(custom_config_url) > MAX_CUSTOM_CONFIG_BYTES:
+                return self._create_error_response(
+                    'Configuration is too large to save (%d bytes after cleanup; '
+                    'limit %d). The map state likely accumulated catalog entries '
+                    'that should not be part of a saved view.'
+                    % (len(custom_config_url), MAX_CUSTOM_CONFIG_BYTES),
+                    413,
+                )
+
             # Get current user context
             context = self._get_user_context()
             
