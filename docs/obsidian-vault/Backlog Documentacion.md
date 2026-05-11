@@ -70,15 +70,15 @@ Estado:
 Situación:
 
 - la UI asume un protocolo `postMessage` para obtener `shareData`;
-- no hay documentación en el repo sobre la contraparte Terria.
+- la contraparte Terria es `updateApplicationOnMessageFromParentWindow.js` (en `terriajs`): escucha `requestShareData` y responde `{type:"shareDataResponse", requestId, success, shareData}` (o `success:false, error`). La imagen `pabrojast/terriamap` la incluye.
 
 Impacto:
 
-- debugging difícil si falla `Save Configuration`.
+- si `Save Configuration` se cuelga esperando `shareData`, sospechar de una instancia Terria sin ese handler o de un `targetOrigin` mal resuelto.
 
 Estado:
 
-- `Pendiente por confirmar`
+- `Confirmado` (queda pendiente documentar la forma exacta del `shareData`).
 
 ### Formatos realmente soportados en producción
 

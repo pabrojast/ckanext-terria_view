@@ -108,7 +108,7 @@ Revisar:
 
 Síntoma: `resource_view.config` crece a varios MB; `GET /dataset/.../edit_view/<id>` tarda 30-60 s y devuelve varios MB de HTML (a veces termina en `SIGPIPE` / `Broken pipe` en uWSGI porque el navegador se rinde); el `#start=` guardado en `custom_config` es una URL de >1 MB que el navegador apenas acepta.
 
-Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`; activo también en vistas públicas si `ckanext.terria_view.inject_private_catalog_on_public_views` no se desactiva). Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa todo ese árbol y queda horneado en `custom_config` — y se re-inyecta en el siguiente render, así que crece sin límite. Además los items privados llevan tokens firmados del proxy que **caducan**, rompiendo la vista guardada; y en una vista pública eso filtra la lista de datasets privados de ese usuario.
+Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`). Por defecto solo en vistas de datasets **privados**; con `ckanext.terria_view.inject_private_catalog_on_public_views = true` también en vistas de datasets públicos. Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa todo ese árbol y queda horneado en `custom_config` — y se re-inyecta en el siguiente render, así que crece sin límite. Además los items privados llevan tokens firmados del proxy que **caducan**, rompiendo la vista guardada; y en una vista pública eso filtra la lista de datasets privados de ese usuario.
 
 Fix en el plugin (`terria_config_builder.strip_private_catalog_*`):
 
@@ -118,7 +118,7 @@ Fix en el plugin (`terria_config_builder.strip_private_catalog_*`):
 
 Limpiar las vistas ya infladas (no lo hace el plugin solo): `scripts/strip_private_catalog_from_views.py` recorre los `resource_view` `terria_view`, quita las ramas privadas de `config.custom_config` y borra la copia obsoleta `config.__extras.custom_config_url`. Se ejecuta contra la BD de CKAN (`--apply` para escribir; sin él es dry-run); por ejemplo dentro de un pod CKAN con `CKAN_SQLALCHEMY_URL` en el entorno.
 
-Recomendación adicional: poner `ckanext.terria_view.inject_private_catalog_on_public_views = false` si no se quiere que el catálogo privado aparezca en vistas de datasets públicos.
+Nota: desde este fix, `ckanext.terria_view.inject_private_catalog_on_public_views` por defecto es `false` (el catálogo privado solo se inyecta en vistas de datasets privados). Ponerlo en `true` si se quiere que también aparezca en vistas de datasets públicos para usuarios logueados.
 
 ## `pytest` falla por falta de CKAN
 

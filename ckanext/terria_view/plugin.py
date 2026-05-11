@@ -650,18 +650,19 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             if not package.get('private'):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
         
-        # Inject the user's private-dataset catalog whenever they're logged
-        # in, regardless of whether the resource being viewed is itself
-        # private. Users expect to see their accessible private datasets in
-        # the Terria catalog tree from any resource view (this matched
-        # behaviour before c4d23c5 and was reported missing on production).
-        # The flag below lets operators disable the injection on public
-        # views if the private catalog ever grows large enough that the
-        # encoded_config payload becomes a problem.
+        # Inject the logged-in user's private-dataset catalog into the Terria
+        # ``#start=`` payload so the catalog tree shows their accessible private
+        # datasets. By default this only happens on views of *private* datasets:
+        # baking that catalog into a *public* view's payload bloats it for every
+        # logged-in viewer and — if someone clicks "Save Configuration" — would
+        # persist private dataset names + short-lived signed proxy tokens into a
+        # view config any visitor can read. Operators who want the private
+        # catalog visible from public-dataset maps too can opt in with
+        # ``ckanext.terria_view.inject_private_catalog_on_public_views = true``.
         inject_on_public_views = toolkit.asbool(
             toolkit.config.get(
                 'ckanext.terria_view.inject_private_catalog_on_public_views',
-                True,
+                False,
             )
         )
         include_private_catalog = bool(user_context.get('user')) and (

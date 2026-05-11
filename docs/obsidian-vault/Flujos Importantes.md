@@ -56,7 +56,8 @@ Secuencia:
 4. En render posterior, `TerriaConfigBuilder` toma esa config y la adapta al recurso actual.
 5. Si hay SLD, `SLDProcessor` genera estilos/leyendas y se inyectan a la config.
 6. La configuración adaptada garantiza que los modelos de datos queden en `workbench` y normaliza estilos incompletos (por ejemplo `enumColors` sin `mapType`/`colorColumn`) para evitar fallos de parseo en Terria.
-7. La inyección de catálogo privado inline se limita a vistas de datasets privados para no introducir fallas de inicialización en vistas públicas.
+7. `process_custom_config` también descarta cualquier rama `Private Datasets (...)` que hubiera quedado horneada en un `custom_config` previo (ver flujo 4 y [[Troubleshooting]]).
+8. La inyección inline del catálogo privado solo ocurre en vistas de datasets privados por defecto (configurable con `ckanext.terria_view.inject_private_catalog_on_public_views`); ver [[Variables de Entorno]].
 
 ## 4. Guardar configuración desde la UI
 
@@ -66,15 +67,15 @@ Entrada:
 
 Secuencia:
 
-1. `terria.html` envía `postMessage` al iframe Terria pidiendo `shareData`.
+1. `terria.html` envía `postMessage` al iframe Terria pidiendo `shareData` (la instancia Terria embebida responde con `shareDataResponse` vía `updateApplicationOnMessageFromParentWindow`).
 2. Construye una URL `#start=...`.
 3. Hace `POST /api/terria/view/<view_id>/save-config`.
-4. El endpoint valida la URL HTTP(S).
-5. La vista CKAN se actualiza con el nuevo `custom_config`.
+4. El endpoint valida la URL HTTP(S), **quita las ramas `Private Datasets (...)`** del `#start=` (`strip_private_catalog_from_terria_url`) y rechaza si tras la limpieza supera `MAX_CUSTOM_CONFIG_BYTES` (512 KB).
+5. La vista CKAN se actualiza con el nuevo `custom_config`. El mismo strip se aplica en `before_create`/`before_update` cuando la URL llega por el formulario.
 
 Resultado:
 
-- la próxima carga reutiliza el estado guardado del mapa.
+- la próxima carga reutiliza el estado guardado del mapa, sin el catálogo privado horneado.
 
 ## 5. Generación de catálogo por dataset
 
@@ -164,5 +165,6 @@ Notas:
 
 ## Pendiente por confirmar
 
-- si el warmup corre de forma fiable bajo todos los servidores WSGI usados por CKAN;
-- si el botón `Save Configuration` depende de una modificación específica en la instancia Terria embebida para responder `shareDataResponse`.
+- si el warmup corre de forma fiable bajo todos los servidores WSGI usados por CKAN.
+
+Confirmado: el botón `Save Configuration` sí requiere que la instancia Terria embebida implemente el handler `requestShareData` → `shareDataResponse` (`updateApplicationOnMessageFromParentWindow.js`); la imagen `pabrojast/terriamap` lo trae.

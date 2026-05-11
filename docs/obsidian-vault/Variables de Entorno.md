@@ -76,6 +76,12 @@ Activa o desactiva el recorte de extras pesados en `package_show` y `resource_sh
 
 Lista separada por comas de extras a remover.
 
+### `ckanext.terria_view.inject_private_catalog_on_public_views`
+
+Si está en `true`, el catálogo de datasets privados del usuario logueado se inyecta en el `#start=` de **todas** las vistas Terria; si está en `false` (default), solo en vistas de datasets privados. Anónimo nunca recibe el catálogo privado, independientemente del flag. Ver [[Flujos Importantes]] (guardado de configuración) y [[Troubleshooting]] (crecimiento del config de la vista).
+
+Nota no configurable: al guardar vía `/api/terria/view/<id>/save-config`, `api_endpoints.py` rechaza configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB) tras limpiar las ramas privadas; hoy es una constante, no un setting.
+
 ### `ckan.storage_path`
 
 Usado por `FileCacheManager` como primera opción para guardar JSONs cacheados.
@@ -94,6 +100,7 @@ Secret HMAC que `ResourceUtils.generate_resource_token` utiliza para firmar los 
 - `preload_cache`: `True`
 - `preload_delay`: `10`
 - `cache_timeout`: `3600` segundos en caché de memoria y archivo
+- `inject_private_catalog_on_public_views`: `False`
 
 ## Inferencia
 
