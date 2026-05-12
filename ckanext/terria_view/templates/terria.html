@@ -141,26 +141,56 @@
         // Keep * if URL parsing fails
       }
 
-      // Build the payload from primitives on a null-prototype object.
+      // Terria currently expects an object request, so keep this compatible with
+      // the iframe handler. Try a few object construction paths because some
+      // browser extensions/SES lockdown wrappers have thrown structured-clone
+      // errors for one object shape but not another.
       // We have seen Chrome throw ``Failed to execute 'postMessage' on
-      // 'Window': [object Array] could not be cloned`` here when an
-      // extension/polyfill leaks non-cloneable values onto
-      // ``Object.prototype``. ``JSON.parse(JSON.stringify(...))`` still
-      // inherits from that polluted prototype; ``Object.create(null)``
-      // does not.
-      var payload = Object.create(null);
-      payload.type = 'requestShareData';
-      payload.requestId = String(requestId);
-      payload.allowOrigin = String(window.location.origin || '');
+      // 'Window': [object Array] could not be cloned`` here even for plain
+      // primitive-only objects.
+      var payloadFactories = [
+        function() {
+          var payload = Object.create(null);
+          payload.type = 'requestShareData';
+          payload.requestId = String(requestId);
+          payload.allowOrigin = String(window.location.origin || '');
+          return payload;
+        },
+        function() {
+          return JSON.parse(JSON.stringify({
+            type: 'requestShareData',
+            requestId: String(requestId),
+            allowOrigin: String(window.location.origin || '')
+          }));
+        },
+        function() {
+          return {
+            type: 'requestShareData',
+            requestId: String(requestId),
+            allowOrigin: String(window.location.origin || '')
+          };
+        }
+      ];
 
-      try {
-        iframe.contentWindow.postMessage(payload, targetOrigin);
-      } catch (postErr) {
-        delete pendingShareDataCallbacks[requestId];
-        clearTimeout(timeout);
-        console.error('postMessage to Terria iframe failed', postErr, payload);
-        reject(postErr);
+      var lastPostErr = null;
+      for (var i = 0; i < payloadFactories.length; i += 1) {
+        var payload = payloadFactories[i]();
+        try {
+          iframe.contentWindow.postMessage(payload, targetOrigin);
+          return;
+        } catch (postErr) {
+          lastPostErr = postErr;
+          console.warn('postMessage to Terria iframe failed for payload candidate ' + i, postErr);
+        }
       }
+
+      delete pendingShareDataCallbacks[requestId];
+      clearTimeout(timeout);
+      console.error('All postMessage payload candidates failed', lastPostErr);
+      reject(new Error(
+        'Browser blocked postMessage to TerriaJS iframe: ' +
+        (lastPostErr && lastPostErr.message ? lastPostErr.message : 'unknown structured clone error')
+      ));
     });
   }
 

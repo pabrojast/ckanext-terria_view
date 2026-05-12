@@ -104,7 +104,7 @@ Revisar:
 - que la instancia Terria responda al protocolo de `postMessage` esperado;
 - que `custom_config_url` sea HTTP(S).
 
-Si la consola muestra `Failed to execute 'postMessage' on 'Window': [object Array] could not be cloned`, sospechar contaminación de `Object.prototype` por una extensión/polyfill del navegador. La template ahora arma el request `requestShareData` sobre un objeto de prototipo nulo (`Object.create(null)`) para evitar ese fallo de structured clone.
+Si la consola muestra `Failed to execute 'postMessage' on 'Window': [object Array] could not be cloned`, sospechar una extensión/polyfill del navegador que instaló SES/lockdown y rompió structured clone para objetos. La instancia Terria actual espera que `requestShareData` llegue como objeto; por eso la template prueba varias formas de objeto simple antes de fallar con un mensaje explícito. En Chrome headless autenticado contra dev, los payloads objeto no fallan; si falla solo en un navegador concreto, comparar extensiones/perfil del navegador.
 
 ## La vista Terria de un recurso se vuelve lentísima / el formulario de editar vista tarda 30-60 s
 
