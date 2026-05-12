@@ -214,8 +214,19 @@
       // Request share data from TerriaJS iframe
       var shareData = await requestShareDataFromIframe();
 
-      // Build the full URL with share data
-      var shareUrl = terriaInstanceUrl + '#start=' + encodeURIComponent(JSON.stringify(shareData));
+      // Build the full URL with share data. The saved ``custom_config_url`` must
+      // be an absolute http(s) URL — ``terria_instance_url`` can be configured
+      // protocol-relative (``//host/...``) or even site-relative, so resolve it
+      // against the current page and drop any existing fragment first.
+      var baseTerriaUrl;
+      try {
+        var resolved = new URL(terriaInstanceUrl, window.location.href);
+        resolved.hash = '';
+        baseTerriaUrl = resolved.href;
+      } catch (urlErr) {
+        baseTerriaUrl = terriaInstanceUrl;
+      }
+      var shareUrl = baseTerriaUrl + '#start=' + encodeURIComponent(JSON.stringify(shareData));
 
       // Send to API
       var response = await fetch('/api/terria/view/' + terriaViewId + '/save-config', {
@@ -228,14 +239,22 @@
         })
       });
 
-      var result = await response.json();
+      // The endpoint returns JSON on success and on its own error responses, but
+      // a framework-level rejection (e.g. 413, CSRF) may be plain text/HTML —
+      // read defensively so the real reason surfaces to the user.
+      var rawBody = await response.text();
+      var result = null;
+      try { result = JSON.parse(rawBody); } catch (parseErr) { /* not JSON */ }
 
-      if (result.success) {
+      if (response.ok && result && result.success) {
         alert('Configuration saved successfully!\n\nThe map will now load with this configuration.');
         // Reload to show new config
         window.location.reload();
       } else {
-        alert('Failed to save configuration: ' + (result.message || 'Unknown error'));
+        var serverMsg = (result && (result.message || result.error))
+          || (rawBody ? rawBody.slice(0, 300) : ('HTTP ' + response.status));
+        console.error('save-config failed (HTTP ' + response.status + '):', rawBody);
+        alert('Failed to save configuration: ' + serverMsg);
       }
     } catch (e) {
       console.error('Error saving configuration:', e);
