@@ -3,6 +3,7 @@
 Módulo para construir configuraciones de TerriaJS.
 """
 import json
+import re
 import urllib.parse
 from typing import Dict, List, Optional, Any
 
@@ -174,6 +175,126 @@ def strip_private_catalog_from_terria_url(url):
     return base + '#start=' + urllib.parse.quote(
         json.dumps(data, separators=(',', ':'), ensure_ascii=False)
     )
+
+
+# --- Private-resource proxy tokens -------------------------------------------
+#
+# Private datasets injected into a Terria config are referenced through CKAN's
+# ``/api/terria/resource/<id>/content`` proxy with a short-lived signed
+# ``?token=`` (see ``ResourceUtils.generate_resource_token``). Those tokens
+# must not be *persisted* into a saved view (they expire), but — unlike the old
+# behaviour, which dropped the whole private branch — we keep the branch and
+# re-mint a per-viewer token at render time so a saved view can be shared with
+# other users who still have access to the underlying datasets.
+
+# Matches ``/api/terria/resource/<resource_id>/content`` with an optional
+# trailing ``/<filename>`` segment (see ``build_proxy_resource_url``).
+_PROXY_CONTENT_PATH_RE = re.compile(
+    r'^/api/terria/resource/(?P<rid>[^/?#]+)/content(?:/[^?#]*)?$'
+)
+
+
+def _proxy_resource_id(url):
+    """Return the resource id if ``url`` is a CKAN Terria resource-proxy URL, else ``None``."""
+    if not isinstance(url, str) or '/api/terria/resource/' not in url:
+        return None
+    try:
+        path = urllib.parse.urlsplit(url).path
+    except ValueError:
+        return None
+    match = _PROXY_CONTENT_PATH_RE.match(path)
+    return match.group('rid') if match else None
+
+
+def _set_url_query_token(url, token):
+    """Return ``url`` with its ``token`` query param replaced (removed when ``token`` is falsy)."""
+    split = urllib.parse.urlsplit(url)
+    params = [
+        (k, v) for k, v in urllib.parse.parse_qsl(split.query, keep_blank_values=True)
+        if k != 'token'
+    ]
+    if token:
+        params.append(('token', token))
+    return urllib.parse.urlunsplit(
+        (split.scheme, split.netloc, split.path, urllib.parse.urlencode(params), split.fragment)
+    )
+
+
+def _walk_string_values(node, transform):
+    """Recursively replace every string value in nested dicts/lists with ``transform(value)`` (in place)."""
+    if isinstance(node, dict):
+        for key in list(node.keys()):
+            value = node[key]
+            if isinstance(value, str):
+                node[key] = transform(value)
+            else:
+                _walk_string_values(value, transform)
+    elif isinstance(node, list):
+        for index in range(len(node)):
+            value = node[index]
+            if isinstance(value, str):
+                node[index] = transform(value)
+            else:
+                _walk_string_values(value, transform)
+
+
+def strip_proxy_tokens(start_data):
+    """Strip the short-lived ``token`` query param from every resource-proxy URL (in place)."""
+    def transform(value):
+        if 'token=' in value and _proxy_resource_id(value):
+            return _set_url_query_token(value, None)
+        return value
+    _walk_string_values(start_data, transform)
+    return start_data
+
+
+def strip_proxy_tokens_from_terria_url(url):
+    """Strip private-resource proxy ``token`` params from a ``https://.../#start=<json>`` URL.
+
+    Unlike :func:`strip_private_catalog_from_terria_url`, the injected private
+    catalog branches are kept — only the expired-once token is removed. Returns
+    the rebuilt URL (compactly re-encoded), or the original value unchanged when
+    it is not a string, has no ``#start=`` fragment, carries no token, or fails
+    to parse as JSON.
+    """
+    if not isinstance(url, str) or '#start=' not in url:
+        return url
+    base, _, encoded = url.partition('#start=')
+    if 'token' not in encoded:
+        return url
+    try:
+        data = json.loads(urllib.parse.unquote(encoded))
+    except (ValueError, TypeError):
+        return url
+    strip_proxy_tokens(data)
+    return base + '#start=' + urllib.parse.quote(
+        json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    )
+
+
+def refresh_proxy_tokens(start_data, mint_token):
+    """Re-mint ``token`` query params for resource-proxy URLs in a parsed payload (in place).
+
+    ``mint_token(resource_id) -> str | None``: return a fresh token value when
+    the current viewer may read the resource, or ``None`` to leave the URL
+    token-less (the proxy then answers ``401`` for that item). Called at most
+    once per resource id. Returns ``start_data``.
+    """
+    decisions = {}
+
+    def transform(value):
+        resource_id = _proxy_resource_id(value)
+        if not resource_id:
+            return value
+        if resource_id not in decisions:
+            try:
+                decisions[resource_id] = mint_token(resource_id)
+            except Exception:
+                decisions[resource_id] = None
+        return _set_url_query_token(value, decisions[resource_id])
+
+    _walk_string_values(start_data, transform)
+    return start_data
 
 
 class TerriaConfigBuilder:
@@ -508,17 +629,23 @@ class TerriaConfigBuilder:
         else:
             return self.create_generic_config(resource_name, resource_url, resource_format, bounds)
     
-    def process_custom_config(self, custom_config: str, resource_url: str, 
-                            resource_format: str, sld_url: Optional[str] = None) -> Optional[str]:
+    def process_custom_config(self, custom_config: str, resource_url: str,
+                            resource_format: str, sld_url: Optional[str] = None,
+                            resource_id: Optional[str] = None) -> Optional[str]:
         """
         Procesa una configuración personalizada y actualiza URLs y estilos.
-        
+
         Args:
             custom_config: Configuración personalizada
             resource_url: URL del recurso
             resource_format: Formato del recurso
             sld_url: URL del archivo SLD (opcional)
-            
+            resource_id: ID del recurso principal de la vista. Cuando se indica,
+                solo se reescribe la URL del modelo que corresponde a ese
+                recurso; el resto de items (p. ej. datasets privados inyectados)
+                se dejan intactos y sus tokens se renuevan en render
+                (``refresh_proxy_tokens``).
+
         Returns:
             Configuración procesada como string JSON, None en caso de error
         """
@@ -548,12 +675,12 @@ class TerriaConfigBuilder:
             # Decode names
             start_data = self._decode_names_in_object(start_data)
 
-            # Drop any "Private Datasets (...)" branches that may have been
-            # captured into this saved state. They are injected at render time
-            # for display only (see Terria_ViewPlugin._merge_private_catalog_*);
-            # persisting and re-rendering them makes the config grow without
-            # bound and embeds short-lived signed resource tokens.
-            start_data = strip_private_catalog_branches(start_data)
+            # NOTE: injected "Private Datasets (...)" branches captured into this
+            # saved state are intentionally kept (so a saved view can be shared
+            # with other users who still have access). Their short-lived proxy
+            # ``?token=`` is stripped on save and re-minted per viewer at render
+            # time — see ``strip_proxy_tokens_from_terria_url`` /
+            # ``refresh_proxy_tokens`` and ``Terria_ViewPlugin``.
 
             # Get SLD styles if available
             sld_styles = None
@@ -585,15 +712,45 @@ class TerriaConfigBuilder:
             for init_source in start_data.get('initSources', []):
                 if 'models' in init_source:
                     updated_model_ids = []
+                    url_model_keys = [
+                        k for k, v in init_source['models'].items()
+                        if isinstance(v, dict) and 'url' in v
+                    ]
+                    single_data_item = len(url_model_keys) == 1
                     for model_key, model_value in init_source['models'].items():
                         if isinstance(model_value, dict) and 'url' in model_value:
+                            proxied_rid = _proxy_resource_id(model_value.get('url'))
+                            # Decide whether this model is the view's *main*
+                            # resource (and so should have its URL/styles
+                            # refreshed) or another item (e.g. an injected
+                            # private dataset) we must leave untouched.
+                            if proxied_rid is not None:
+                                is_main_resource = (
+                                    resource_id is not None and proxied_rid == resource_id
+                                )
+                            else:
+                                # Non-proxy URL: only treat as the main resource
+                                # in the legacy single-data-item case (no extra
+                                # catalog items injected) — otherwise we can't
+                                # tell which one it is, so leave it alone.
+                                is_main_resource = single_data_item
+
+                            # Keep style blocks well-formed for every data item.
+                            self._sanitize_model_styles(model_value)
+
+                            if not is_main_resource:
+                                # Another catalog item (injected private dataset
+                                # etc.) — its proxy token is re-minted per viewer
+                                # at render time (see refresh_proxy_tokens).
+                                continue
+
                             # Actualizar la URL
                             model_value['url'] = resource_url
                             model_value.setdefault('isOpenInWorkbench', True)
                             model_value.setdefault('show', True)
                             self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
                             updated_model_ids.append(model_key)
-                            
+
                             # Apply SLD styles if available
                             if sld_styles and resource_format.lower() in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
                                 self._debug_print(f"Applying SLD styles to model {model_key}")

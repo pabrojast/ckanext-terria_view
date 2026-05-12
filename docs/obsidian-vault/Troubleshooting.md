@@ -104,21 +104,24 @@ Revisar:
 - que la instancia Terria responda al protocolo de `postMessage` esperado;
 - que `custom_config_url` sea HTTP(S).
 
-Si la consola muestra `Failed to execute 'postMessage' on 'Window': [object Array] could not be cloned`, sospechar una extensión/polyfill del navegador que instaló SES/lockdown y rompió structured clone para objetos. La instancia Terria actual espera que `requestShareData` llegue como objeto; por eso la template prueba varias formas de objeto simple antes de fallar con un mensaje explícito. En Chrome headless autenticado contra dev, los payloads objeto no fallan; si falla solo en un navegador concreto, comparar extensiones/perfil del navegador.
+Si la consola muestra `Error saving configuration: Failed to execute 'postMessage' on 'Window': [object Array] could not be cloned` (típico al guardar vistas de datasets **privados**): el error lo emitía el handler `requestShareData` de la instancia Terria embebida, que devolvía el objeto de `getShareData()` tal cual; ese objeto puede traer arrays/maps observables de MobX que el structured clone de `postMessage` no puede clonar. Arreglado en TerriaJS (`updateApplicationOnMessageFromParentWindow.js`) haciendo `JSON.parse(JSON.stringify(shareData))` antes de responder — hay que rebuildear/redesplegar la imagen Terria (`pabrojast/terriamap`). Si el error persiste solo en un navegador concreto, sospechar además una extensión/polyfill que instaló SES/lockdown y rompió structured clone; la template `terria.html` ya prueba varias formas de payload objeto para el request antes de fallar con un mensaje explícito.
 
 ## La vista Terria de un recurso se vuelve lentísima / el formulario de editar vista tarda 30-60 s
 
 Síntoma: `resource_view.config` crece a varios MB; `GET /dataset/.../edit_view/<id>` tarda 30-60 s y devuelve varios MB de HTML (a veces termina en `SIGPIPE` / `Broken pipe` en uWSGI porque el navegador se rinde); el `#start=` guardado en `custom_config` es una URL de >1 MB que el navegador apenas acepta.
 
-Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`). Por defecto solo en vistas de datasets **privados**; con `ckanext.terria_view.inject_private_catalog_on_public_views = true` también en vistas de datasets públicos. Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa todo ese árbol y queda horneado en `custom_config` — y se re-inyecta en el siguiente render, así que crece sin límite. Además los items privados llevan tokens firmados del proxy que **caducan**, rompiendo la vista guardada; y en una vista pública eso filtra la lista de datasets privados de ese usuario.
+Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`). Por defecto solo en vistas de datasets **privados**; con `ckanext.terria_view.inject_private_catalog_on_public_views = true` también en vistas de datasets públicos. Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa parte de ese árbol y queda horneado en `custom_config`.
 
-Fix en el plugin (`terria_config_builder.strip_private_catalog_*`):
+Comportamiento actual (los datasets privados **se conservan** en la config guardada a propósito, para poder compartir la vista entre usuarios con acceso):
 
-- al procesar un `custom_config` (`process_custom_config`) y al guardarlo (`save_view_config`, `_process_form_data`) se eliminan las ramas `Private Datasets (...)` del estado TerriaJS antes de persistir/re-renderizar;
-- `save_view_config` rechaza configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB) tras la limpieza;
-- `_CONFIG_PROCESSING_VERSION` se subió para invalidar `cached_config` viejos.
+- al guardar (`save_view_config`, `_process_form_data`) solo se quita el `?token=` firmado de las URLs proxy (`strip_proxy_tokens_from_terria_url`); las ramas `Private Datasets (...)` se mantienen;
+- en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
+- si la config guardada ya trae un catálogo privado, no se vuelve a inyectar el del usuario actual (evita duplicados / crecimiento entre re-guardados);
+- `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso);
+- `save_view_config` sigue rechazando configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB);
+- `_CONFIG_PROCESSING_VERSION` se subió en su momento para invalidar `cached_config` viejos.
 
-Limpiar las vistas ya infladas (no lo hace el plugin solo): `scripts/strip_private_catalog_from_views.py` recorre los `resource_view` `terria_view`, quita las ramas privadas de `config.custom_config` y borra la copia obsoleta `config.__extras.custom_config_url`. Se ejecuta contra la BD de CKAN (`--apply` para escribir; sin él es dry-run); por ejemplo dentro de un pod CKAN con `CKAN_SQLALCHEMY_URL` en el entorno.
+`scripts/strip_private_catalog_from_views.py` sigue disponible para *eliminar por completo* las ramas privadas de vistas concretas si hace falta (recorre los `resource_view` `terria_view` y borra también la copia obsoleta `config.__extras.custom_config_url`); ya no es necesario por defecto. Se ejecuta contra la BD de CKAN (`--apply` para escribir; sin él es dry-run).
 
 Nota: desde este fix, `ckanext.terria_view.inject_private_catalog_on_public_views` por defecto es `false` (el catálogo privado solo se inyecta en vistas de datasets privados). Ponerlo en `true` si se quiere que también aparezca en vistas de datasets públicos para usuarios logueados.
 

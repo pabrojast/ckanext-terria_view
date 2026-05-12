@@ -53,7 +53,7 @@ import ckan.plugins.toolkit as toolkit
 from ckan.common import config
 
 from .terria_json_generator import TerriaJSONGenerator
-from .terria_config_builder import strip_private_catalog_from_terria_url
+from .terria_config_builder import strip_proxy_tokens_from_terria_url
 
 
 # Create Blueprint for our API endpoints
@@ -572,10 +572,12 @@ class TerriaAPIController:
                 return self._create_error_response('custom_config_url must be an HTTP(S) URL', 400)
             custom_config_url = custom_config_url.strip()
 
-            # Drop any injected private-dataset catalog branches before we
-            # persist this — saving them bloats the view config without bound
-            # and embeds short-lived signed proxy tokens.
-            custom_config_url = strip_private_catalog_from_terria_url(custom_config_url)
+            # Strip the short-lived signed proxy ``?token=`` from any injected
+            # private-dataset URLs before persisting (it expires). The private
+            # catalog branches themselves are kept so this saved view can be
+            # shared with other users who still have access — a fresh per-viewer
+            # token is re-minted at render time.
+            custom_config_url = strip_proxy_tokens_from_terria_url(custom_config_url)
 
             # Safety net against runaway configs (browser URL limits, slow
             # CKAN view edit form). Reject rather than silently truncate.

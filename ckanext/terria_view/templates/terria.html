@@ -267,6 +267,19 @@
   </a>
   {% endif %}
 </div>
+<div class="clearfix"></div>
+{% if private_resources_blocked %}
+<div class="alert alert-warning terria-private-notice" style="margin-bottom: 10px;">
+  <i class="fa fa-lock" aria-hidden="true"></i>
+  {%- if not c.user %}
+    {{ _('This map includes private datasets.') }}
+    <a href="{{ h.url_for('user.login') }}">{{ _('Log in') }}</a>
+    {{ _('to view them.') }}
+  {%- else %}
+    {{ _('This map includes private datasets your account cannot access. Request access from the relevant organization.') }}
+  {%- endif %}
+</div>
+{% endif %}
 {% if direct_url %}
   <iframe id="terria-iframe" src="{{ terria_instance_url }}" frameborder="0" style="border:0;width:100%;height: 100vh;" allow="clipboard-write; clipboard-read" allowFullScreen mozAllowFullScreen webkitAllowFullScreen></iframe>
 {% elif resource and resource.format and resource.format.lower() == 'json' %}

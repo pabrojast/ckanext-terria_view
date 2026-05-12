@@ -88,7 +88,9 @@ Body esperado:
 
 Validación observada:
 
-- la URL debe ser `http://` o `https://`.
+- la URL debe ser `http://` o `https://`;
+- se quita el `?token=` firmado de las URLs proxy antes de persistir (`strip_proxy_tokens_from_terria_url`); las ramas `Private Datasets (...)` se conservan y su token se renueva por visor en render (ver [[Flujos Importantes]] §4 y [[Troubleshooting]]);
+- se rechaza con 413 si tras la limpieza supera `MAX_CUSTOM_CONFIG_BYTES` (512 KB).
 
 ### Datasets privados del usuario
 

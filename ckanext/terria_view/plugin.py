@@ -15,7 +15,12 @@ import ckan.logic.action.get as get
 from .config_manager import ConfigManager
 from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
-from .terria_config_builder import TerriaConfigBuilder, strip_private_catalog_from_terria_url
+from .terria_config_builder import (
+    TerriaConfigBuilder,
+    strip_proxy_tokens_from_terria_url,
+    refresh_proxy_tokens,
+    payload_has_private_catalog,
+)
 from .cache_manager import CacheManager
 from .file_cache_manager import FileCacheManager
 from .api_endpoints import terria_api
@@ -452,12 +457,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             data_dict['style'] = 'NA'
         
-        # Never persist an injected private-dataset catalog inside a view's
-        # custom_config (it bloats the config without bound and embeds
-        # short-lived signed proxy tokens). This covers values pasted/copied
-        # from a logged-in viewer's iframe URL.
+        # Strip the short-lived signed proxy ``?token=`` from any injected
+        # private-dataset URLs before persisting (it expires). The private
+        # catalog branches themselves are kept so a saved view can be shared
+        # with other users who still have access; a fresh per-viewer token is
+        # re-minted at render time (see setup_template_variables ->
+        # _refresh_proxy_tokens_in_encoded_config).
         if data_dict.get('custom_config') and data_dict['custom_config'] != 'NA':
-            data_dict['custom_config'] = strip_private_catalog_from_terria_url(
+            data_dict['custom_config'] = strip_proxy_tokens_from_terria_url(
                 data_dict['custom_config']
             )
 
@@ -633,7 +640,8 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             else:
                 # Custom configuration
                 custom_config = self.terria_config_builder.process_custom_config(
-                    view_custom_config, resource_url, resource.get('format', ''), view_style
+                    view_custom_config, resource_url, resource.get('format', ''), view_style,
+                    resource_id=resource.get('id')
                 )
                 if custom_config:
                     encoded_config = urllib.parse.quote(custom_config)
@@ -649,7 +657,21 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             # user-specific or temporary and must not leak across requests.
             if not package.get('private'):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
-        
+
+        # A *saved* config may carry injected private-dataset catalog branches
+        # (with their proxy ``?token=`` stripped on save). Re-mint a fresh
+        # per-viewer token for each referenced private resource the current user
+        # may read; users without access get a token-less URL (the proxy then
+        # answers 401 for that item). When the saved config already carries a
+        # private catalog we skip re-injecting the current user's full one below
+        # (avoids duplicates and unbounded growth across re-saves).
+        saved_config_has_private_catalog = False
+        private_resources_blocked = False
+        if encoded_config:
+            encoded_config, saved_config_has_private_catalog, private_resources_blocked = (
+                self._refresh_proxy_tokens_in_encoded_config(encoded_config, user_context)
+            )
+
         # Inject the logged-in user's private-dataset catalog into the Terria
         # ``#start=`` payload so the catalog tree shows their accessible private
         # datasets. By default this only happens on views of *private* datasets:
@@ -678,7 +700,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # the cross-origin iframe flow identical to public views (workbench and
         # timeline populate reliably) while still making the user's private datasets
         # available in the catalog tree.
-        if encoded_config and private_catalog_data:
+        if encoded_config and private_catalog_data and not saved_config_has_private_catalog:
             encoded_config = self._merge_private_catalog_into_encoded_config(
                 encoded_config, private_catalog_data
             )
@@ -692,8 +714,83 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'view_id': view.get('id'),
             'resource_id': resource.get('id'),
             'user_logged_in': bool(user_context.get('user')),
-            'private_catalog_data': private_catalog_data
+            'private_catalog_data': private_catalog_data,
+            # True when the saved config references private resources the current
+            # viewer can't access — the template shows a "log in / no access"
+            # notice above the map.
+            'private_resources_blocked': private_resources_blocked,
         }
+
+    def _refresh_proxy_tokens_in_encoded_config(self, encoded_config, user_context):
+        """Re-mint per-viewer private-resource proxy tokens in an encoded Terria config.
+
+        Returns ``(encoded_config, has_private_catalog, blocked)``:
+
+        * ``encoded_config`` is re-encoded only when it actually references the
+          resource proxy; viewers without access to a referenced resource get a
+          token-less URL (the proxy then answers ``401`` for that item).
+        * ``blocked`` is True when at least one referenced private resource was
+          denied for the current viewer (so the template can show a "log in /
+          no access" notice).
+        """
+        if not encoded_config:
+            return encoded_config, False, False
+        try:
+            decoded = urllib.parse.unquote(encoded_config)
+        except Exception:
+            return encoded_config, False, False
+
+        references_proxy = '/api/terria/resource/' in decoded
+        # Cheap pre-check before paying for a full JSON parse.
+        if not references_proxy and 'Private Datasets (' not in decoded:
+            return encoded_config, False, False
+
+        try:
+            data = json.loads(decoded)
+        except (ValueError, TypeError):
+            return encoded_config, False, False
+
+        has_private_catalog = payload_has_private_catalog(data)
+        blocked_ids = []
+
+        if references_proxy:
+            auth_context = {
+                'user': user_context.get('user'),
+                'auth_user_obj': user_context.get('auth_user_obj'),
+            }
+            decisions = {}
+
+            def mint(resource_id):
+                if resource_id not in decisions:
+                    allowed = False
+                    try:
+                        toolkit.check_access('resource_show', auth_context, {'id': resource_id})
+                        allowed = True
+                    except toolkit.NotAuthorized:
+                        allowed = False
+                    except Exception:
+                        allowed = False
+                    if allowed:
+                        try:
+                            decisions[resource_id] = self.resource_utils.generate_resource_token(
+                                resource_id
+                            )
+                        except Exception:
+                            decisions[resource_id] = None
+                    else:
+                        decisions[resource_id] = None
+                        blocked_ids.append(resource_id)
+                return decisions[resource_id]
+
+            try:
+                refresh_proxy_tokens(data, mint)
+                encoded_config = urllib.parse.quote(
+                    json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+                )
+            except Exception as e:
+                self._debug_print(f"Could not refresh proxy tokens in encoded_config: {e}")
+
+        return encoded_config, has_private_catalog, bool(blocked_ids)
 
     def _merge_private_catalog_into_encoded_config(self, encoded_config, private_catalog_data):
         """
