@@ -133,7 +133,7 @@
       // Resolve target origin
       var targetOrigin = '*';
       try {
-        var urlObj = new URL(terriaInstanceUrl);
+        var urlObj = new URL(terriaInstanceUrl, window.location.href);
         if (urlObj && urlObj.origin) {
           targetOrigin = String(urlObj.origin);
         }
@@ -141,18 +141,17 @@
         // Keep * if URL parsing fails
       }
 
-      // Build the payload from primitives and round-trip through JSON.
+      // Build the payload from primitives on a null-prototype object.
       // We have seen Chrome throw ``Failed to execute 'postMessage' on
       // 'Window': [object Array] could not be cloned`` here when an
-      // extension/polyfill leaks non-cloneable values into the prototype
-      // chain of plain objects. JSON.parse(JSON.stringify(...)) gives us
-      // a fresh, prototype-clean object containing only primitive
-      // strings — structured clone always accepts that.
-      var payload = JSON.parse(JSON.stringify({
-        type: 'requestShareData',
-        requestId: String(requestId),
-        allowOrigin: String(window.location.origin || '')
-      }));
+      // extension/polyfill leaks non-cloneable values onto
+      // ``Object.prototype``. ``JSON.parse(JSON.stringify(...))`` still
+      // inherits from that polluted prototype; ``Object.create(null)``
+      // does not.
+      var payload = Object.create(null);
+      payload.type = 'requestShareData';
+      payload.requestId = String(requestId);
+      payload.allowOrigin = String(window.location.origin || '');
 
       try {
         iframe.contentWindow.postMessage(payload, targetOrigin);

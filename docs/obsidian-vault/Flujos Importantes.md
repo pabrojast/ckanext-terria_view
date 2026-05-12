@@ -145,9 +145,9 @@ Secuencia:
 3. Este método ejecuta `package_search(include_private=True)` con el contexto del usuario.
 4. Filtra recursos compatibles y genera items Terria usando `format_dataset_item(package=..., user_context=...)`.
 5. Las URLs de recursos privados subidos se resuelven vía `resource_utils.get_resource_url()`, que devuelve una URL **proxy firmada** `GET /api/terria/resource/<id>/content/<filename>?token=<token>`. El proxy vive en el mismo dominio que CKAN, descarga el blob desde Azure server-side con el uploader y responde con `Access-Control-Allow-Origin: *`, evitando depender de la configuración CORS del Storage Account.
-6. El catálogo privado se pasa a la template como `private_catalog_data`.
-7. `terria.html` carga el iframe con `#start={{ encoded_config }}` **también en modo privado** — de ese modo el recurso actual entra al `workbench`/`timeline` igual que en vistas públicas. El catálogo privado adicional (otros datasets visibles al usuario) se envía como un init source separado vía `postMessage` cuando el iframe emite `ready`.
-8. El postMessage solo transporta el `private_catalog_data`, no la config completa del recurso, para evitar que Terria sobreescriba/no active el workbench ya inicializado por `#start=`.
+6. Si hay catálogo privado habilitado para esa vista, `setup_template_variables()` lo fusiona server-side dentro de `encoded_config` como init source adicional (`_merge_private_catalog_into_encoded_config`).
+7. `terria.html` carga el iframe con `#start={{ encoded_config }}` **también en modo privado** — de ese modo el recurso actual y el catálogo privado llegan juntos en la misma inicialización y el `workbench`/`timeline` se comportan igual que en vistas públicas.
+8. No hay un `postMessage` adicional para poblar el catálogo privado. El único `postMessage` de esta pantalla es el de `Save Configuration`, que pide `shareData` al iframe Terria.
 
 Resultado:
 
@@ -156,8 +156,8 @@ Resultado:
 
 Notas:
 
-- el `postMessage` nunca usa `'*'` como targetOrigin para datos privados;
-- si la URL de la instancia Terria no puede parsearse, la inyección del catálogo privado se deshabilita pero la vista del recurso igual funciona;
+- el catálogo privado no depende de `postMessage`; queda embebido en `encoded_config` y no se cachea;
+- `Save Configuration` sí usa `postMessage`: resuelve `targetOrigin` desde `terria_instance_url` y, si la URL no puede parsearse, cae a `'*'` porque ese request no transporta datos privados;
 - el catálogo privado se genera on-demand por request, no se cachea;
 - los tokens del proxy expiran en 1h por defecto y están firmados con el secret CKAN (`beaker.session.secret` o `SECRET_KEY`);
 - el proxy ejecuta `resource_show` con `ignore_auth=True` porque la autorización ya fue validada vía el token firmado;

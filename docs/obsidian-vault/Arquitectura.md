@@ -82,7 +82,7 @@ Usuarios autenticados pueden visualizar sus datasets privados en la vista Terria
 
 - Los catálogos públicos (`ihp-wins.json`, `/api/terria/*`) **nunca** incluyen datos privados. Las cachés (`CacheManager`, `FileCacheManager`) son estrictamente públicas.
 - Cuando un usuario autenticado abre una vista, `setup_template_variables()` invoca `_get_private_datasets_catalog()` que busca datasets privados del usuario vía `package_search(include_private=True)`.
-- El catálogo privado se inyecta **inline** en la template y se envía al iframe de TerriaJS vía `postMessage` con validación de origen. El iframe se carga sin `#start=` para evitar doble inicialización.
+- El catálogo privado se genera server-side, se fusiona dentro de `encoded_config` (`_merge_private_catalog_into_encoded_config`) y viaja en el mismo `#start=` del iframe. El `postMessage` queda reservado al botón `Save Configuration`, que pide `shareData` a TerriaJS.
 - Las URLs de recursos privados se emiten como endpoint proxy CKAN firmado (`/api/terria/resource/<id>/content?token=<token>`). El proxy resuelve la SAS server-side con el uploader y stremea el contenido con `Access-Control-Allow-Origin: *`, de modo que el iframe Terria (en otro dominio) no depende de la configuración CORS del Storage Account Azure.
 - Los tokens del proxy se firman HMAC-SHA256 con `beaker.session.secret`/`SECRET_KEY`, expiran por defecto en 1h y están atados a un `resource_id` específico.
 - La configuración cacheada en `resource_view` (`cached_config`) se omite para paquetes privados para evitar filtración de URLs sensibles o temporales.

@@ -104,6 +104,8 @@ Revisar:
 - que la instancia Terria responda al protocolo de `postMessage` esperado;
 - que `custom_config_url` sea HTTP(S).
 
+Si la consola muestra `Failed to execute 'postMessage' on 'Window': [object Array] could not be cloned`, sospechar contaminación de `Object.prototype` por una extensión/polyfill del navegador. La template ahora arma el request `requestShareData` sobre un objeto de prototipo nulo (`Object.create(null)`) para evitar ese fallo de structured clone.
+
 ## La vista Terria de un recurso se vuelve lentísima / el formulario de editar vista tarda 30-60 s
 
 Síntoma: `resource_view.config` crece a varios MB; `GET /dataset/.../edit_view/<id>` tarda 30-60 s y devuelve varios MB de HTML (a veces termina en `SIGPIPE` / `Broken pipe` en uWSGI porque el navegador se rinde); el `#start=` guardado en `custom_config` es una URL de >1 MB que el navegador apenas acepta.
