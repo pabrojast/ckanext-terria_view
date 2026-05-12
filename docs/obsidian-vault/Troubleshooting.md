@@ -118,7 +118,7 @@ Comportamiento actual (los datasets privados **se conservan** en la config guard
 - en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
 - si la config guardada ya trae un catálogo privado, no se vuelve a inyectar el del usuario actual (evita duplicados / crecimiento entre re-guardados);
 - `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso);
-- `save_view_config` sigue rechazando configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB);
+- `save_view_config` sigue rechazando configs > `max_custom_config_bytes` (4 MB por defecto, configurable);
 - `_CONFIG_PROCESSING_VERSION` se subió en su momento para invalidar `cached_config` viejos.
 
 `scripts/strip_private_catalog_from_views.py` sigue disponible para *eliminar por completo* las ramas privadas de vistas concretas si hace falta (recorre los `resource_view` `terria_view` y borra también la copia obsoleta `config.__extras.custom_config_url`); ya no es necesario por defecto. Se ejecuta contra la BD de CKAN (`--apply` para escribir; sin él es dry-run).

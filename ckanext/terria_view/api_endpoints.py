@@ -62,10 +62,27 @@ terria_api = Blueprint('terria_api', __name__)
 # Lock to prevent concurrent regeneration of the full catalog
 _catalog_regen_lock = threading.Lock()
 
-# Reject pathologically large saved configs even after stripping injected
-# private-catalog branches: a stored 1MB+ ``#start=`` URL makes the CKAN view
-# edit form unusable and approaches browser URL-length limits.
-MAX_CUSTOM_CONFIG_BYTES = 512 * 1024
+# Reject pathologically large saved configs: a stored multi-MB ``#start=`` URL
+# makes the CKAN view edit form sluggish and approaches browser URL-length
+# limits. The default is generous enough to hold a saved view that bakes in a
+# logged-in user's private-dataset catalog (which can run to ~1 MB); operators
+# can override it with ``ckanext.terria_view.max_custom_config_bytes``.
+DEFAULT_MAX_CUSTOM_CONFIG_BYTES = 4 * 1024 * 1024
+
+
+def get_max_custom_config_bytes() -> int:
+    try:
+        value = int(toolkit.config.get(
+            'ckanext.terria_view.max_custom_config_bytes',
+            DEFAULT_MAX_CUSTOM_CONFIG_BYTES,
+        ))
+        return value if value > 0 else DEFAULT_MAX_CUSTOM_CONFIG_BYTES
+    except (TypeError, ValueError):
+        return DEFAULT_MAX_CUSTOM_CONFIG_BYTES
+
+
+# Back-compat alias for code/tests that referenced the old constant name.
+MAX_CUSTOM_CONFIG_BYTES = DEFAULT_MAX_CUSTOM_CONFIG_BYTES
 
 
 class TerriaAPIController:
@@ -581,12 +598,13 @@ class TerriaAPIController:
 
             # Safety net against runaway configs (browser URL limits, slow
             # CKAN view edit form). Reject rather than silently truncate.
-            if len(custom_config_url) > MAX_CUSTOM_CONFIG_BYTES:
+            max_bytes = get_max_custom_config_bytes()
+            if len(custom_config_url) > max_bytes:
                 return self._create_error_response(
-                    'Configuration is too large to save (%d bytes after cleanup; '
-                    'limit %d). The map state likely accumulated catalog entries '
-                    'that should not be part of a saved view.'
-                    % (len(custom_config_url), MAX_CUSTOM_CONFIG_BYTES),
+                    'Configuration is too large to save (%d bytes; limit %d). '
+                    'Raise ckanext.terria_view.max_custom_config_bytes if this '
+                    'view legitimately needs a larger saved config.'
+                    % (len(custom_config_url), max_bytes),
                     413,
                 )
 

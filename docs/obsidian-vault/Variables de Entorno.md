@@ -80,7 +80,9 @@ Lista separada por comas de extras a remover.
 
 Si está en `true`, el catálogo de datasets privados del usuario logueado se inyecta en el `#start=` de **todas** las vistas Terria; si está en `false` (default), solo en vistas de datasets privados. Anónimo nunca recibe el catálogo privado, independientemente del flag. Ver [[Flujos Importantes]] (guardado de configuración) y [[Troubleshooting]] (crecimiento del config de la vista).
 
-Nota no configurable: al guardar vía `/api/terria/view/<id>/save-config`, `api_endpoints.py` rechaza configs > `MAX_CUSTOM_CONFIG_BYTES` (512 KB) tras limpiar las ramas privadas; hoy es una constante, no un setting.
+### `ckanext.terria_view.max_custom_config_bytes`
+
+Tamaño máximo (bytes) del `custom_config_url` que `/api/terria/view/<id>/save-config` acepta; por encima responde 413. Default `4 * 1024 * 1024` (4 MB) — suficiente para una vista que hornea el catálogo de datasets privados del usuario (que puede rondar ~1 MB). Subirlo si una vista legítimamente necesita más; bajarlo para ser más estricto.
 
 ### `ckan.storage_path`
 

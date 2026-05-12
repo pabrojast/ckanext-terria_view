@@ -70,7 +70,7 @@ Secuencia:
 1. `terria.html` envía `postMessage` al iframe Terria pidiendo `shareData` (la instancia Terria embebida responde con `shareDataResponse` vía `updateApplicationOnMessageFromParentWindow`).
 2. Construye una URL `#start=...`.
 3. Hace `POST /api/terria/view/<view_id>/save-config`.
-4. El endpoint valida la URL HTTP(S), **quita solo el `?token=` firmado** de las URLs proxy del `#start=` (`strip_proxy_tokens_from_terria_url`) —las ramas `Private Datasets (...)` se conservan— y rechaza si tras la limpieza supera `MAX_CUSTOM_CONFIG_BYTES` (512 KB).
+4. El endpoint valida la URL HTTP(S), **quita solo el `?token=` firmado** de las URLs proxy del `#start=` (`strip_proxy_tokens_from_terria_url`) —las ramas `Private Datasets (...)` se conservan— y rechaza si tras la limpieza supera `max_custom_config_bytes` (4 MB por defecto, configurable).
 5. La vista CKAN se actualiza con el nuevo `custom_config`. El mismo strip de tokens se aplica en `before_create`/`before_update` cuando la URL llega por el formulario.
 6. En cada render, `setup_template_variables()` recorre el `encoded_config` y, por cada recurso privado referenciado vía el proxy, emite un token fresco **solo si el usuario actual tiene acceso** (`check_access('resource_show')`); si no, deja la URL sin token (el proxy responderá 401 para ese item) — `_refresh_proxy_tokens_in_encoded_config` + `refresh_proxy_tokens`.
 
