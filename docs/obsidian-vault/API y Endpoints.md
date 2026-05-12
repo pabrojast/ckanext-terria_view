@@ -89,7 +89,7 @@ Body esperado:
 Validación observada:
 
 - la URL debe ser `http://` o `https://`;
-- se quita el `?token=` firmado de las URLs proxy antes de persistir (`strip_proxy_tokens_from_terria_url`); las ramas `Private Datasets (...)` se conservan y su token se renueva por visor en render (ver [[Flujos Importantes]] §4 y [[Troubleshooting]]);
+- `prepare_saved_custom_config_url`: poda la rama `Private Datasets (...)` a solo los items mostrados + grupos ancestros (`prune_private_catalog_to_used`) y quita el `?token=` firmado de las URLs proxy (`strip_proxy_tokens`); la rama podada se conserva y su token se renueva por visor en render (ver [[Flujos Importantes]] §4 y [[Troubleshooting]]);
 - se rechaza con 413 si tras la limpieza supera `max_custom_config_bytes` (4 MB por defecto, configurable).
 
 ### Datasets privados del usuario

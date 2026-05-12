@@ -177,6 +177,126 @@ def strip_private_catalog_from_terria_url(url):
     )
 
 
+# --- Pruning the saved private branch to displayed items ---------------------
+#
+# When a viewer with private datasets clicks "Save Configuration", TerriaJS's
+# ``getShareData`` serialises not just the private items they put on the map but
+# the whole injected ``Private Datasets (...)`` tree as ancestors (each group's
+# full ``members`` list), which can run to ~1 MB. For a *saved view* we only
+# need the items actually displayed; trim the branch down to those plus their
+# ancestor groups (with ``members`` pruned to the kept descendants).
+
+
+def _private_branch_model_ids(models) -> set:
+    """Return the set of model ids that belong to an injected private-catalog branch.
+
+    A model is "in the branch" if its id looks like a ``Private Datasets (...)``
+    id, or it descends (via ``knownContainerUniqueIds``) from such a model, or it
+    is a member of a branch group.
+    """
+    if not isinstance(models, dict):
+        return set()
+    branch = set(
+        key for key in models
+        if key != '/' and _looks_like_private_catalog_id(key)
+    )
+    changed = True
+    while changed:
+        changed = False
+        for key, value in models.items():
+            if key in branch or key == '/' or not isinstance(value, dict):
+                continue
+            containers = value.get('knownContainerUniqueIds') or []
+            if any(isinstance(c, str) and (c in branch or _looks_like_private_catalog_id(c))
+                   for c in containers):
+                branch.add(key)
+                changed = True
+        for key in list(branch):
+            group = models.get(key)
+            if isinstance(group, dict):
+                for member in group.get('members') or []:
+                    if isinstance(member, str) and member in models and member not in branch:
+                        branch.add(member)
+                        changed = True
+    return branch
+
+
+def _prune_private_branch_in_init_source(init_source) -> None:
+    if not isinstance(init_source, dict):
+        return
+    models = init_source.get('models')
+    if not isinstance(models, dict):
+        return
+    branch = _private_branch_model_ids(models)
+    if not branch:
+        return
+
+    # Which private items are actually displayed?
+    used = set()
+    for list_key in ('workbench', 'timeline'):
+        for m in init_source.get(list_key) or []:
+            if isinstance(m, str):
+                used.add(m)
+    previewed = init_source.get('previewedItemId')
+    if isinstance(previewed, str):
+        used.add(previewed)
+    used_private = used & branch
+
+    keep = set()
+    frontier = list(used_private)
+    keep.update(used_private)
+    while frontier:
+        cur = frontier.pop()
+        model = models.get(cur)
+        if not isinstance(model, dict):
+            continue
+        for c in model.get('knownContainerUniqueIds') or []:
+            if isinstance(c, str) and c in branch and c not in keep:
+                keep.add(c)
+                frontier.append(c)
+
+    drop = branch - keep
+    if not drop:
+        return
+    for key in drop:
+        models.pop(key, None)
+    # Clean dangling references to dropped ids from every surviving model
+    # (including the root ``/`` group).
+    for value in models.values():
+        if isinstance(value, dict) and isinstance(value.get('members'), list):
+            value['members'] = [
+                m for m in value['members']
+                if not (isinstance(m, str) and m in drop)
+            ]
+    # Clean dangling references carried on the init source.
+    for list_key in ('workbench', 'timeline'):
+        lst = init_source.get(list_key)
+        if isinstance(lst, list):
+            init_source[list_key] = [
+                m for m in lst if not (isinstance(m, str) and m in drop)
+            ]
+    if isinstance(init_source.get('previewedItemId'), str) and init_source['previewedItemId'] in drop:
+        init_source.pop('previewedItemId', None)
+    # Also trim any literal ``catalog`` array form (best-effort; rarely present
+    # in a Terria-roundtripped saved state).
+    catalog = init_source.get('catalog')
+    if isinstance(catalog, list) and not used_private:
+        _strip_private_from_catalog_list(catalog)
+
+
+def prune_private_catalog_to_used(start_data):
+    """Trim injected ``Private Datasets (...)`` branches down to the items actually
+    displayed (workbench/timeline/preview) plus their ancestor groups. Mutates and
+    returns ``start_data``; a no-op when there is no private branch."""
+    if not isinstance(start_data, dict):
+        return start_data
+    init_sources = start_data.get('initSources')
+    if isinstance(init_sources, list):
+        for init_source in init_sources:
+            _prune_private_branch_in_init_source(init_source)
+    return start_data
+
+
 # --- Private-resource proxy tokens -------------------------------------------
 #
 # Private datasets injected into a Terria config are referenced through CKAN's
@@ -295,6 +415,35 @@ def refresh_proxy_tokens(start_data, mint_token):
 
     _walk_string_values(start_data, transform)
     return start_data
+
+
+def prepare_saved_custom_config_url(url):
+    """Prepare a ``#start=<json>`` URL for persistence as a view's ``custom_config``.
+
+    Two transforms in one parse/re-encode pass:
+      * prune any injected ``Private Datasets (...)`` branch down to the items
+        actually displayed (workbench/timeline/preview) plus their ancestor
+        groups — keeps the saved config small while still restoring the private
+        datasets the user had on the map;
+      * strip the short-lived signed proxy ``?token=`` (it expires; a fresh
+        per-viewer token is re-minted at render time).
+
+    Returns the rebuilt URL (compactly re-encoded), or the original value
+    unchanged when it is not a string, has no ``#start=`` fragment, or fails to
+    parse as JSON.
+    """
+    if not isinstance(url, str) or '#start=' not in url:
+        return url
+    base, _, encoded = url.partition('#start=')
+    try:
+        data = json.loads(urllib.parse.unquote(encoded))
+    except (ValueError, TypeError):
+        return url
+    prune_private_catalog_to_used(data)
+    strip_proxy_tokens(data)
+    return base + '#start=' + urllib.parse.quote(
+        json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    )
 
 
 class TerriaConfigBuilder:

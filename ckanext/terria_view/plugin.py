@@ -17,7 +17,7 @@ from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import (
     TerriaConfigBuilder,
-    strip_proxy_tokens_from_terria_url,
+    prepare_saved_custom_config_url,
     refresh_proxy_tokens,
     payload_has_private_catalog,
 )
@@ -457,14 +457,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         else:
             data_dict['style'] = 'NA'
         
-        # Strip the short-lived signed proxy ``?token=`` from any injected
-        # private-dataset URLs before persisting (it expires). The private
-        # catalog branches themselves are kept so a saved view can be shared
-        # with other users who still have access; a fresh per-viewer token is
+        # Prune any injected private-dataset catalog down to the items actually
+        # displayed and strip the expired-once proxy ``?token=`` before
+        # persisting. The kept private branch lets a saved view be shared with
+        # other users who still have access; a fresh per-viewer token is
         # re-minted at render time (see setup_template_variables ->
         # _refresh_proxy_tokens_in_encoded_config).
         if data_dict.get('custom_config') and data_dict['custom_config'] != 'NA':
-            data_dict['custom_config'] = strip_proxy_tokens_from_terria_url(
+            data_dict['custom_config'] = prepare_saved_custom_config_url(
                 data_dict['custom_config']
             )
 

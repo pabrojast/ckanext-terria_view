@@ -114,7 +114,7 @@ Causa: `setup_template_variables` inyecta el catálogo de **datasets privados de
 
 Comportamiento actual (los datasets privados **se conservan** en la config guardada a propósito, para poder compartir la vista entre usuarios con acceso):
 
-- al guardar (`save_view_config`, `_process_form_data`) solo se quita el `?token=` firmado de las URLs proxy (`strip_proxy_tokens_from_terria_url`); las ramas `Private Datasets (...)` se mantienen;
+- al guardar (`save_view_config`, `_process_form_data`) se llama a `prepare_saved_custom_config_url`: poda la rama `Private Datasets (...)` a solo los items mostrados (`workbench`/`timeline`/`preview`) + sus grupos ancestros con `members` recortados (`prune_private_catalog_to_used`) y quita el `?token=` firmado (`strip_proxy_tokens`). Esto evita que TerriaJS hornee ~1 MB de árbol de catálogo en el `custom_config`;
 - en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
 - si la config guardada ya trae un catálogo privado, no se vuelve a inyectar el del usuario actual (evita duplicados / crecimiento entre re-guardados);
 - `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso);
