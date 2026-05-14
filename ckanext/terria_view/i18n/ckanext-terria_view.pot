@@ -1,0 +1,185 @@
+# Translations template for ckanext-terria_view.
+# Copyright (C) 2026 UNESCO IHP-WINS
+# This file is distributed under the same license as the ckanext-terria_view
+# project.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ckanext-terria_view 0.1\n"
+"Report-Msgid-Bugs-To: ihp-wins@unesco.org\n"
+"POT-Creation-Date: 2026-05-14 00:00+0000\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.10.3\n"
+
+#: ckanext/terria_view/plugin.py:227
+msgid "TerriaJS Preview"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "View in a separate"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "window"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Toggle full width"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Save the current TerriaJS configuration from a share URL"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Save Configuration"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "This map includes private datasets."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Log in"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "to view them."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "This map includes private datasets your account cannot access. Request access from the relevant organization."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Error: View ID not available"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Saving..."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Configuration saved successfully!\n\nThe map will now load with this configuration."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Failed to save configuration: "
+msgstr ""
+
+#: ckanext/terria_view/templates/terria.html
+msgid "Error saving configuration: "
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "URL of TerriaJS Instance"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "e.g. //ihp-wins.unesco.org/terria/"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Configuration Type"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Automatic Configuration"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Recommended"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "The system will automatically generate the best TerriaJS configuration based on your data format and properties."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Custom TerriaJS Configuration"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Provide a custom TerriaJS URL with configuration. The system will process this URL and adapt it to your data."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "e.g. https://ihp-wins.unesco.org/terria/#share=g-abc123 or https://example.com/terria/#start=..."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Enter a TerriaJS URL containing your custom configuration. The system will extract and adapt the configuration for your data."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Style"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Available SLD files:"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Custom URL"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "No style"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "No SLD files found in this dataset."
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Enter SLD file URL"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "e.g. https://example.com/style.sld"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "How does the Custom Configuration work?"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "The system processes your custom TerriaJS URL and adapts it to work with your data:"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Takes your TerriaJS URL with configuration (e.g., from a shared map)"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Extracts the configuration settings (camera position, layers, styling, etc.)"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Automatically replaces data URLs with your resource URL"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Applies any selected SLD styling from this dataset"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Generates a viewer that maintains your custom settings but displays your data"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "View step-by-step example"
+msgstr ""
+
+#: ckanext/terria_view/templates/terria_instance_url.html
+msgid "Example: Using a custom TerriaJS configuration with your data"
+msgstr ""

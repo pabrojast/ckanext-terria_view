@@ -1,0 +1,145 @@
+# Arabic translations for ckanext-terria_view.
+# Copyright (C) 2026 UNESCO IHP-WINS
+# This file is distributed under the same license as the ckanext-terria_view project.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ckanext-terria_view 0.1\n"
+"Report-Msgid-Bugs-To: ihp-wins@unesco.org\n"
+"POT-Creation-Date: 2026-05-14 00:00+0000\n"
+"PO-Revision-Date: 2026-05-14 00:00+0000\n"
+"Last-Translator: Codex Assistant <ihp-wins@unesco.org>\n"
+"Language: ar\n"
+"Language-Team: ar <LL@li.org>\n"
+"Plural-Forms: nplurals=6; plural=(n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 ? 4 : 5);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.10.3\n"
+
+msgid "TerriaJS Preview"
+msgstr "معاينة TerriaJS"
+
+msgid "View in a separate"
+msgstr "عرض في نافذة"
+
+msgid "window"
+msgstr "منفصلة"
+
+msgid "Toggle full width"
+msgstr "تبديل العرض الكامل"
+
+msgid "Save the current TerriaJS configuration from a share URL"
+msgstr "حفظ تكوين TerriaJS الحالي من رابط مشاركة"
+
+msgid "Save Configuration"
+msgstr "حفظ التكوين"
+
+msgid "This map includes private datasets."
+msgstr "تتضمن هذه الخريطة مجموعات بيانات خاصة."
+
+msgid "Log in"
+msgstr "تسجيل الدخول"
+
+msgid "to view them."
+msgstr "لعرضها."
+
+msgid "This map includes private datasets your account cannot access. Request access from the relevant organization."
+msgstr "تتضمن هذه الخريطة مجموعات بيانات خاصة لا يمكن لحسابك الوصول إليها. اطلب الوصول من المنظمة المعنية."
+
+msgid "Error: View ID not available"
+msgstr "خطأ: معرّف العرض غير متاح"
+
+msgid "Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration."
+msgstr "هل تريد بالتأكيد حفظ تكوين الخريطة الحالي؟\n\nسيؤدي ذلك إلى استبدال التكوين المخصص الموجود."
+
+msgid "Saving..."
+msgstr "جارٍ الحفظ..."
+
+msgid "Configuration saved successfully!\n\nThe map will now load with this configuration."
+msgstr "تم حفظ التكوين بنجاح!\n\nستُحمَّل الخريطة الآن باستخدام هذا التكوين."
+
+msgid "Failed to save configuration: "
+msgstr "فشل حفظ التكوين: "
+
+msgid "Error saving configuration: "
+msgstr "حدث خطأ أثناء حفظ التكوين: "
+
+msgid "URL of TerriaJS Instance"
+msgstr "رابط نسخة TerriaJS"
+
+msgid "e.g. //ihp-wins.unesco.org/terria/"
+msgstr "مثال: //ihp-wins.unesco.org/terria/"
+
+msgid "Configuration Type"
+msgstr "نوع التكوين"
+
+msgid "Automatic Configuration"
+msgstr "تكوين تلقائي"
+
+msgid "Recommended"
+msgstr "مُوصى به"
+
+msgid "The system will automatically generate the best TerriaJS configuration based on your data format and properties."
+msgstr "سيُنشئ النظام تلقائياً أفضل تكوين TerriaJS استناداً إلى صيغة بياناتك وخصائصها."
+
+msgid "Custom TerriaJS Configuration"
+msgstr "تكوين TerriaJS مخصص"
+
+msgid "Provide a custom TerriaJS URL with configuration. The system will process this URL and adapt it to your data."
+msgstr "قدّم رابط TerriaJS مخصصاً مع تكوين. سيقوم النظام بمعالجة هذا الرابط وتكييفه مع بياناتك."
+
+msgid "e.g. https://ihp-wins.unesco.org/terria/#share=g-abc123 or https://example.com/terria/#start=..."
+msgstr "مثال: https://ihp-wins.unesco.org/terria/#share=g-abc123 أو https://example.com/terria/#start=..."
+
+msgid "Enter a TerriaJS URL containing your custom configuration. The system will extract and adapt the configuration for your data."
+msgstr "أدخل رابط TerriaJS يحتوي على تكوينك المخصص. سيستخرج النظام التكوين ويكيّفه مع بياناتك."
+
+msgid "Style"
+msgstr "النمط"
+
+msgid "Available SLD files:"
+msgstr "ملفات SLD المتاحة:"
+
+msgid "Custom URL"
+msgstr "رابط مخصص"
+
+msgid "No style"
+msgstr "بدون نمط"
+
+msgid "No SLD files found in this dataset."
+msgstr "لم يُعثر على ملفات SLD في مجموعة البيانات هذه."
+
+msgid "Enter SLD file URL"
+msgstr "إدخال رابط ملف SLD"
+
+msgid "e.g. https://example.com/style.sld"
+msgstr "مثال: https://example.com/style.sld"
+
+msgid "How does the Custom Configuration work?"
+msgstr "كيف تعمل التهيئة المخصصة؟"
+
+msgid "The system processes your custom TerriaJS URL and adapts it to work with your data:"
+msgstr "يعالج النظام رابط TerriaJS المخصص ويكيّفه ليعمل مع بياناتك:"
+
+msgid "Takes your TerriaJS URL with configuration (e.g., from a shared map)"
+msgstr "يأخذ رابط TerriaJS الخاص بك مع التكوين (مثلاً من خريطة مُشاركة)"
+
+msgid "Extracts the configuration settings (camera position, layers, styling, etc.)"
+msgstr "يستخرج إعدادات التكوين (موضع الكاميرا، الطبقات، التنسيق، إلخ.)"
+
+msgid "Automatically replaces data URLs with your resource URL"
+msgstr "يستبدل تلقائياً روابط البيانات برابط مَوردك"
+
+msgid "Applies any selected SLD styling from this dataset"
+msgstr "يطبّق أي تنسيق SLD محدد من مجموعة البيانات هذه"
+
+msgid "Generates a viewer that maintains your custom settings but displays your data"
+msgstr "يُنشئ عارضاً يحافظ على إعداداتك المخصصة لكن يعرض بياناتك"
+
+msgid "View step-by-step example"
+msgstr "عرض مثال خطوة بخطوة"
+
+msgid "Example: Using a custom TerriaJS configuration with your data"
+msgstr "مثال: استخدام تكوين TerriaJS مخصص مع بياناتك"
+

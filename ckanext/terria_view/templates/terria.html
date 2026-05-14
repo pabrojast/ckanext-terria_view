@@ -194,20 +194,29 @@
     });
   }
 
+  var _terriaI18n = {
+    no_view_id:           {{ _('Error: View ID not available') | tojson }},
+    confirm_save:         {{ _('Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration.') | tojson }},
+    saving:               {{ _('Saving...') | tojson }},
+    save_success:         {{ _('Configuration saved successfully!\n\nThe map will now load with this configuration.') | tojson }},
+    save_fail_prefix:     {{ _('Failed to save configuration: ') | tojson }},
+    save_error_prefix:    {{ _('Error saving configuration: ') | tojson }}
+  };
+
   async function saveConfiguration() {
     if (!terriaViewId) {
-      alert('Error: View ID not available');
+      alert(_terriaI18n.no_view_id);
       return;
     }
 
     // Show confirmation
-    if (!confirm('Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration.')) {
+    if (!confirm(_terriaI18n.confirm_save)) {
       return;
     }
 
     var saveBtn = document.getElementById('save-config-btn');
     var originalText = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Saving...';
+    saveBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> ' + _terriaI18n.saving;
     saveBtn.disabled = true;
 
     try {
@@ -247,18 +256,18 @@
       try { result = JSON.parse(rawBody); } catch (parseErr) { /* not JSON */ }
 
       if (response.ok && result && result.success) {
-        alert('Configuration saved successfully!\n\nThe map will now load with this configuration.');
+        alert(_terriaI18n.save_success);
         // Reload to show new config
         window.location.reload();
       } else {
         var serverMsg = (result && (result.message || result.error))
           || (rawBody ? rawBody.slice(0, 300) : ('HTTP ' + response.status));
         console.error('save-config failed (HTTP ' + response.status + '):', rawBody);
-        alert('Failed to save configuration: ' + serverMsg);
+        alert(_terriaI18n.save_fail_prefix + serverMsg);
       }
     } catch (e) {
       console.error('Error saving configuration:', e);
-      alert('Error saving configuration: ' + e.message);
+      alert(_terriaI18n.save_error_prefix + e.message);
     } finally {
       saveBtn.innerHTML = originalText;
       saveBtn.disabled = false;
@@ -278,7 +287,7 @@
     {{ _('View in a separate') }} {{title}} {{ _('window') }}
   </a>
   <a class="btn" onclick="toggleContainerWidth()" style="margin-left: 5px;">
-    Toggle full width
+    {{ _('Toggle full width') }}
   </a>
   {% if view_id and c.user %}
   <a class="btn btn-primary" id="save-config-btn" onclick="saveConfiguration()" style="margin-left: 5px;" title="{{ _('Save the current TerriaJS configuration from a share URL') }}">

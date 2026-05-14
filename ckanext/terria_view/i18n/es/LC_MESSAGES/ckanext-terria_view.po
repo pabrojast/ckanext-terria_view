@@ -1,0 +1,145 @@
+# Spanish translations for ckanext-terria_view.
+# Copyright (C) 2026 UNESCO IHP-WINS
+# This file is distributed under the same license as the ckanext-terria_view project.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: ckanext-terria_view 0.1\n"
+"Report-Msgid-Bugs-To: ihp-wins@unesco.org\n"
+"POT-Creation-Date: 2026-05-14 00:00+0000\n"
+"PO-Revision-Date: 2026-05-14 00:00+0000\n"
+"Last-Translator: Codex Assistant <ihp-wins@unesco.org>\n"
+"Language: es\n"
+"Language-Team: es <LL@li.org>\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=utf-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Generated-By: Babel 2.10.3\n"
+
+msgid "TerriaJS Preview"
+msgstr "Vista previa de TerriaJS"
+
+msgid "View in a separate"
+msgstr "Ver en una ventana"
+
+msgid "window"
+msgstr "aparte"
+
+msgid "Toggle full width"
+msgstr "Alternar ancho completo"
+
+msgid "Save the current TerriaJS configuration from a share URL"
+msgstr "Guardar la configuración actual de TerriaJS desde una URL compartida"
+
+msgid "Save Configuration"
+msgstr "Guardar configuración"
+
+msgid "This map includes private datasets."
+msgstr "Este mapa incluye conjuntos de datos privados."
+
+msgid "Log in"
+msgstr "Inicia sesión"
+
+msgid "to view them."
+msgstr "para verlos."
+
+msgid "This map includes private datasets your account cannot access. Request access from the relevant organization."
+msgstr "Este mapa incluye conjuntos de datos privados a los que tu cuenta no tiene acceso. Solicita acceso a la organización correspondiente."
+
+msgid "Error: View ID not available"
+msgstr "Error: ID de vista no disponible"
+
+msgid "Are you sure you want to save the current map configuration?\n\nThis will overwrite the existing custom configuration."
+msgstr "¿Seguro que quieres guardar la configuración actual del mapa?\n\nEsto sobrescribirá la configuración personalizada existente."
+
+msgid "Saving..."
+msgstr "Guardando..."
+
+msgid "Configuration saved successfully!\n\nThe map will now load with this configuration."
+msgstr "¡Configuración guardada correctamente!\n\nEl mapa se cargará con esta configuración."
+
+msgid "Failed to save configuration: "
+msgstr "No se pudo guardar la configuración: "
+
+msgid "Error saving configuration: "
+msgstr "Error al guardar la configuración: "
+
+msgid "URL of TerriaJS Instance"
+msgstr "URL de la instancia de TerriaJS"
+
+msgid "e.g. //ihp-wins.unesco.org/terria/"
+msgstr "p. ej., //ihp-wins.unesco.org/terria/"
+
+msgid "Configuration Type"
+msgstr "Tipo de configuración"
+
+msgid "Automatic Configuration"
+msgstr "Configuración automática"
+
+msgid "Recommended"
+msgstr "Recomendado"
+
+msgid "The system will automatically generate the best TerriaJS configuration based on your data format and properties."
+msgstr "El sistema generará automáticamente la mejor configuración de TerriaJS según el formato y las propiedades de tus datos."
+
+msgid "Custom TerriaJS Configuration"
+msgstr "Configuración personalizada de TerriaJS"
+
+msgid "Provide a custom TerriaJS URL with configuration. The system will process this URL and adapt it to your data."
+msgstr "Proporciona una URL de TerriaJS con configuración personalizada. El sistema procesará esta URL y la adaptará a tus datos."
+
+msgid "e.g. https://ihp-wins.unesco.org/terria/#share=g-abc123 or https://example.com/terria/#start=..."
+msgstr "p. ej., https://ihp-wins.unesco.org/terria/#share=g-abc123 o https://example.com/terria/#start=..."
+
+msgid "Enter a TerriaJS URL containing your custom configuration. The system will extract and adapt the configuration for your data."
+msgstr "Introduce una URL de TerriaJS que contenga tu configuración personalizada. El sistema extraerá y adaptará la configuración para tus datos."
+
+msgid "Style"
+msgstr "Estilo"
+
+msgid "Available SLD files:"
+msgstr "Archivos SLD disponibles:"
+
+msgid "Custom URL"
+msgstr "URL personalizada"
+
+msgid "No style"
+msgstr "Sin estilo"
+
+msgid "No SLD files found in this dataset."
+msgstr "No se encontraron archivos SLD en este conjunto de datos."
+
+msgid "Enter SLD file URL"
+msgstr "Introducir URL de archivo SLD"
+
+msgid "e.g. https://example.com/style.sld"
+msgstr "p. ej., https://example.com/style.sld"
+
+msgid "How does the Custom Configuration work?"
+msgstr "¿Cómo funciona la configuración personalizada?"
+
+msgid "The system processes your custom TerriaJS URL and adapts it to work with your data:"
+msgstr "El sistema procesa tu URL de TerriaJS personalizada y la adapta para trabajar con tus datos:"
+
+msgid "Takes your TerriaJS URL with configuration (e.g., from a shared map)"
+msgstr "Toma tu URL de TerriaJS con configuración (p. ej., desde un mapa compartido)"
+
+msgid "Extracts the configuration settings (camera position, layers, styling, etc.)"
+msgstr "Extrae los parámetros de configuración (posición de cámara, capas, estilo, etc.)"
+
+msgid "Automatically replaces data URLs with your resource URL"
+msgstr "Reemplaza automáticamente las URL de datos por la URL de tu recurso"
+
+msgid "Applies any selected SLD styling from this dataset"
+msgstr "Aplica cualquier estilo SLD seleccionado de este conjunto de datos"
+
+msgid "Generates a viewer that maintains your custom settings but displays your data"
+msgstr "Genera un visor que mantiene tu configuración personalizada pero muestra tus datos"
+
+msgid "View step-by-step example"
+msgstr "Ver ejemplo paso a paso"
+
+msgid "Example: Using a custom TerriaJS configuration with your data"
+msgstr "Ejemplo: Uso de una configuración personalizada de TerriaJS con tus datos"
+
