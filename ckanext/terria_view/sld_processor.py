@@ -1921,49 +1921,52 @@ class SLDProcessor:
             print(f"Error in fallback value extraction: {e}")
             return []
     
-    def _safe_float_conversion(self, value: str) -> Optional[float]:
+    def _safe_float_conversion(self, value: str, quiet: bool = False) -> Optional[float]:
         """
         Safely convert string to float with error handling.
-        
+
         Args:
             value: String value to convert
-            
+            quiet: If True, suppress warning logs on failure (use when the
+                caller is probing whether a value is numeric and expects misses).
+
         Returns:
             Float value or None if conversion fails
         """
         if not value:
             return None
-        
+
         try:
             # Clean the value
             cleaned_value = value.strip()
             if not cleaned_value:
                 return None
-            
+
             # Handle scientific notation and very long decimals
             return float(cleaned_value)
-            
+
         except (ValueError, OverflowError) as e:
-            try:
-                print(f"Warning: Could not convert '{value}' to float: {e}")
-            except UnicodeEncodeError:
-                print(f"Warning: Could not convert value to float (contains special characters)")
+            if not quiet:
+                try:
+                    print(f"Warning: Could not convert '{value}' to float: {e}")
+                except UnicodeEncodeError:
+                    print(f"Warning: Could not convert value to float (contains special characters)")
             return None
-    
+
     def _is_valid_numeric_value(self, value: str) -> bool:
         """
         Check if a string represents a valid numeric value.
-        
+
         Args:
             value: String to check
-            
+
         Returns:
             True if value is numeric, False otherwise
         """
         if not value or not isinstance(value, str):
             return False
-        
-        return self._safe_float_conversion(value) is not None
+
+        return self._safe_float_conversion(value, quiet=True) is not None
     
     def _generate_rule_label(self, name, title, rule_number: int) -> str:
         """
