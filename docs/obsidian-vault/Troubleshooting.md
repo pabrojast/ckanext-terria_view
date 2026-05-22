@@ -53,6 +53,29 @@ Causa: TerriaJS valida **la extensión de la URL** antes de intentar fetchear. S
 
 Fix: asegurarse de que `ResourceUtils.build_proxy_resource_url` esté emitiendo el filename en el path (`/api/terria/resource/<id>/content/<filename.ext>?token=...`). `get_resource_url` usa `_extract_upload_filename(resource, resource_url)` para obtenerlo; si el resource tiene `url_type: upload` pero la URL no expone `/download/<filename>`, `_extract_upload_filename` puede devolver vacío y caer al path sin extensión. En ese caso, verificar que el recurso tenga una URL válida con el archivo en el path.
 
+## Share de Terria rompe con "Failed to load shapefile - no URL of file has been defined"
+
+Síntoma: una share antigua (`https://<host>/terria/#share=g-...`) que antes cargaba un recurso del catálogo IHP-WINS ahora falla. Inspeccionando el `initSource.models` se ve un item con clave igual al UUID del recurso (`3129297e-4183-4b61-b564-561c1a0abae6`, etc.) sin campo `url`. Terria reporta:
+
+```
+Failed to load <uuid> mapItems
+Failed to load shapefile - no URL of file has been defined
+```
+
+Causa: el id del item en el catálogo cambió de `<resource_uuid>` a `<resource_uuid>-0` porque el recurso ganó una **segunda vista Terria** en CKAN. El share antiguo fue creado cuando el recurso tenía una sola vista (id plano), pero `format_dataset_item` (en `terria_json_generator.py`) sufijaba con `-{view_index}` el id de **todas** las vistas, incluida la primera (`view_index == 0`), cuando `total_views > 1`. Cuando Terria resuelve la share, busca el id plano en el catálogo cargado vía `terria-reference` (`init/simple-modular.json` → `https://<host>/api/terria/file/full`), no lo encuentra y materializa el modelo desde el estado guardado sin `url`.
+
+Fix aplicado: `format_dataset_item` mantiene `id == resource_id` para el primer view (`view_index == 0`) incluso cuando hay múltiples vistas; solo los views adicionales reciben sufijo `-1`, `-2`, …. El nombre sigue llevando el sufijo " - <view title>" en multi-view para diferenciar visualmente.
+
+Verificación post-deploy:
+
+- regenerar el catálogo cacheado: `curl -X POST https://<host>/api/terria/cache/invalidate` (o esperar a que expire);
+- comprobar que `GET /api/terria/file/full` devuelve el recurso con `"id": "<uuid>"` (sin `-0`) y `"url": "<download URL>"`;
+- reabrir la share original — Terria debe encontrar el item por UUID y resolver el shapefile.
+
+Para diagnosticar otros casos: contar las vistas Terria del recurso (`POST /api/3/action/resource_view_list` con `{"id": "<uuid>"}`). Si devuelve `count > 1`, esta es la causa.
+
+Ver también: [[Modulos]] (`TerriaJSONGenerator.format_dataset_item`).
+
 ## El estilo SLD no se aplica
 
 Revisar:

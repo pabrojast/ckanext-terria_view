@@ -173,11 +173,18 @@ class TerriaJSONGenerator:
                 
                 self._debug_print(f"Using view {view_index}: {view_name}")
                 
-                # Modify resource name if there are multiple views
+                # Modify resource name if there are multiple views. The first
+                # view (``view_index == 0``) always keeps the plain ``resource_id``
+                # so that share URLs created when the resource had a single view
+                # keep resolving after a second view is added (otherwise the id
+                # flips from ``<uuid>`` to ``<uuid>-0`` and every saved share
+                # breaks with "Failed to load shapefile - no URL of file has
+                # been defined").
                 if total_views > 1:
                     resource_name = f"{resource_name} - {view_name}"
                     elemento['name'] = resource_name
-                    elemento['id'] = f"{resource_id}-{view_index}"
+                    if view_index > 0:
+                        elemento['id'] = f"{resource_id}-{view_index}"
                     self._debug_print(f"Multi-view resource name: {resource_name}")
                 
                 # Process styles if available
