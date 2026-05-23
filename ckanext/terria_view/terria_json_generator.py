@@ -185,6 +185,13 @@ class TerriaJSONGenerator:
                     elemento['name'] = resource_name
                     if view_index > 0:
                         elemento['id'] = f"{resource_id}-{view_index}"
+                    else:
+                        # Backwards compatibility: a previous version emitted
+                        # the first view with ``id == "<resource_id>-0"``. Any
+                        # share URL created during that window references that
+                        # suffixed id; advertise it as a ``shareKeys`` alias so
+                        # Terria resolves it back to this canonical item.
+                        elemento['shareKeys'] = [f"{resource_id}-0"]
                     self._debug_print(f"Multi-view resource name: {resource_name}")
                 
                 # Process styles if available

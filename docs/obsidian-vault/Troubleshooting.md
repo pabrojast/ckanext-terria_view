@@ -66,6 +66,8 @@ Causa: el id del item en el catálogo cambió de `<resource_uuid>` a `<resource_
 
 Fix aplicado: `format_dataset_item` mantiene `id == resource_id` para el primer view (`view_index == 0`) incluso cuando hay múltiples vistas; solo los views adicionales reciben sufijo `-1`, `-2`, …. El nombre sigue llevando el sufijo " - <view title>" en multi-view para diferenciar visualmente.
 
+Además, el primer view multi-view emite `shareKeys: ["<resource_id>-0"]`. Esto es un fallback para shares creadas en la ventana en que el catálogo emitió `<uuid>-0` como id (entre que el recurso ganó una segunda vista y este fix). TerriaJS soporta `shareKeys` nativamente: cuando una share apunta a un id que no existe directamente en el catálogo, recorre los items buscando `shareKeys` que coincidan. Así ambos formatos (`<uuid>` y `<uuid>-0`) resuelven al mismo item canónico, sin duplicar entradas en el árbol del catálogo.
+
 Verificación post-deploy:
 
 - regenerar el catálogo cacheado: `curl -X POST https://<host>/api/terria/cache/invalidate` (o esperar a que expire);
