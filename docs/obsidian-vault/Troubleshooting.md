@@ -90,6 +90,25 @@ Revisar:
 - si el estilo cambió y no se refleja en `ihp-wins.json`, invalidar caché con `POST /api/terria/cache/invalidate` y reintentar.
 - si se actualizó el archivo SLD en la misma URL, confirmar que se ejecutó una invalidación (los resultados SLD se cachean en memoria por URL).
 
+## SLD con filtros compuestos (`unit_code AND unit_sub`): coloreado parcial / valores fantasma
+
+Síntoma: una capa shp con estilo SLD que internamente discrimina sub-tipos vía dos atributos combinados con `<ogc:And>` (típico de cartografía geológica QGIS/GeoServer — `unit_code = X AND unit_sub = Y`) se renderiza con colores incorrectos: muchos polígonos quedan grises o reciben el color de otro grupo, y el panel de estilo muestra entradas raras (`plain`, `yellow`, `dotted`, …) que no son códigos de unidad reales.
+
+Causa: `colorColumn` de TerriaJS solo soporta una columna. `sld_processor._extract_fallback_values` recogía todos los `<ogc:Literal>` dentro del `<ogc:And>` — el de `unit_sub` se colaba en el `enumColors` como un valor que ninguna feature del shp puede tener. Además, varias reglas con el mismo `unit_code` pero diferente `unit_sub` emitían múltiples `(value, color)` para el mismo `value`; TerriaJS se quedaba con el último.
+
+Fix aplicado:
+
+- `_extract_fallback_values` ahora empareja cada `<ogc:Literal>` con su `<ogc:PropertyName>` dentro de cada comparación (`PropertyIsEqualTo`, etc.) y solo conserva los literales asociados al `property_name` primario; los de la propiedad secundaria se descartan.
+- `_process_rules_qgis_style` deduplica `enum_colors` por `value` (gana el primero, orden determinista por aparición en el SLD) y descarta reglas cuya `property_name` no coincide con la del primer match (evita mezclar columnas si el SLD es inconsistente).
+- La sub-discriminación por la segunda columna no se reproduce visualmente — es una limitación del shp viewer de TerriaJS. Las tramas (`<se:GraphicFill>` con `WellKnownName` `horline`, `slash`, `brush://dense*`) tampoco; se aproximan con el color sólido del `Fill`.
+
+Tests: `ckanext/terria_view/tests/test_sld_compound_filter.py` cubre la regresión con un SLD mínimo equivalente al patrón Kenia/Etiopía.
+
+Verificación post-deploy:
+
+- invalidar cache: `POST /api/terria/cache/invalidate` (los `cached_config` viejos guardan el `enumColors` con valores fantasma);
+- regenerar la vista del recurso afectado y revisar que el `enumColors` resultante solo contenga códigos de unidad reales y sin duplicados.
+
 ## Error `KeyError: 'url'` en `resource_view_list`
 
 Revisar:

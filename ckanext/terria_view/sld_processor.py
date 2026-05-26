@@ -1103,22 +1103,57 @@ class SLDProcessor:
                                 print(f"Warning: Multiple property names: {valid_property_name} vs {property_name}")
                             except UnicodeEncodeError:
                                 print("Warning: Multiple property names detected (contains special characters)")
-                        
+
+                        # Skip values coming from a rule whose property does
+                        # not match the dominant one we picked first. This
+                        # avoids cross-property leakage (e.g. unit_sub values
+                        # in a unit_code-keyed style) on inconsistent SLDs.
+                        if valid_property_name and property_name != valid_property_name:
+                            self._debug_print(
+                                f"Rule {i+1}: dropping {len(property_values)} value(s) "
+                                f"from property '{property_name}' (style is keyed on '{valid_property_name}')"
+                            )
+                            continue
+
                         for prop_value in property_values:
                             # For categorical data (like geological unit codes), we always add them
                             # even if they're not numeric - TerriaJS can handle categorical enum colors
-                            if prop_value and prop_value.strip():
-                                enum_colors.append({
-                                    "value": str(prop_value).strip(),
-                                    "color": normalized_color
-                                })
-                                # Debug for categorical values
-                                is_numeric = self._is_valid_numeric_value(prop_value)
+                            if not prop_value or not prop_value.strip():
+                                continue
+                            value_str = str(prop_value).strip()
+
+                            # De-duplicate across rules. SLDs that use a
+                            # secondary property to discriminate sub-types
+                            # within the same primary value (e.g. unit_code=Q2
+                            # with multiple unit_sub variants) would otherwise
+                            # emit several conflicting (value, color) pairs;
+                            # TerriaJS picks the last and the user sees only
+                            # one color for the group. Keeping the first
+                            # occurrence is deterministic and matches the
+                            # rule order in the SLD.
+                            if any(ec.get('value') == value_str for ec in enum_colors):
                                 try:
-                                    self._debug_print(f"Added categorical value: '{prop_value}' -> {normalized_color} (numeric: {is_numeric})")
+                                    self._debug_print(
+                                        f"Rule {i+1}: skipping duplicate enum value '{value_str}' "
+                                        f"(SLD has multiple rules mapping the same {property_name})"
+                                    )
                                 except UnicodeEncodeError:
-                                    safe_value = str(prop_value).encode('ascii', errors='replace').decode('ascii')
-                                    self._debug_print(f"Added categorical value: '{safe_value}' -> {normalized_color} (numeric: {is_numeric})")
+                                    self._debug_print(
+                                        f"Rule {i+1}: skipping duplicate enum value (contains special characters)"
+                                    )
+                                continue
+
+                            enum_colors.append({
+                                "value": value_str,
+                                "color": normalized_color
+                            })
+                            # Debug for categorical values
+                            is_numeric = self._is_valid_numeric_value(prop_value)
+                            try:
+                                self._debug_print(f"Added categorical value: '{prop_value}' -> {normalized_color} (numeric: {is_numeric})")
+                            except UnicodeEncodeError:
+                                safe_value = str(prop_value).encode('ascii', errors='replace').decode('ascii')
+                                self._debug_print(f"Added categorical value: '{safe_value}' -> {normalized_color} (numeric: {is_numeric})")
                 
                 except UnicodeEncodeError as unicode_error:
                     print(f"Unicode error processing rule {i+1} (contains special characters): {unicode_error}")
@@ -1141,12 +1176,22 @@ class SLDProcessor:
                                 if property_name and property_values:
                                     if not valid_property_name:
                                         valid_property_name = property_name
+                                    elif property_name != valid_property_name:
+                                        # Same cross-property guard as the
+                                        # main path: ignore rules keyed on a
+                                        # different property than the one
+                                        # that dominates the style.
+                                        property_values = []
                                     for prop_value in property_values:
-                                        if prop_value and prop_value.strip():
-                                            enum_colors.append({
-                                                "value": str(prop_value).strip(),
-                                                "color": normalized_color
-                                            })
+                                        if not prop_value or not prop_value.strip():
+                                            continue
+                                        value_str = str(prop_value).strip()
+                                        if any(ec.get('value') == value_str for ec in enum_colors):
+                                            continue
+                                        enum_colors.append({
+                                            "value": value_str,
+                                            "color": normalized_color
+                                        })
                     except Exception as safe_error:
                         print(f"Failed to safely process rule {i+1}: {safe_error}")
                         continue
@@ -1878,32 +1923,74 @@ class SLDProcessor:
     def _extract_fallback_values(self, filter_element, property_name: str) -> List[str]:
         """
         Extract values using fallback methods when standard range extraction fails.
-        
+
+        When the filter is a compound AND that combines comparisons on several
+        different properties (e.g. ``unit_code = X AND unit_sub = Y``), only
+        the literal paired with ``property_name`` is returned. Without this
+        guard the unrelated literal (e.g. ``Y``) would leak into the enum
+        coloring as a phantom value that never matches a feature attribute.
+
         Args:
             filter_element: Filter XML element
-            property_name: Property name to look for
-            
+            property_name: Primary property name to filter by
+
         Returns:
             List of extracted values
         """
-        values = []
-        
+        values: List[str] = []
+        comparison_ops = (
+            'PropertyIsEqualTo', 'PropertyIsNotEqualTo', 'PropertyIsLike',
+            'PropertyIsGreaterThan', 'PropertyIsGreaterThanOrEqualTo',
+            'PropertyIsLessThan', 'PropertyIsLessThanOrEqualTo',
+            'PropertyIsBetween',
+        )
+
+        def _child(elem, local_name):
+            for ns in ('ogc', 'sld'):
+                found = elem.find(f'./{ns}:{local_name}', self.NAMESPACES)
+                if found is not None:
+                    return found
+            return elem.find(f'./{local_name}')
+
         try:
-            # Look for any Literal values in the filter
-            literals = filter_element.findall('.//ogc:Literal', self.NAMESPACES)
-            if not literals:
-                literals = filter_element.findall('.//Literal')
-            
-            for literal in literals:
-                if literal.text and literal.text.strip():
-                    # Try to convert to float for validation
-                    value = self._safe_float_conversion(literal.text.strip())
-                    if value is not None:
-                        values.append(str(value))
-                    else:
-                        # Keep non-numeric values too
+            # Pass 1: only collect literals paired with the requested property
+            # name. This is what disambiguates compound AND filters.
+            if property_name:
+                for op in comparison_ops:
+                    elements = filter_element.findall(f'.//ogc:{op}', self.NAMESPACES)
+                    if not elements:
+                        elements = filter_element.findall(f'.//sld:{op}', self.NAMESPACES)
+                    if not elements:
+                        elements = filter_element.findall(f'.//{op}')
+                    for el in elements:
+                        pn = _child(el, 'PropertyName')
+                        if pn is None or not pn.text:
+                            continue
+                        if pn.text.strip() != property_name:
+                            continue
+                        literals = []
+                        for ns in ('ogc', 'sld'):
+                            literals = el.findall(f'./{ns}:Literal', self.NAMESPACES)
+                            if literals:
+                                break
+                        if not literals:
+                            literals = el.findall('./Literal')
+                        for literal in literals:
+                            if literal.text and literal.text.strip():
+                                values.append(literal.text.strip())
+
+            # Pass 2 (legacy fallback): if pass 1 found nothing — e.g. the
+            # filter has Literals as direct children of And/Or instead of
+            # nested inside a comparison op — fall back to grabbing every
+            # literal in the subtree.
+            if not values:
+                literals = filter_element.findall('.//ogc:Literal', self.NAMESPACES)
+                if not literals:
+                    literals = filter_element.findall('.//Literal')
+                for literal in literals:
+                    if literal.text and literal.text.strip():
                         values.append(literal.text.strip())
-            
+
             # Remove duplicates while preserving order
             seen = set()
             unique_values = []
@@ -1911,12 +1998,12 @@ class SLDProcessor:
                 if value not in seen:
                     seen.add(value)
                     unique_values.append(value)
-            
+
             if unique_values:
                 print(f"Fallback extraction found values: {unique_values}")
-            
+
             return unique_values
-            
+
         except Exception as e:
             print(f"Error in fallback value extraction: {e}")
             return []
