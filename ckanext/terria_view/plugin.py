@@ -5,11 +5,14 @@ Main plugin for Terria View - Refactored for better maintainability.
 import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 import json
+import logging
 import urllib.parse
 import functools
 import hashlib
 from flask import request
 import ckan.logic.action.get as get
+
+log = logging.getLogger(__name__)
 
 # Import refactored modules
 from .config_manager import ConfigManager
@@ -482,7 +485,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     # Bump this version whenever the config generation/processing logic changes
     # to invalidate stale cached configs.
-    _CONFIG_PROCESSING_VERSION = 4
+    _CONFIG_PROCESSING_VERSION = 5
 
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):
@@ -515,42 +518,89 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         signature_raw = json.dumps(signature_payload, sort_keys=True, default=str)
         return hashlib.md5(signature_raw.encode('utf-8')).hexdigest()
 
+    # Cap the encoded_config we persist to avoid bloating the resource_view
+    # row when a view ends up with a huge merged catalog. Public views
+    # without a custom_config should stay well under this; if they don't,
+    # something else (a bug, or a saved private branch) is at play and
+    # we'd rather skip the cache than store megabytes.
+    _MAX_PERSISTED_CACHED_CONFIG_BYTES = 2 * 1024 * 1024  # 2 MiB
+
     def _update_view_cached_config(self, context, view, encoded_config, signature):
-        """Persist cached config and signature in the resource view."""
-        try:
-            view_id = view.get('id')
-            if not view_id or not encoded_config or not signature:
+        """Persist cached config and signature in the resource view.
+
+        Writes the ``ResourceView.config`` JSON column directly via the ORM
+        instead of going through ``resource_view_update``. The action-level
+        path needs a fully-populated view dict (title, view_type,
+        terria_instance_url, …) and silently rejects updates when any of
+        those validators fails — historically that swallowed nearly every
+        write on this deployment, leaving public views permanently
+        un-cached. The direct write keeps caching opt-in and isolated:
+        only the two cache fields are touched, everything else on the row
+        is left alone.
+        """
+        view_id = view.get('id')
+        if not view_id or not encoded_config or not signature:
+            return
+
+        if len(encoded_config) > self._MAX_PERSISTED_CACHED_CONFIG_BYTES:
+            log.warning(
+                "terria_view: skipping cached_config persist for view %s "
+                "(%d bytes > %d limit)",
+                view_id, len(encoded_config),
+                self._MAX_PERSISTED_CACHED_CONFIG_BYTES,
+            )
+            return
+
+        model = context.get('model')
+        if model is None:
+            try:
+                import ckan.model as model  # type: ignore
+            except Exception:
+                log.warning(
+                    "terria_view: cannot persist cached_config — no model in context"
+                )
                 return
 
-            update_data = {
-                'id': view_id,
-                'resource_id': view.get('resource_id'),
-                'view_type': view.get('view_type'),
-                'title': view.get('title'),
-                'description': view.get('description', ''),
-                'terria_instance_url': view.get('terria_instance_url', ''),
-                'custom_config': view.get('custom_config', 'NA'),
-                'style': view.get('style', 'NA'),
-                'cached_config': encoded_config,
-                'cached_config_signature': signature
-            }
+        session = context.get('session') or model.Session
+        try:
+            rv = session.query(model.ResourceView).get(view_id)
+            if rv is None:
+                log.warning(
+                    "terria_view: ResourceView %s not found for cached_config persist",
+                    view_id,
+                )
+                return
 
-            # Preserve optional fields if present
-            for key in ('filterable', 'show_fields'):
-                if key in view:
-                    update_data[key] = view.get(key)
+            new_config = dict(rv.config or {})
+            new_config['cached_config'] = encoded_config
+            new_config['cached_config_signature'] = signature
+            rv.config = new_config
 
-            sysadmin_context = {
-                'model': context.get('model'),
-                'session': context.get('session'),
-                'user': 'ckan.system',
-                'ignore_auth': True
-            }
+            # ResourceView.config is a JsonDictType column; SQLAlchemy needs
+            # an explicit mutation hint when we reassign a plain dict (the
+            # column type doesn't always wrap into MutableDict consistently
+            # across CKAN versions).
+            try:
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(rv, 'config')
+            except Exception:
+                pass
 
-            toolkit.get_action('resource_view_update')(sysadmin_context, update_data)
-            self._debug_print(f"Cached Terria config saved for view {view_id}")
-        except Exception as e:
-            self._debug_print(f"Failed to persist cached Terria config: {e}")
+            session.add(rv)
+            session.commit()
+            self._debug_print(
+                f"Cached Terria config saved for view {view_id} "
+                f"({len(encoded_config)} bytes)"
+            )
+        except Exception as exc:
+            log.exception(
+                "terria_view: failed to persist cached_config for view %s: %s",
+                view_id, exc,
+            )
+            try:
+                session.rollback()
+            except Exception:
+                pass
     
     def setup_template_variables(self, context, data_dict):
         """

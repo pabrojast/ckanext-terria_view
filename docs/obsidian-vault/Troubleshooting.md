@@ -169,6 +169,25 @@ Comportamiento actual (los datasets privados **se conservan** en la config guard
 
 Nota: desde este fix, `ckanext.terria_view.inject_private_catalog_on_public_views` por defecto es `false` (el catálogo privado solo se inyecta en vistas de datasets privados). Ponerlo en `true` si se quiere que también aparezca en vistas de datasets públicos para usuarios logueados.
 
+## `cached_config` queda vacío en casi todas las vistas Terria
+
+Síntoma: la tabla `resource_view` muestra `config.cached_config = ""` y `cached_config_signature = ""` para la inmensa mayoría de las vistas `terria_view` aunque el render funciona correctamente. Cada page-load reprocesa el SLD, refetchea el archivo y reconstruye el config completo (más latencia y CPU, sobre todo en SLDs grandes con muchas reglas).
+
+Causa: `Terria_ViewPlugin._update_view_cached_config` enrutaba la persistencia por la acción `resource_view_update`. Esa acción exige un payload completo (`title`, `view_type`, `terria_instance_url`, `style`, etc.) y, cuando alguno de esos validadores falla en este despliegue (p. ej. con campos extra que el schema de `terria_view` no declara o cuando hay otros plugins enganchados al `before_update`), el chain devuelve error. El bloque `try/except` solo loggeaba la falla vía `_debug_print` (gated en `TERRIA_DEBUG=true`), así que el problema quedaba invisible y los `cached_config` jamás se escribían.
+
+Fix:
+
+- `_update_view_cached_config` ahora actualiza la columna JSON `ResourceView.config` directamente vía SQLAlchemy (`session.query(model.ResourceView).get(view_id)` → mutar `config` → `flag_modified` → `commit`). Sólo toca los dos campos de cache; el resto de la fila queda intacto.
+- Cualquier excepción se reporta con `log.exception(...)` en el logger estándar (visible sin necesidad de `TERRIA_DEBUG`), de modo que regresiones futuras se detectan en uwsgi log.
+- Cota defensiva `_MAX_PERSISTED_CACHED_CONFIG_BYTES = 2 MiB`: si el `encoded_config` supera ese tamaño se omite la persistencia y se loggea (evita guardar megabytes en la tabla cuando algo se descontroló — el `max_custom_config_bytes` del save endpoint cubre el lado del usuario; este cubre el lado del render).
+- `_CONFIG_PROCESSING_VERSION` subió a `5` para invalidar firmas viejas y forzar la regeneración de los 1235 `cached_config` de vistas públicas en el próximo render.
+
+Verificación post-deploy:
+
+- consultar la BD: `SELECT count(*) FROM resource_view WHERE view_type='terria_view' AND (config::jsonb)->>'cached_config' <> '';` — debería crecer rápidamente con el tráfico normal;
+- abrir una vista de un dataset público; `resource_view_show` debería devolver `cached_config_signature` no vacío;
+- monitorear `uwsgi` log por `terria_view: failed to persist cached_config` — debería estar limpio. Si aparece, el mensaje incluye el error completo (traceback) para diagnosticar.
+
 ## `pytest` falla por falta de CKAN
 
 Esperable si no está instalado CKAN en el entorno.
