@@ -169,6 +169,26 @@ Comportamiento actual (los datasets privados **se conservan** en la config guard
 
 Nota: desde este fix, `ckanext.terria_view.inject_private_catalog_on_public_views` por defecto es `false` (el catálogo privado solo se inyecta en vistas de datasets privados). Ponerlo en `true` si se quiere que también aparezca en vistas de datasets públicos para usuarios logueados.
 
+## Terria no abre en datasets privados — el iframe queda en blanco
+
+Síntoma: un usuario con acceso a muchos datasets privados (sysadmin o miembro de organizaciones grandes) abre una vista Terria de un dataset privado y el iframe no carga; no hay error en la consola del navegador (solo ruido de extensiones tipo MaxListenersExceededWarning, ObjectMultiplex orphaned data). El tiempo de render del `/dataset/<slug>/resource/<id>` pasa de los 17-76 segundos y el HTML mide ~10 MB.
+
+Causa: cuando el dataset es privado, `Terria_ViewPlugin.setup_template_variables` inyecta server-side el catálogo de **todos** los datasets privados accesibles al usuario (`_get_private_datasets_catalog`) dentro del `encoded_config` que termina en `iframe src="…#start=<encoded_config>"`. Para un sysadmin con cientos de datasets privados ese payload puede superar 2 MiB de JSON, lo que tras url-encode y duplicarse en el template (iframe `src` + variable JS `terriaStartConfig`) genera una respuesta de ~10 MB. La URL del iframe excede límites prácticos del navegador y TerriaJS se cuelga intentando hacer `JSON.parse` del fragmento.
+
+Fix:
+
+- `_get_private_datasets_catalog` ahora cachea el resultado por usuario en memoria con TTL de 5 minutos (`_PRIVATE_CATALOG_CACHE_TTL_SECONDS = 300`). Renders subsiguientes en la misma ventana evitan los ~3 s que cuesta el `package_search` + `format_dataset_item` sobre cada recurso privado.
+- `_merge_private_catalog_into_encoded_config` evalúa el tamaño del catálogo *antes* de mergear. Si supera el cap, omite la inyección y devuelve el `encoded_config` original (el usuario sigue viendo el recurso principal en el iframe; solo no aparece el árbol de catálogo privado dentro de Terria — los datasets privados siguen siendo navegables desde la UI normal de CKAN).
+- Cap configurable en `production.ini`: `ckanext.terria_view.max_inline_private_catalog_bytes` (default `524288` = 512 KiB). Subirlo si se quiere permitir payloads más grandes; bajarlo o ponerlo en `0` no aplica el cap.
+- Cualquier omisión queda registrada en log con el tamaño real y el cap aplicado para facilitar tuning.
+
+Verificación post-deploy:
+
+- abrir la vista del dataset privado afectado (`lake-turkana-wq` por ejemplo); el iframe debe cargar en pocos segundos;
+- inspeccionar el HTML: la respuesta debe pesar pocos KB en lugar de varios MB;
+- buscar en uwsgi log entradas tipo `terria_view: skipping inline private-catalog inject (X bytes > 524288 limit)` para confirmar que el cap actuó cuando correspondía;
+- los renders subsiguientes del mismo usuario deberían ser notablemente más rápidos por el cache de 5 min sobre el catálogo privado.
+
 ## `cached_config` queda vacío en casi todas las vistas Terria
 
 Síntoma: la tabla `resource_view` muestra `config.cached_config = ""` y `cached_config_signature = ""` para la inmensa mayoría de las vistas `terria_view` aunque el render funciona correctamente. Cada page-load reprocesa el SLD, refetchea el archivo y reconstruye el config completo (más latencia y CPU, sobre todo en SLDs grandes con muchas reglas).

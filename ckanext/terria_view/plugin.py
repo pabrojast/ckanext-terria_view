@@ -6,6 +6,8 @@ import ckan.plugins as plugins
 import ckan.plugins.toolkit as toolkit
 import json
 import logging
+import threading
+import time
 import urllib.parse
 import functools
 import hashlib
@@ -125,11 +127,31 @@ def new_resource_view_list(plugin_instance, context, data_dict):
 
 class Terria_ViewPlugin(plugins.SingletonPlugin):
     """Main plugin for Terria View - Refactored version."""
-    
+
+    # --- private-catalog inject knobs ----------------------------------
+    # ``_get_private_datasets_catalog`` walks the user's accessible private
+    # datasets via ``package_search`` and formats every resource into a
+    # Terria catalog item. For sysadmins and members of large orgs this can
+    # take several seconds and produce multi-MB JSON. We cache the result
+    # per-user for a short TTL so repeat renders within the same session
+    # don't re-pay the cost.
+    _private_catalog_cache: dict = {}  # {user_name: (timestamp, data, size)}
+    _private_catalog_cache_lock = threading.Lock()
+    _PRIVATE_CATALOG_CACHE_TTL_SECONDS = 300  # 5 min
+
+    # When the catalog payload to inject would exceed this many bytes we
+    # skip the inject entirely. Reason: the merged ``encoded_config`` ends
+    # up in the iframe ``src="…#start=…"`` attribute (and again as a JS
+    # string), and browsers can't reliably load iframe URLs above a few
+    # megabytes; Terria itself takes seconds to JSON.parse a huge fragment.
+    # Override per-deployment with
+    # ``ckanext.terria_view.max_inline_private_catalog_bytes`` in the ini.
+    _DEFAULT_MAX_INLINE_PRIVATE_CATALOG_BYTES = 512 * 1024  # 512 KiB
+
     def __init__(self, name=None):
         """Initialize the plugin with refactored modules."""
         super().__init__()
-        
+
         # Initialize modules
         self.config_manager = ConfigManager()
         self.sld_processor = SLDProcessor()
@@ -137,14 +159,26 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
         self.cache_manager = CacheManager()
         self.file_cache_manager = FileCacheManager()
-        
+
         # Initialize cache preloader (will be started after configuration)
         self.cache_preloader = None
-        
+
         # Callback for resource_view_list
         self.resource_view_list_callback = None
         self.package_show_callback = None
         self.resource_show_callback = None
+
+    def _get_max_inline_private_catalog_bytes(self) -> int:
+        """Return the max-bytes cap for the inline private catalog inject."""
+        try:
+            value = toolkit.config.get(
+                'ckanext.terria_view.max_inline_private_catalog_bytes'
+            )
+            if value is None:
+                return self._DEFAULT_MAX_INLINE_PRIVATE_CATALOG_BYTES
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            return self._DEFAULT_MAX_INLINE_PRIVATE_CATALOG_BYTES
     
     def _debug_print(self, message: str):
         """
@@ -858,6 +892,30 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         the original ``encoded_config`` so the main resource view still loads.
         """
         try:
+            # Size cap. The merged ``encoded_config`` lands in an iframe
+            # ``src="…#start=<encoded_config>"``, which browsers can't
+            # reliably load above a few MB; TerriaJS also stalls trying to
+            # ``JSON.parse`` a huge URL fragment. When the catalog payload
+            # alone exceeds the configured cap we skip the inject — the
+            # main resource view still renders fine, the user just doesn't
+            # see the full private-dataset tree inside the iframe (they can
+            # still browse private datasets via the regular CKAN UI).
+            max_bytes = self._get_max_inline_private_catalog_bytes()
+            if max_bytes > 0:
+                try:
+                    payload_size = len(json.dumps(private_catalog_data))
+                except Exception:
+                    payload_size = 0
+                if payload_size and payload_size > max_bytes:
+                    log.warning(
+                        "terria_view: skipping inline private-catalog inject "
+                        "(%d bytes > %d limit). Configure "
+                        "ckanext.terria_view.max_inline_private_catalog_bytes "
+                        "to override.",
+                        payload_size, max_bytes,
+                    )
+                    return encoded_config
+
             decoded = urllib.parse.unquote(encoded_config)
             config_dict = json.loads(decoded)
             if not isinstance(config_dict, dict):
@@ -938,13 +996,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     def _get_private_datasets_catalog(self, user_context):
         """
         Get private datasets accessible to the current user as inline Terria catalog data.
-        
+
         Loaded server-side to avoid cross-origin authentication issues when
         TerriaJS tries to fetch data from a different domain.
-        
+
         Args:
             user_context: Dictionary with user and auth_user_obj
-            
+
         Returns:
             Dictionary with Terria catalog configuration or None if no private datasets
         """
@@ -952,7 +1010,19 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             user = user_context.get('user')
             if not user:
                 return None
-            
+
+            # Per-user TTL cache: package_search over private datasets +
+            # per-resource format_dataset_item formatting can take seconds
+            # for users with access to hundreds of datasets. The catalog
+            # rarely changes within a few minutes, so cache the result.
+            now = time.time()
+            with self._private_catalog_cache_lock:
+                cached = self._private_catalog_cache.get(user)
+            if cached:
+                ts, data, _size = cached
+                if now - ts < self._PRIVATE_CATALOG_CACHE_TTL_SECONDS:
+                    return data
+
             context = {
                 'user': user,
                 'auth_user_obj': user_context.get('auth_user_obj')
@@ -1077,8 +1147,18 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
             config = generator.convert_sets_to_lists(config)
 
+            # Cache the result. Store an approximate serialized size so
+            # ``_merge_private_catalog_into_encoded_config`` can take a
+            # quick decision without re-encoding the dict twice per render.
+            try:
+                approx_size = len(json.dumps(config))
+            except Exception:
+                approx_size = 0
+            with self._private_catalog_cache_lock:
+                self._private_catalog_cache[user] = (now, config, approx_size)
+
             return config
-            
+
         except Exception as e:
             self._debug_print(f"Error getting private datasets catalog: {e}")
             return None
