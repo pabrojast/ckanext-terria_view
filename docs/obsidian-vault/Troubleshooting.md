@@ -154,13 +154,13 @@ Si la consola muestra `Error saving configuration: Failed to execute 'postMessag
 
 Síntoma: `resource_view.config` crece a varios MB; `GET /dataset/.../edit_view/<id>` tarda 30-60 s y devuelve varios MB de HTML (a veces termina en `SIGPIPE` / `Broken pipe` en uWSGI porque el navegador se rinde); el `#start=` guardado en `custom_config` es una URL de >1 MB que el navegador apenas acepta.
 
-Causa: `setup_template_variables` inyecta el catálogo de **datasets privados del usuario logueado** dentro de `encoded_config` para que el árbol de catálogo del iframe los muestre (`_merge_private_catalog_into_encoded_config`). Por defecto solo en vistas de datasets **privados**; con `ckanext.terria_view.inject_private_catalog_on_public_views = true` también en vistas de datasets públicos. Si el usuario pulsa "Save Configuration" (o vuelve a guardar la vista desde el formulario con esa URL del iframe en el campo), `getShareData` serializa parte de ese árbol y queda horneado en `custom_config`.
+Causa histórica: el catálogo privado completo se inyectaba en `encoded_config`. En modo `auto`, mismo origen usa ahora una referencia lazy pequeña; el comportamiento inline sólo queda como fallback cross-origin o si se fuerza por configuración.
 
 Comportamiento actual (los datasets privados **se conservan** en la config guardada a propósito, para poder compartir la vista entre usuarios con acceso):
 
-- al guardar (`save_view_config`, `_process_form_data`) se llama a `prepare_saved_custom_config_url`: poda la rama `Private Datasets (...)` a solo los items mostrados (`workbench`/`timeline`/`preview`) + sus grupos ancestros con `members` recortados (`prune_private_catalog_to_used`) y quita el `?token=` firmado (`strip_proxy_tokens`). Esto evita que TerriaJS hornee ~1 MB de árbol de catálogo en el `custom_config`;
+- al guardar en lazy, `prepare_saved_custom_config_url` elimina el navegador y concentra sólo las capas mostradas en `Saved private layers`; también quita el token firmado;
 - en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
-- si la config guardada ya trae un catálogo privado, no se vuelve a inyectar el del usuario actual (evita duplicados / crecimiento entre re-guardados);
+- el navegador lazy se vuelve a inyectar con un namespace nuevo y puede coexistir con las capas guardadas sin colisiones;
 - `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso);
 - `save_view_config` sigue rechazando configs > `max_custom_config_bytes` (4 MB por defecto, configurable);
 - `_CONFIG_PROCESSING_VERSION` se subió en su momento para invalidar `cached_config` viejos.
@@ -173,21 +173,21 @@ Nota: desde este fix, `ckanext.terria_view.inject_private_catalog_on_public_view
 
 Síntoma: un usuario con acceso a muchos datasets privados (sysadmin o miembro de organizaciones grandes) abre una vista Terria de un dataset privado y el iframe no carga; no hay error en la consola del navegador (solo ruido de extensiones tipo MaxListenersExceededWarning, ObjectMultiplex orphaned data). El tiempo de render del `/dataset/<slug>/resource/<id>` pasa de los 17-76 segundos y el HTML mide ~10 MB.
 
-Causa: cuando el dataset es privado, `Terria_ViewPlugin.setup_template_variables` inyecta server-side el catálogo de **todos** los datasets privados accesibles al usuario (`_get_private_datasets_catalog`) dentro del `encoded_config` que termina en `iframe src="…#start=<encoded_config>"`. Para un sysadmin con cientos de datasets privados ese payload puede superar 2 MiB de JSON, lo que tras url-encode y duplicarse en el template (iframe `src` + variable JS `terriaStartConfig`) genera una respuesta de ~10 MB. La URL del iframe excede límites prácticos del navegador y TerriaJS se cuelga intentando hacer `JSON.parse` del fragmento.
+Causa histórica: `setup_template_variables` generaba todos los recursos privados y los incluía en `iframe src="…#start=<encoded_config>"`. Para usuarios con cientos de datasets el payload superaba límites prácticos del navegador.
 
-Fix:
+Fix actual:
 
-- `_get_private_datasets_catalog` ahora cachea el resultado por usuario en memoria con TTL de 5 minutos (`_PRIVATE_CATALOG_CACHE_TTL_SECONDS = 300`). Renders subsiguientes en la misma ventana evitan los ~3 s que cuesta el `package_search` + `format_dataset_item` sobre cada recurso privado.
-- `_merge_private_catalog_into_encoded_config` evalúa el tamaño del catálogo *antes* de mergear. Si supera el cap, omite la inyección y devuelve el `encoded_config` original (el usuario sigue viendo el recurso principal en el iframe; solo no aparece el árbol de catálogo privado dentro de Terria — los datasets privados siguen siendo navegables desde la UI normal de CKAN).
-- Cap configurable en `production.ini`: `ckanext.terria_view.max_inline_private_catalog_bytes` (default `524288` = 512 KiB). Subirlo si se quiere permitir payloads más grandes; bajarlo o ponerlo en `0` no aplica el cap.
-- Cualquier omisión queda registrada en log con el tamaño real y el cap aplicado para facilitar tuning.
+- `private_catalog_mode=auto` selecciona lazy para CKAN/Terria same-origin.
+- El `#start` contiene sólo un `terria-reference`; no ejecuta `package_search`, vistas ni SLD durante el render inicial.
+- `/api/terria/user/private-catalog` devuelve un índice de campos mínimos y `/dataset/<id>` expande únicamente el dataset abierto.
+- El modo inline y `max_inline_private_catalog_bytes` siguen disponibles como fallback cross-origin.
 
 Verificación post-deploy:
 
 - abrir la vista del dataset privado afectado (`lake-turkana-wq` por ejemplo); el iframe debe cargar en pocos segundos;
 - inspeccionar el HTML: la respuesta debe pesar pocos KB en lugar de varios MB;
-- buscar en uwsgi log entradas tipo `terria_view: skipping inline private-catalog inject (X bytes > 524288 limit)` para confirmar que el cap actuó cuando correspondía;
-- los renders subsiguientes del mismo usuario deberían ser notablemente más rápidos por el cache de 5 min sobre el catálogo privado.
+- confirmar en Network que `/api/terria/user/private-catalog` no se solicita hasta abrir la rama privada;
+- comprobar headers `private, no-store` y que cada dataset se solicita por separado.
 
 ## `cached_config` queda vacío en casi todas las vistas Terria
 

@@ -89,16 +89,22 @@ Body esperado:
 Validación observada:
 
 - la URL debe ser `http://` o `https://`;
-- `prepare_saved_custom_config_url`: poda la rama `Private Datasets (...)` a solo los items mostrados + grupos ancestros (`prune_private_catalog_to_used`) y quita el `?token=` firmado de las URLs proxy (`strip_proxy_tokens`); la rama podada se conserva y su token se renueva por visor en render (ver [[Flujos Importantes]] §4 y [[Troubleshooting]]);
+- `prepare_saved_custom_config_url`: en modo lazy colapsa las capas privadas mostradas dentro de `Saved private layers` y elimina el navegador; en modo inline conserva la poda legacy. En ambos casos quita el `?token=` firmado y se renueva por visor en render;
 - se rechaza con 413 si tras la limpieza supera `max_custom_config_bytes` (4 MB por defecto, configurable).
 
 ### Datasets privados del usuario
 
+- `GET /api/terria/user/private-catalog?catalog_id=<nonce>`
+- `GET /api/terria/user/private-catalog/dataset/<dataset_id>?catalog_id=<nonce>`
 - `GET /api/terria/user/private-datasets`
 
 Uso:
 
-- construir un catálogo Terria con datasets privados accesibles al usuario autenticado.
+- `private-catalog` devuelve un índice liviano Organización → `terria-reference` de dataset;
+- `private-catalog/dataset/<id>` expande únicamente los recursos de un dataset privado autorizado;
+- `private-datasets` conserva el catálogo completo legacy para compatibilidad.
+
+Los tres exigen autenticación. Los endpoints lazy responden `Cache-Control: private, no-store`, `CDN-Cache-Control: no-store`, `Surrogate-Control: no-store` y `Vary: Cookie, Authorization`; un dataset inexistente, público o no autorizado responde 404.
 
 ### Proxy de recursos privados
 
@@ -134,7 +140,7 @@ Comportamiento:
 Observaciones:
 
 - `save-config` intenta operar con el usuario actual y respeta autorización CKAN.
-- `user/private-datasets` exige usuario autenticado.
+- todos los endpoints `user/private-*` exigen usuario autenticado.
 - `resource_views` y otros endpoints públicos dependen de permisos CKAN y de cómo respondan las acciones base.
 
 ## Inferencia

@@ -22,9 +22,14 @@ from .sld_processor import SLDProcessor
 from .resource_utils import ResourceUtils
 from .terria_config_builder import (
     TerriaConfigBuilder,
+    collapse_private_catalog_in_encoded_config,
     prepare_saved_custom_config_url,
     refresh_proxy_tokens,
     payload_has_private_catalog,
+)
+from .private_catalog import (
+    build_private_catalog_reference,
+    resolve_private_catalog_mode,
 )
 from .cache_manager import CacheManager
 from .file_cache_manager import FileCacheManager
@@ -159,6 +164,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.terria_config_builder = TerriaConfigBuilder(self.config_manager, self.sld_processor)
         self.cache_manager = CacheManager()
         self.file_cache_manager = FileCacheManager()
+        self.private_catalog_mode = 'auto'
 
         # Initialize cache preloader (will be started after configuration)
         self.cache_preloader = None
@@ -179,6 +185,13 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             return max(0, int(value))
         except (TypeError, ValueError):
             return self._DEFAULT_MAX_INLINE_PRIVATE_CATALOG_BYTES
+
+    def _private_catalog_mode_for(self, terria_instance_url: str) -> str:
+        return resolve_private_catalog_mode(
+            self.private_catalog_mode,
+            self.config_manager.site_url,
+            terria_instance_url,
+        )
     
     def _debug_print(self, message: str):
         """
@@ -242,6 +255,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             f'ckanext.{PLUGIN_NAME}.default_instance_url', 
             'https://ihp-wins.unesco.org/terria/'
         )
+        configured_private_mode = config.get(
+            f'ckanext.{PLUGIN_NAME}.private_catalog_mode', 'auto'
+        )
+        self.private_catalog_mode = str(configured_private_mode or 'auto').lower()
         
         # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
@@ -501,8 +518,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         # re-minted at render time (see setup_template_variables ->
         # _refresh_proxy_tokens_in_encoded_config).
         if data_dict.get('custom_config') and data_dict['custom_config'] != 'NA':
+            terria_instance_url = data_dict.get(
+                'terria_instance_url', self.config_manager.default_instance_url
+            )
             data_dict['custom_config'] = prepare_saved_custom_config_url(
-                data_dict['custom_config']
+                data_dict['custom_config'],
+                lazy_private_catalog=(
+                    self._private_catalog_mode_for(terria_instance_url) == 'lazy'
+                ),
             )
 
         # Clean temporary form fields
@@ -519,7 +542,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     # Bump this version whenever the config generation/processing logic changes
     # to invalidate stale cached configs.
-    _CONFIG_PROCESSING_VERSION = 5
+    _CONFIG_PROCESSING_VERSION = 6
 
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):
@@ -742,13 +765,24 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             if not package.get('private'):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
 
+        private_catalog_mode = self._private_catalog_mode_for(
+            view_terria_instance_url
+        )
+
+        # In lazy mode, normalize any catalog branch captured by an older save
+        # into one compact, stable "Saved private layers" group. The full
+        # browser is then safe to inject again with a separate namespace.
+        if encoded_config and private_catalog_mode == 'lazy':
+            encoded_config = collapse_private_catalog_in_encoded_config(
+                encoded_config
+            )
+
         # A *saved* config may carry injected private-dataset catalog branches
         # (with their proxy ``?token=`` stripped on save). Re-mint a fresh
         # per-viewer token for each referenced private resource the current user
-        # may read; users without access get a token-less URL (the proxy then
-        # answers 401 for that item). When the saved config already carries a
-        # private catalog we skip re-injecting the current user's full one below
-        # (avoids duplicates and unbounded growth across re-saves).
+        # may read; users without access get a token-less URL. Lazy mode uses a
+        # new namespace and can always add the browser again; inline mode keeps
+        # the legacy duplicate guard.
         saved_config_has_private_catalog = False
         private_resources_blocked = False
         if encoded_config:
@@ -774,17 +808,27 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         include_private_catalog = bool(user_context.get('user')) and (
             bool(package.get('private')) or inject_on_public_views
         )
-        private_catalog_data = (
-            self._get_private_datasets_catalog(user_context)
-            if include_private_catalog else None
-        )
+        private_catalog_data = None
+        if include_private_catalog:
+            if private_catalog_mode == 'lazy':
+                private_catalog_data = build_private_catalog_reference(
+                    user_context.get('user'), self.config_manager.site_url
+                )
+            else:
+                private_catalog_data = self._get_private_datasets_catalog(
+                    user_context
+                )
 
-        # Merge private catalog as an extra init source into the same encoded_config
-        # so TerriaJS sees everything in the original ``#start=`` payload. This keeps
-        # the cross-origin iframe flow identical to public views (workbench and
-        # timeline populate reliably) while still making the user's private datasets
-        # available in the catalog tree.
-        if encoded_config and private_catalog_data and not saved_config_has_private_catalog:
+        # Merge either the tiny lazy reference or the legacy inline catalog into
+        # the primary initSource so the main resource workbench remains intact.
+        if (
+            encoded_config
+            and private_catalog_data
+            and (
+                private_catalog_mode == 'lazy'
+                or not saved_config_has_private_catalog
+            )
+        ):
             encoded_config = self._merge_private_catalog_into_encoded_config(
                 encoded_config, private_catalog_data
             )
@@ -799,6 +843,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             'resource_id': resource.get('id'),
             'user_logged_in': bool(user_context.get('user')),
             'private_catalog_data': private_catalog_data,
+            'private_catalog_mode': private_catalog_mode,
             # True when the saved config references private resources the current
             # viewer can't access — the template shows a "log in / no access"
             # notice above the map.
@@ -900,7 +945,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
             # main resource view still renders fine, the user just doesn't
             # see the full private-dataset tree inside the iframe (they can
             # still browse private datasets via the regular CKAN UI).
-            max_bytes = self._get_max_inline_private_catalog_bytes()
+            max_bytes_getter = getattr(
+                self,
+                '_get_max_inline_private_catalog_bytes',
+                lambda: 512 * 1024,
+            )
+            max_bytes = max_bytes_getter()
             if max_bytes > 0:
                 try:
                     payload_size = len(json.dumps(private_catalog_data))

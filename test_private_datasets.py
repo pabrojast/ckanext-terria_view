@@ -230,18 +230,17 @@ def test_merge_helper_preserves_workbench_and_catalog_structure():
 
 
 def test_template_private_only_for_logged_in():
-    """Private catalog generation/merge must be conditional on user+private package."""
+    """Private catalog generation must require login and the configured view scope."""
     # Since the template now only sees a pre-merged encoded_config, the
     # conditional lives in plugin.py: we only generate/merge private_catalog_data
     # when both user_context.user is set and the package is private.
     with open('ckanext/terria_view/plugin.py', 'r') as f:
         content = f.read()
 
-    assert (
-        "include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))"
-        in content
-    )
-    assert 'if encoded_config and private_catalog_data' in content
+    assert "include_private_catalog = bool(user_context.get('user')) and (" in content
+    assert "bool(package.get('private')) or inject_on_public_views" in content
+    assert "build_private_catalog_reference(" in content
+    assert 'and private_catalog_data' in content
     print("  PASS: Private catalog generation is guarded by user+private conditions")
 
 
@@ -571,12 +570,139 @@ def test_resource_view_list_uses_resource_show_payload_for_can_view():
 
 
 def test_private_catalog_injection_is_limited_to_private_package_views():
-    """Private catalog should only be injected for private package views."""
+    """Public-view injection remains opt-in while private views stay enabled."""
     with open('ckanext/terria_view/plugin.py', 'r') as f:
         content = f.read()
 
-    assert "include_private_catalog = bool(user_context.get('user')) and bool(package.get('private'))" in content
-    print("  PASS: private catalog injection is limited to private package views")
+    assert "'ckanext.terria_view.inject_private_catalog_on_public_views'" in content
+    assert "bool(package.get('private')) or inject_on_public_views" in content
+    print("  PASS: private catalog injection scope is preserved")
+
+
+def test_private_catalog_mode_auto_uses_same_origin_lazy_loading():
+    from ckanext.terria_view.private_catalog import resolve_private_catalog_mode
+
+    assert resolve_private_catalog_mode(
+        'auto', 'https://data.dev-wins.com', 'https://data.dev-wins.com/terria/'
+    ) == 'lazy'
+    assert resolve_private_catalog_mode(
+        'auto', 'https://data.dev-wins.com', 'https://maps.example.org/'
+    ) == 'inline'
+    assert resolve_private_catalog_mode(
+        'auto', 'https://data.dev-wins.com', '/terria/'
+    ) == 'lazy'
+    assert resolve_private_catalog_mode(
+        'inline', 'https://data.dev-wins.com', 'https://data.dev-wins.com/terria/'
+    ) == 'inline'
+
+
+def test_lazy_private_catalog_reference_is_small_and_authenticated_endpoint_only():
+    from ckanext.terria_view.private_catalog import build_private_catalog_reference
+
+    result = build_private_catalog_reference(
+        'alice', 'https://data.dev-wins.com', 'abcdefgh'
+    )
+    reference = result['catalog'][0]
+    assert reference['type'] == 'terria-reference'
+    assert reference['isGroup'] is True
+    assert reference['id'].startswith('__ckan_private_catalog__/abcdefgh/')
+    assert reference['url'] == (
+        'https://data.dev-wins.com/api/terria/user/private-catalog'
+        '?catalog_id=abcdefgh'
+    )
+    assert len(json.dumps(result)) < 2048
+
+
+def test_lazy_private_catalog_routes_disable_shared_caching():
+    with open('ckanext/terria_view/api_endpoints.py', 'r') as stream:
+        content = stream.read()
+
+    assert "'/api/terria/user/private-catalog'" in content
+    assert "'/api/terria/user/private-catalog/dataset/<dataset_id>'" in content
+    assert "'Cache-Control'] = 'private, no-store, max-age=0'" in content
+    assert "'CDN-Cache-Control'] = 'no-store'" in content
+    assert "'Surrogate-Control'] = 'no-store'" in content
+    assert "'Vary'] = 'Cookie, Authorization'" in content
+
+
+def test_lazy_private_catalog_index_contains_dataset_references_not_resources():
+    from ckanext.terria_view.private_catalog import PrivateCatalogBuilder
+
+    package_search = MagicMock(return_value={
+        'count': 2,
+        'results': [
+            {'id': 'd2', 'name': 'two', 'title': 'Two', 'organization': 'org-a'},
+            {'id': 'd1', 'name': 'one', 'title': 'One', 'organization': 'org-a'},
+        ],
+        'search_facets': {'organization': {'items': [
+            {'name': 'org-a', 'display_name': 'Organization A'}
+        ]}},
+    })
+
+    def get_action(name):
+        assert name == 'package_search'
+        return package_search
+
+    generator = MagicMock()
+    with patch.object(ckan_plugins_toolkit_mock, 'get_action', side_effect=get_action):
+        result = PrivateCatalogBuilder(
+            generator, 'https://data.dev-wins.com'
+        ).build_index({'user': 'alice'}, 'abcdefgh')
+
+    members = result['catalog'][0]['members']
+    assert result['catalog'][0]['name'] == 'Organization A'
+    assert [member['name'] for member in members] == ['One', 'Two']
+    assert all(member['type'] == 'terria-reference' for member in members)
+    assert 'resources' not in json.dumps(result)
+    assert package_search.call_count == 1
+
+
+def test_lazy_dataset_expansion_fetches_resource_views_once_and_namespaces_items():
+    from ckanext.terria_view.private_catalog import PrivateCatalogBuilder
+
+    package = {
+        'id': 'dataset-1',
+        'private': True,
+        'state': 'active',
+        'title': 'Dataset',
+        'notes': '',
+        'organization': {'name': 'org', 'title': 'Org'},
+        'resources': [{'id': 'resource-1', 'format': 'csv', 'name': 'Resource'}],
+    }
+    package_show = MagicMock(return_value=package)
+    resource_view_list = MagicMock(return_value=[
+        {'view_type': 'terria_view', 'title': 'A'},
+        {'view_type': 'terria_view', 'title': 'B'},
+    ])
+
+    def get_action(name):
+        return {
+            'package_show': package_show,
+            'resource_view_list': resource_view_list,
+        }[name]
+
+    generator = MagicMock()
+    generator.formatos_permitidos = ['csv']
+    generator.convert_sets_to_lists.side_effect = lambda value: value
+    generator.format_dataset_item.side_effect = lambda *args, **kwargs: (
+        {'name': f"View {args[4]}", 'type': 'csv', 'id': 'resource-1'}, 2
+    )
+
+    with patch.object(ckan_plugins_toolkit_mock, 'get_action', side_effect=get_action):
+        result = PrivateCatalogBuilder(generator).build_dataset(
+            {'user': 'alice'}, 'dataset-1', 'abcdefgh'
+        )
+
+    assert resource_view_list.call_count == 1
+    assert len(result['catalog']) == 2
+    assert all(
+        item['id'].startswith('__ckan_private_catalog__/abcdefgh/resource/resource-1/')
+        for item in result['catalog']
+    )
+    assert all(
+        call.kwargs['terria_views'] == resource_view_list.return_value
+        for call in generator.format_dataset_item.call_args_list
+    )
 
 
 def test_process_custom_config_populates_workbench_and_sanitizes_styles():

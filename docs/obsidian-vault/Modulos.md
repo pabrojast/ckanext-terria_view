@@ -112,6 +112,15 @@ Tocar aquí cuando:
 - se necesiten nuevas agrupaciones;
 - cambie la estrategia de cacheado o serialización.
 
+### `ckanext/terria_view/private_catalog.py`
+
+Responsabilidades:
+
+- resolver `auto|lazy|inline` según los orígenes CKAN/Terria;
+- crear la referencia privada mínima con namespace por sesión;
+- construir el índice privado de campos mínimos;
+- expandir y autorizar un solo dataset bajo demanda.
+
 ### `ckanext/terria_view/api_endpoints.py`
 
 Blueprint Flask que expone la API.
@@ -122,7 +131,7 @@ Responsabilidades:
 - respuestas CORS (incluye preflight con `Range`);
 - regeneración asíncrona del catálogo completo;
 - guardado de `custom_config` desde la UI;
-- catálogo de datasets privados del usuario;
+- endpoints lazy y legacy de datasets privados del usuario;
 - proxy streaming de recursos privados (`/api/terria/resource/<id>/content`) validado por token firmado.
 
 Tocar aquí cuando:

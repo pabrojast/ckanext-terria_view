@@ -12,6 +12,14 @@ Hay tres capas distintas:
 
 ## Estado observado
 
+Para el catálogo privado lazy se ejecuta:
+
+```bash
+pytest -q test_private_datasets.py test_strip_private_catalog.py
+```
+
+Cobertura: selección de modo, referencia inicial, índice modular, expansión por dataset, namespace de modelos, guardado idempotente y eliminación de tokens.
+
 Durante esta documentación se ejecutó:
 
 ```bash

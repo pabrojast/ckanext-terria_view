@@ -24,6 +24,8 @@ from typing import Dict, List, Optional, Any
 # TerriaJS ``#start=`` / init-source payload before it is saved or re-rendered.
 
 _PRIVATE_CATALOG_NAME_PREFIX = 'Private Datasets ('
+_PRIVATE_CATALOG_ID_PREFIX = '__ckan_private_catalog__/'
+_SAVED_PRIVATE_CATALOG_ID = '__ckan_saved_private_layers__'
 
 
 def _looks_like_private_catalog_id(value) -> bool:
@@ -36,7 +38,18 @@ def _looks_like_private_catalog_id(value) -> bool:
     if not isinstance(value, str):
         return False
     normalized = value.lstrip('/').replace('+', ' ').strip()
-    return normalized.startswith(_PRIVATE_CATALOG_NAME_PREFIX)
+    return (
+        normalized.startswith(_PRIVATE_CATALOG_NAME_PREFIX)
+        or normalized.startswith(_PRIVATE_CATALOG_ID_PREFIX)
+        or normalized == _SAVED_PRIVATE_CATALOG_ID
+    )
+
+
+def _is_private_catalog_entry(entry) -> bool:
+    return isinstance(entry, dict) and (
+        _looks_like_private_catalog_id(entry.get('id'))
+        or _looks_like_private_catalog_id(entry.get('name'))
+    )
 
 
 def _strip_private_from_catalog_list(catalog) -> None:
@@ -45,7 +58,7 @@ def _strip_private_from_catalog_list(catalog) -> None:
         return
     catalog[:] = [
         entry for entry in catalog
-        if not (isinstance(entry, dict) and _looks_like_private_catalog_id(entry.get('name')))
+        if not _is_private_catalog_entry(entry)
     ]
 
 
@@ -128,12 +141,12 @@ def payload_has_private_catalog(data) -> bool:
                 return True
         catalog = init_source.get('catalog')
         if isinstance(catalog, list) and any(
-            isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+            _is_private_catalog_entry(e) for e in catalog
         ):
             return True
     catalog = data.get('catalog')
     if isinstance(catalog, list) and any(
-        isinstance(e, dict) and _looks_like_private_catalog_id(e.get('name')) for e in catalog
+        _is_private_catalog_entry(e) for e in catalog
     ):
         return True
     return False
@@ -297,6 +310,118 @@ def prune_private_catalog_to_used(start_data):
     return start_data
 
 
+def _collapse_private_catalog_in_init_source(init_source) -> None:
+    """Replace lazy/legacy browser branches with one small saved-layers group."""
+    if not isinstance(init_source, dict):
+        return
+    models = init_source.get('models')
+    if not isinstance(models, dict):
+        _strip_private_from_catalog_list(init_source.get('catalog'))
+        return
+
+    branch = _private_branch_model_ids(models)
+    if not branch:
+        return
+
+    used_order = []
+    for list_key in ('workbench', 'timeline'):
+        for model_id in init_source.get(list_key) or []:
+            if isinstance(model_id, str) and model_id not in used_order:
+                used_order.append(model_id)
+    previewed = init_source.get('previewedItemId')
+    if isinstance(previewed, str) and previewed not in used_order:
+        used_order.append(previewed)
+
+    used_items = []
+    for model_id in used_order:
+        model = models.get(model_id)
+        if model_id not in branch or not isinstance(model, dict):
+            continue
+        if model.get('type') in ('group', 'terria-reference'):
+            continue
+        used_items.append(model_id)
+
+    kept_models = {model_id: models.get(model_id) for model_id in used_items}
+    for model_id in branch:
+        models.pop(model_id, None)
+
+    # Remove every dangling browser reference before attaching the used data
+    # items to one deterministic group. This keeps subsequent saves idempotent.
+    for value in models.values():
+        if isinstance(value, dict) and isinstance(value.get('members'), list):
+            value['members'] = [
+                member for member in value['members']
+                if not (isinstance(member, str) and member in branch)
+            ]
+
+    if used_items:
+        models[_SAVED_PRIVATE_CATALOG_ID] = {
+            'id': _SAVED_PRIVATE_CATALOG_ID,
+            'name': 'Saved private layers',
+            'type': 'group',
+            'members': used_items,
+            'knownContainerUniqueIds': ['/'],
+            'description': 'Private layers stored in this map configuration',
+        }
+        for model_id, model in kept_models.items():
+            if not isinstance(model, dict):
+                continue
+            model['knownContainerUniqueIds'] = [_SAVED_PRIVATE_CATALOG_ID]
+            models[model_id] = model
+
+        root = models.get('/')
+        if isinstance(root, dict):
+            members = root.setdefault('members', [])
+            if _SAVED_PRIVATE_CATALOG_ID not in members:
+                members.append(_SAVED_PRIVATE_CATALOG_ID)
+
+    for list_key in ('workbench', 'timeline'):
+        values = init_source.get(list_key)
+        if isinstance(values, list):
+            init_source[list_key] = [
+                model_id for model_id in values
+                if not (isinstance(model_id, str) and model_id in branch and model_id not in used_items)
+            ]
+    if isinstance(previewed, str) and previewed in branch and previewed not in used_items:
+        init_source.pop('previewedItemId', None)
+
+    _strip_private_from_catalog_list(init_source.get('catalog'))
+
+
+def collapse_private_catalog_to_saved_layers(start_data):
+    """Keep displayed private items while removing the lazy catalog browser.
+
+    The selected data models are attached to one stable ``Saved private layers``
+    group. Unused organizations, datasets and ``terria-reference`` models are
+    dropped, so a fresh lazy browser can be injected on every render without
+    duplicate trees or model-id collisions.
+    """
+    if not isinstance(start_data, dict):
+        return start_data
+    init_sources = start_data.get('initSources')
+    if isinstance(init_sources, list):
+        for init_source in init_sources:
+            _collapse_private_catalog_in_init_source(init_source)
+    _strip_private_from_catalog_list(start_data.get('catalog'))
+    return start_data
+
+
+def collapse_private_catalog_in_encoded_config(encoded_config):
+    """Apply lazy saved-layer normalization to a URL-quoted start payload."""
+    if not isinstance(encoded_config, str):
+        return encoded_config
+    try:
+        data = json.loads(urllib.parse.unquote(encoded_config))
+    except (ValueError, TypeError):
+        return encoded_config
+    if not payload_has_private_catalog(data):
+        return encoded_config
+    collapse_private_catalog_to_saved_layers(data)
+    return urllib.parse.quote(
+        json.dumps(data, separators=(',', ':'), ensure_ascii=False)
+    )
+
+
 # --- Private-resource proxy tokens -------------------------------------------
 #
 # Private datasets injected into a Terria config are referenced through CKAN's
@@ -417,14 +542,13 @@ def refresh_proxy_tokens(start_data, mint_token):
     return start_data
 
 
-def prepare_saved_custom_config_url(url):
+def prepare_saved_custom_config_url(url, lazy_private_catalog=False):
     """Prepare a ``#start=<json>`` URL for persistence as a view's ``custom_config``.
 
     Two transforms in one parse/re-encode pass:
-      * prune any injected ``Private Datasets (...)`` branch down to the items
-        actually displayed (workbench/timeline/preview) plus their ancestor
-        groups — keeps the saved config small while still restoring the private
-        datasets the user had on the map;
+      * in lazy mode, collapse displayed private items under one stable saved
+        group and discard the browser; in inline mode, retain the legacy branch
+        pruning behavior;
       * strip the short-lived signed proxy ``?token=`` (it expires; a fresh
         per-viewer token is re-minted at render time).
 
@@ -439,7 +563,10 @@ def prepare_saved_custom_config_url(url):
         data = json.loads(urllib.parse.unquote(encoded))
     except (ValueError, TypeError):
         return url
-    prune_private_catalog_to_used(data)
+    if lazy_private_catalog:
+        collapse_private_catalog_to_saved_layers(data)
+    else:
+        prune_private_catalog_to_used(data)
     strip_proxy_tokens(data)
     return base + '#start=' + urllib.parse.quote(
         json.dumps(data, separators=(',', ':'), ensure_ascii=False)

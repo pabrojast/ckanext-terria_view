@@ -90,7 +90,8 @@ class TerriaJSONGenerator:
     def format_dataset_item(self, resource: Dict, package_id: str, notes: str, 
                            org_info: Dict, view_index: int = 0,
                            package: Optional[Dict] = None,
-                           user_context: Optional[Dict] = None) -> Tuple[Dict, int]:
+                           user_context: Optional[Dict] = None,
+                           terria_views: Optional[List[Dict]] = None) -> Tuple[Dict, int]:
         """
         Format a dataset item with multiple view support.
         
@@ -102,6 +103,8 @@ class TerriaJSONGenerator:
             view_index: Index of the Terria view to use (default 0)
             package: Package dictionary (optional, for private resource URL resolution)
             user_context: User context dict (optional, for private resource URL resolution)
+            terria_views: Preloaded Terria views. Supplying this avoids repeating
+                ``resource_view_list`` while expanding every view of one resource.
             
         Returns:
             tuple: (formatted_element, total_views)
@@ -155,8 +158,14 @@ class TerriaJSONGenerator:
         
         # Get Terria views for this resource
         try:
-            views_data = toolkit.get_action('resource_view_list')({}, {'id': resource_id})
-            terria_views = [view for view in views_data if view.get('view_type') == 'terria_view']
+            if terria_views is None:
+                views_data = toolkit.get_action('resource_view_list')(
+                    user_context or {}, {'id': resource_id}
+                )
+                terria_views = [
+                    view for view in views_data
+                    if view.get('view_type') == 'terria_view'
+                ]
             total_views = len(terria_views)
             
             self._debug_print(f"Resource {resource_id}: Found {total_views} Terria views")

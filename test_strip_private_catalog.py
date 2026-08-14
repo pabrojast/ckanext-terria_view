@@ -12,7 +12,9 @@ import os
 import urllib.parse
 
 from ckanext.terria_view.terria_config_builder import (
+    collapse_private_catalog_to_saved_layers,
     payload_has_private_catalog,
+    prepare_saved_custom_config_url,
     strip_private_catalog_branches,
     strip_private_catalog_from_terria_url,
 )
@@ -186,6 +188,81 @@ def test_payload_has_private_catalog():
     assert payload_has_private_catalog({"initSources": [{"catalog": [
         {"name": "Private Datasets (x)", "type": "group"}]}]}) is True
     assert payload_has_private_catalog("nope") is False
+
+
+def test_lazy_catalog_save_collapses_browser_to_one_saved_layers_group():
+    state = {
+        'initSources': [{
+            'workbench': ['__ckan_private_catalog__/session1/resource/r1/view/0'],
+            'models': {
+                '/': {'type': 'group', 'members': [
+                    '__ckan_private_catalog__/session1/browser'
+                ]},
+                '__ckan_private_catalog__/session1/browser': {
+                    'type': 'group',
+                    'members': ['__ckan_private_catalog__/session1/dataset/d1'],
+                    'knownContainerUniqueIds': ['/'],
+                },
+                '__ckan_private_catalog__/session1/dataset/d1': {
+                    'type': 'group',
+                    'members': [
+                        '__ckan_private_catalog__/session1/resource/r1/view/0',
+                        '__ckan_private_catalog__/session1/resource/r2/view/0',
+                    ],
+                    'knownContainerUniqueIds': [
+                        '__ckan_private_catalog__/session1/browser'
+                    ],
+                },
+                '__ckan_private_catalog__/session1/resource/r1/view/0': {
+                    'type': 'csv',
+                    'url': 'https://example.org/api/terria/resource/r1/content/x.csv?token=secret',
+                    'knownContainerUniqueIds': [
+                        '__ckan_private_catalog__/session1/dataset/d1'
+                    ],
+                },
+                '__ckan_private_catalog__/session1/resource/r2/view/0': {
+                    'type': 'csv',
+                    'url': 'https://example.org/api/terria/resource/r2/content/y.csv?token=unused',
+                    'knownContainerUniqueIds': [
+                        '__ckan_private_catalog__/session1/dataset/d1'
+                    ],
+                },
+            },
+        }],
+    }
+
+    collapse_private_catalog_to_saved_layers(state)
+    source = state['initSources'][0]
+    models = source['models']
+    saved_id = '__ckan_saved_private_layers__'
+    used_id = '__ckan_private_catalog__/session1/resource/r1/view/0'
+    assert set(models) == {'/', saved_id, used_id}
+    assert models['/']['members'] == [saved_id]
+    assert models[saved_id]['members'] == [used_id]
+    assert models[used_id]['knownContainerUniqueIds'] == [saved_id]
+    assert source['workbench'] == [used_id]
+
+
+def test_prepare_lazy_saved_config_is_small_tokenless_and_idempotent():
+    state = _share_state_with_private_catalog()
+    private_id = 'res-uuid-1'
+    state['initSources'][0]['workbench'] = [private_id]
+    url = _terria_url(state)
+
+    prepared = prepare_saved_custom_config_url(url, lazy_private_catalog=True)
+    prepared_again = prepare_saved_custom_config_url(
+        prepared, lazy_private_catalog=True
+    )
+    payload = json.loads(urllib.parse.unquote(prepared.split('#start=', 1)[1]))
+    models = payload['initSources'][0]['models']
+
+    assert prepared_again == prepared
+    assert set(models) == {
+        '/', 'HydroRIVERS - The Nile Basin',
+        '__ckan_saved_private_layers__', private_id,
+    }
+    assert 'token=' not in prepared
+    assert len(prepared) < len(url)
 
 
 # --- cleanup script (scripts/strip_private_catalog_from_views.py) -------------

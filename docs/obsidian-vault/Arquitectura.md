@@ -81,8 +81,9 @@ Además existe `CachePreloader`, que intenta calentar catálogos al inicio en un
 Usuarios autenticados pueden visualizar sus datasets privados en la vista Terria.
 
 - Los catálogos públicos (`ihp-wins.json`, `/api/terria/*`) **nunca** incluyen datos privados. Las cachés (`CacheManager`, `FileCacheManager`) son estrictamente públicas.
-- Cuando un usuario autenticado abre una vista, `setup_template_variables()` invoca `_get_private_datasets_catalog()` que busca datasets privados del usuario vía `package_search(include_private=True)`.
-- El catálogo privado se genera server-side, se fusiona dentro de `encoded_config` (`_merge_private_catalog_into_encoded_config`) y viaja en el mismo `#start=` del iframe. El `postMessage` queda reservado al botón `Save Configuration`, que pide `shareData` a TerriaJS.
+- En modo `auto` (default), una instancia Terria del mismo origen usa catálogo **lazy**: `setup_template_variables()` sólo inyecta un `terria-reference` pequeño en `encoded_config`; no ejecuta búsquedas ni formatea recursos durante el render inicial.
+- Al abrir esa referencia, `/api/terria/user/private-catalog` devuelve Organización → referencias de datasets usando un `package_search` de campos mínimos. Los recursos y estilos de un dataset se generan recién al abrir `/api/terria/user/private-catalog/dataset/<id>`.
+- Para Terria cross-origin, `auto` conserva el catálogo inline anterior; puede forzarse con `private_catalog_mode=lazy|inline`.
 - Las URLs de recursos privados se emiten como endpoint proxy CKAN firmado (`/api/terria/resource/<id>/content?token=<token>`). El proxy resuelve la SAS server-side con el uploader y stremea el contenido con `Access-Control-Allow-Origin: *`, de modo que el iframe Terria (en otro dominio) no depende de la configuración CORS del Storage Account Azure.
 - Los tokens del proxy se firman HMAC-SHA256 con `beaker.session.secret`/`SECRET_KEY`, expiran por defecto en 1h y están atados a un `resource_id` específico.
 - La configuración cacheada en `resource_view` (`cached_config`) se omite para paquetes privados para evitar filtración de URLs sensibles o temporales.
@@ -93,7 +94,7 @@ Usuarios autenticados pueden visualizar sus datasets privados en la vista Terria
 - El catálogo completo y los archivos JSON grandes se sirven con patrón stale-while-revalidate.
 - La extensión filtra datasets privados o inactivos en varios generadores públicos.
 - Para payloads CKAN grandes, `action_filters.py` elimina extras pesados de recursos.
-- Los datos privados nunca se cachean ni persisten; se generan on-demand por request.
+- Los catálogos privados no usan caché compartida. Al guardar una vista sólo persisten las capas privadas mostradas, sin tokens; el navegador lazy y los datasets no usados se descartan.
 
 ## Integraciones externas
 

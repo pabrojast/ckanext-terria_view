@@ -3,6 +3,7 @@
 API endpoints for Terria JSON generation.
 """
 import json
+import logging
 import mimetypes
 import os
 import threading
@@ -54,6 +55,14 @@ from ckan.common import config
 
 from .terria_json_generator import TerriaJSONGenerator
 from .terria_config_builder import prepare_saved_custom_config_url
+from .private_catalog import (
+    PrivateCatalogBuilder,
+    normalize_catalog_id,
+    resolve_private_catalog_mode,
+)
+
+
+log = logging.getLogger(__name__)
 
 
 # Create Blueprint for our API endpoints
@@ -91,6 +100,7 @@ class TerriaAPIController:
     def __init__(self):
         """Initialize the controller."""
         self.generator = TerriaJSONGenerator()
+        self.private_catalog_builder = PrivateCatalogBuilder(self.generator)
 
     @staticmethod
     def _get_user_context() -> dict:
@@ -114,7 +124,7 @@ class TerriaAPIController:
         Args:
             data: Data to return as JSON
             status_code: HTTP status code
-            
+
         Returns:
             Flask Response object
         """
@@ -145,6 +155,27 @@ class TerriaAPIController:
         return self._create_json_response({
             'error': True,
             'message': message
+        }, status_code)
+
+    def _create_private_json_response(self, data: dict, status_code: int = 200) -> Response:
+        """Return authenticated catalog data without shared/browser caching."""
+        response = Response(
+            json.dumps(data, ensure_ascii=False, separators=(',', ':')),
+            status=status_code,
+            content_type='application/json; charset=utf-8',
+        )
+        response.headers['Cache-Control'] = 'private, no-store, max-age=0'
+        response.headers['CDN-Cache-Control'] = 'no-store'
+        response.headers['Surrogate-Control'] = 'no-store'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+        response.headers['Vary'] = 'Cookie, Authorization'
+        return response
+
+    def _create_private_error_response(self, message: str, status_code: int) -> Response:
+        return self._create_private_json_response({
+            'error': True,
+            'message': message,
         }, status_code)
     
     def dataset_json(self, dataset_id: str):
@@ -589,11 +620,28 @@ class TerriaAPIController:
                 return self._create_error_response('custom_config_url must be an HTTP(S) URL', 400)
             custom_config_url = custom_config_url.strip()
 
-            # Prune any injected private-dataset catalog down to the items the
-            # user actually displayed and strip the expired-once proxy token
-            # (re-minted per viewer at render time). Keeps shared views working
-            # for other users with access without persisting a 1 MB+ catalog.
-            custom_config_url = prepare_saved_custom_config_url(custom_config_url)
+            # Get current user context
+            context = self._get_user_context()
+
+            # Get current view data
+            try:
+                current_view = toolkit.get_action('resource_view_show')(context, {'id': view_id})
+            except toolkit.ObjectNotFound:
+                return self._create_error_response(f'View not found: {view_id}', 404)
+            except toolkit.NotAuthorized:
+                return self._create_error_response('Not authorized to access this view', 403)
+
+            private_mode = resolve_private_catalog_mode(
+                toolkit.config.get(
+                    'ckanext.terria_view.private_catalog_mode', 'auto'
+                ),
+                toolkit.config.get('ckan.site_url', ''),
+                current_view.get('terria_instance_url', ''),
+            )
+            custom_config_url = prepare_saved_custom_config_url(
+                custom_config_url,
+                lazy_private_catalog=(private_mode == 'lazy'),
+            )
 
             # Safety net against runaway configs (browser URL limits, slow
             # CKAN view edit form). Reject rather than silently truncate.
@@ -606,17 +654,6 @@ class TerriaAPIController:
                     % (len(custom_config_url), max_bytes),
                     413,
                 )
-
-            # Get current user context
-            context = self._get_user_context()
-            
-            # Get current view data
-            try:
-                current_view = toolkit.get_action('resource_view_show')(context, {'id': view_id})
-            except toolkit.ObjectNotFound:
-                return self._create_error_response(f'View not found: {view_id}', 404)
-            except toolkit.NotAuthorized:
-                return self._create_error_response('Not authorized to access this view', 403)
             
             # Update view with new custom_config
             update_data = {
@@ -774,6 +811,53 @@ class TerriaAPIController:
         response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
         return response
 
+    def private_catalog_index(self):
+        """Return a lightweight Organization -> Dataset reference catalog."""
+        context = self._get_user_context()
+        if not context.get('user'):
+            return self._create_private_error_response(
+                'Authentication required. Please log in.', 401
+            )
+        catalog_id = normalize_catalog_id(request.args.get('catalog_id'))
+        try:
+            data = self.private_catalog_builder.build_index(context, catalog_id)
+            return self._create_private_json_response(data)
+        except toolkit.NotAuthorized:
+            return self._create_private_error_response(
+                'Not authorized to access private datasets', 403
+            )
+        except Exception:
+            log.exception('terria_view: failed to build lazy private catalog index')
+            return self._create_private_error_response(
+                'Unable to load private datasets', 500
+            )
+
+    def private_catalog_dataset(self, dataset_id: str):
+        """Expand one authorized private dataset into Terria resource items."""
+        context = self._get_user_context()
+        if not context.get('user'):
+            return self._create_private_error_response(
+                'Authentication required. Please log in.', 401
+            )
+        catalog_id = normalize_catalog_id(request.args.get('catalog_id'))
+        try:
+            data = self.private_catalog_builder.build_dataset(
+                context, dataset_id, catalog_id
+            )
+            return self._create_private_json_response(data)
+        except (toolkit.ObjectNotFound, toolkit.NotAuthorized):
+            # Do not reveal whether an inaccessible/private id exists.
+            return self._create_private_error_response(
+                'Private dataset not found', 404
+            )
+        except Exception:
+            log.exception(
+                'terria_view: failed to expand private dataset %s', dataset_id
+            )
+            return self._create_private_error_response(
+                'Unable to load private dataset', 500
+            )
+
     def user_private_datasets(self):
         """
         Get private datasets accessible to the current logged-in user in Terria JSON format.
@@ -786,7 +870,9 @@ class TerriaAPIController:
             context = self._get_user_context()
             user = context.get('user')
             if not user:
-                return self._create_error_response('Authentication required. Please log in.', 401)
+                return self._create_private_error_response(
+                    'Authentication required. Please log in.', 401
+                )
             
             # Search for private datasets the user can access
             try:
@@ -910,13 +996,18 @@ class TerriaAPIController:
                 # Convert sets to lists for JSON serialization
                 config = self.generator.convert_sets_to_lists(config)
                 
-                return self._create_json_response(config)
+                return self._create_private_json_response(config)
                 
             except toolkit.NotAuthorized:
-                return self._create_error_response('Not authorized to access private datasets', 403)
+                return self._create_private_error_response(
+                    'Not authorized to access private datasets', 403
+                )
                 
-        except Exception as e:
-            return self._create_error_response(f'Error retrieving private datasets: {str(e)}')
+        except Exception:
+            log.exception('terria_view: failed to build legacy private catalog')
+            return self._create_private_error_response(
+                'Unable to load private datasets', 500
+            )
 
 
 # Initialize controller lazily to avoid import-time errors
@@ -1036,8 +1127,22 @@ def save_view_config_endpoint(view_id):
 
 @terria_api.route('/api/terria/user/private-datasets', methods=['GET'])
 def user_private_datasets_endpoint():
-    """Get private datasets accessible to the current user."""
+    """Legacy full private catalog endpoint."""
     return get_controller().user_private_datasets()
+
+
+@terria_api.route('/api/terria/user/private-catalog', methods=['GET'])
+def private_catalog_index_endpoint():
+    """Get a lightweight private dataset reference index."""
+    return get_controller().private_catalog_index()
+
+
+@terria_api.route(
+    '/api/terria/user/private-catalog/dataset/<dataset_id>', methods=['GET']
+)
+def private_catalog_dataset_endpoint(dataset_id):
+    """Expand one authorized private dataset."""
+    return get_controller().private_catalog_dataset(dataset_id)
 
 
 @terria_api.route('/api/terria/resource/<resource_id>/content', methods=['GET', 'HEAD'])

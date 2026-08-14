@@ -56,8 +56,8 @@ Secuencia:
 4. En render posterior, `TerriaConfigBuilder` toma esa config y la adapta al recurso actual.
 5. Si hay SLD, `SLDProcessor` genera estilos/leyendas y se inyectan a la config.
 6. La configuración adaptada garantiza que los modelos de datos queden en `workbench` y normaliza estilos incompletos (por ejemplo `enumColors` sin `mapType`/`colorColumn`) para evitar fallos de parseo en Terria.
-7. `process_custom_config` conserva las ramas `Private Datasets (...)` que hubieran quedado horneadas en un `custom_config` previo (para poder compartir la vista con otros usuarios con acceso). Al **guardar** esa rama se poda a solo los items mostrados (`prepare_saved_custom_config_url` → `prune_private_catalog_to_used`) y se le quita el `?token=` caducado; en **render** se vuelve a emitir el token por visor (`refresh_proxy_tokens`). `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (identificado por su `resource_id` en la ruta del proxy, o el único item de datos en configs legacy de un solo recurso); el resto de items se deja intacto.
-8. La inyección inline del catálogo privado del usuario actual solo ocurre en vistas de datasets privados por defecto (configurable con `ckanext.terria_view.inject_private_catalog_on_public_views`); ver [[Variables de Entorno]]. Si la config guardada ya trae un catálogo privado, no se vuelve a inyectar (evita duplicados y crecimiento sin límite entre re-guardados).
+7. En modo lazy, las ramas privadas guardadas se normalizan a un único grupo `Saved private layers`; sólo conserva los items mostrados y se les renueva el token por visor. Las configuraciones inline legacy mantienen la poda anterior.
+8. El catálogo privado se habilita sólo en vistas privadas por defecto (`inject_private_catalog_on_public_views` permite públicas). En mismo origen, el `#start` recibe únicamente un `terria-reference`; el índice y cada dataset se resuelven on-demand. En cross-origin, `auto` usa el fallback inline.
 
 ## 4. Guardar configuración desde la UI
 
@@ -70,7 +70,7 @@ Secuencia:
 1. `terria.html` envía `postMessage` al iframe Terria pidiendo `shareData` (la instancia Terria embebida responde con `shareDataResponse` vía `updateApplicationOnMessageFromParentWindow`).
 2. Construye una URL `#start=...`.
 3. Hace `POST /api/terria/view/<view_id>/save-config`.
-4. El endpoint valida la URL HTTP(S) y llama a `prepare_saved_custom_config_url`: **poda** la rama `Private Datasets (...)` dejando solo los items que estaban en `workbench`/`timeline`/`previewedItemId` (más sus grupos ancestros, con `members` recortados) — `prune_private_catalog_to_used` — y **quita el `?token=` firmado** de las URLs proxy (`strip_proxy_tokens`). Rechaza con 413 si tras eso supera `max_custom_config_bytes` (4 MB por defecto, configurable).
+4. El endpoint valida la URL HTTP(S) y llama a `prepare_saved_custom_config_url`. En lazy elimina organizaciones/referencias no usadas y agrupa las capas mostradas en `Saved private layers`; en inline poda la rama legacy. Siempre quita el `?token=` firmado. Rechaza con 413 si supera `max_custom_config_bytes`.
 5. La vista CKAN se actualiza con el nuevo `custom_config`. El mismo strip de tokens se aplica en `before_create`/`before_update` cuando la URL llega por el formulario.
 6. En cada render, `setup_template_variables()` recorre el `encoded_config` y, por cada recurso privado referenciado vía el proxy, emite un token fresco **solo si el usuario actual tiene acceso** (`check_access('resource_show')`); si no, deja la URL sin token (el proxy responderá 401 para ese item) — `_refresh_proxy_tokens_in_encoded_config` + `refresh_proxy_tokens`.
 
@@ -78,10 +78,17 @@ Resultado:
 
 - la próxima carga reutiliza el estado guardado del mapa, incluidos los datasets privados que se habían añadido; otros usuarios con acceso ven esos datasets con un token renovado; los que no tienen acceso ven ese item con error 401 y un aviso encima del mapa ("inicia sesión" si son anónimos, o "tu cuenta no tiene acceso") — `private_resources_blocked` en `terria.html`.
 
+## 5. Catálogo privado lazy
+
+1. El render inyecta una referencia con id `__ckan_private_catalog__/<nonce>/browser`.
+2. Al abrirla, `GET /api/terria/user/private-catalog` ejecuta una búsqueda privada paginada con campos mínimos y devuelve Organización → referencias de datasets.
+3. Al abrir un dataset, `GET /api/terria/user/private-catalog/dataset/<id>` verifica `package_show`, exige `private=true` y `state=active`, y formatea sólo sus recursos.
+4. Los IDs de recursos se namespacian con el nonce para coexistir con capas guardadas de sesiones anteriores.
+
 > [!note] Lado TerriaJS
 > El handler `requestShareData` (`updateApplicationOnMessageFromParentWindow.js`) hace `JSON.parse(JSON.stringify(shareData))` antes del `postMessage`: `getShareData()` puede devolver arrays/maps observables de MobX que el structured clone no puede clonar (`"[object Array] could not be cloned"`), error que aparecía al guardar vistas de datasets privados.
 
-## 5. Generación de catálogo por dataset
+## 6. Generación de catálogo por dataset
 
 Entrada:
 
@@ -97,7 +104,7 @@ Secuencia:
 6. Genera uno o varios items Terria, uno por vista.
 7. Cachea la respuesta en memoria.
 
-## 6. Generación de catálogo completo
+## 7. Generación de catálogo completo
 
 Entrada:
 
@@ -115,7 +122,7 @@ Resultado:
 
 - el endpoint evita bloquear la request en regeneraciones pesadas.
 
-## 7. Invalidación de caché
+## 8. Invalidación de caché
 
 Disparadores:
 

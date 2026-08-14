@@ -80,6 +80,16 @@ Lista separada por comas de extras a remover.
 
 Si está en `true`, el catálogo de datasets privados del usuario logueado se inyecta en el `#start=` de **todas** las vistas Terria; si está en `false` (default), solo en vistas de datasets privados. Anónimo nunca recibe el catálogo privado, independientemente del flag. Ver [[Flujos Importantes]] (guardado de configuración) y [[Troubleshooting]] (crecimiento del config de la vista).
 
+### `ckanext.terria_view.private_catalog_mode`
+
+Controla cómo se carga el catálogo privado:
+
+- `auto` (default): lazy cuando CKAN y Terria comparten esquema, host y puerto; inline en otro caso;
+- `lazy`: inyecta una referencia pequeña y consulta el catálogo autenticado al abrirlo;
+- `inline`: genera el catálogo completo en el render, preservando el comportamiento anterior.
+
+El modo lazy requiere que la sesión CKAN alcance `/api/terria/user/private-catalog`; los despliegues IHP-WINS dev y producción sirven CKAN y `/terria` en el mismo origen.
+
 ### `ckanext.terria_view.max_custom_config_bytes`
 
 Tamaño máximo (bytes) del `custom_config_url` que `/api/terria/view/<id>/save-config` acepta; por encima responde 413. Default `4 * 1024 * 1024` (4 MB) — suficiente para una vista que hornea el catálogo de datasets privados del usuario (que puede rondar ~1 MB). Subirlo si una vista legítimamente necesita más; bajarlo para ser más estricto.
@@ -103,6 +113,7 @@ Secret HMAC que `ResourceUtils.generate_resource_token` utiliza para firmar los 
 - `preload_delay`: `10`
 - `cache_timeout`: `3600` segundos en caché de memoria y archivo
 - `inject_private_catalog_on_public_views`: `False`
+- `private_catalog_mode`: `auto`
 
 ## Inferencia
 

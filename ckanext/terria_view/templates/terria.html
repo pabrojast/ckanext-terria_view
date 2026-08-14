@@ -40,8 +40,8 @@
 
   {% if encoded_config %}
   // Config sent to a popup window when user clicks "View in separate window".
-  // The same encoded_config already includes the private catalog (merged
-  // server-side) when the viewer sits on a private package.
+  // On private views this includes either a small lazy catalog reference or
+  // the legacy inline catalog, depending on private_catalog_mode.
   var terriaStartConfig = JSON.parse(decodeURIComponent('{{ encoded_config }}'));
 
   window.terriaJSPreview = function()
