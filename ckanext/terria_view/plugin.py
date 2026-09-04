@@ -542,7 +542,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
     # Bump this version whenever the config generation/processing logic changes
     # to invalidate stale cached configs.
-    _CONFIG_PROCESSING_VERSION = 6
+    _CONFIG_PROCESSING_VERSION = 7
 
     def _build_cached_config_signature(self, resource, package, resource_url, bounds,
                                        view_custom_config, view_style, resource_name):

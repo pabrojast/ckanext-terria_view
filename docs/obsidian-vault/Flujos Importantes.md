@@ -54,7 +54,7 @@ Secuencia:
 2. Se persiste `custom_config` como `NA` o URL real.
 3. Se persiste `style` como `NA`, URL custom o URL de un SLD detectado en el dataset.
 4. En render posterior, `TerriaConfigBuilder` toma esa config y la adapta al recurso actual.
-5. Si hay SLD, `SLDProcessor` genera estilos/leyendas y se inyectan a la config.
+5. Si hay SLD y el modelo **no** trae ya `legends` / `styles` / `renderOptions`, `SLDProcessor` rellena esos campos. Si el usuario ya guardó ediciones del visor (títulos de leyenda, unidades, `displayRange`), esas claves se conservan: el SLD es semilla, no override.
 6. La configuración adaptada garantiza que los modelos de datos queden en `workbench` y normaliza estilos incompletos (por ejemplo `enumColors` sin `mapType`/`colorColumn`) para evitar fallos de parseo en Terria.
 7. En modo lazy, las ramas privadas guardadas se normalizan a un único grupo `Saved private layers`; sólo conserva los items mostrados y se les renueva el token por visor. Las configuraciones inline legacy mantienen la poda anterior.
 8. El catálogo privado se habilita sólo en vistas privadas por defecto (`inject_private_catalog_on_public_views` permite públicas). En mismo origen, el `#start` recibe únicamente un `terria-reference`; el índice y cada dataset se resuelven on-demand. En cross-origin, `auto` usa el fallback inline.
@@ -77,6 +77,7 @@ Secuencia:
 Resultado:
 
 - la próxima carga reutiliza el estado guardado del mapa, incluidos los datasets privados que se habían añadido; otros usuarios con acceso ven esos datasets con un token renovado; los que no tienen acceso ven ese item con error 401 y un aviso encima del mapa ("inicia sesión" si son anónimos, o "tu cuenta no tiene acceso") — `private_resources_blocked` en `terria.html`.
+- las ediciones de estilo hechas en el visor (leyenda, `displayRange`, estilos de tabla) persisten aunque la vista siga teniendo un SLD en `style`. Para forzar un SLD nuevo hay que quitar o regenerar la `custom_config`.
 
 ## 5. Catálogo privado lazy
 

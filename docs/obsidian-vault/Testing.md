@@ -15,7 +15,7 @@ Hay tres capas distintas:
 Para el catálogo privado lazy se ejecuta:
 
 ```bash
-pytest -q test_private_datasets.py test_strip_private_catalog.py
+pytest -q test_private_datasets.py test_strip_private_catalog.py test_process_custom_config_sld.py
 ```
 
 Cobertura: selección de modo, referencia inicial, índice modular, expansión por dataset, namespace de modelos, guardado idempotente y eliminación de tokens.
@@ -54,6 +54,7 @@ Ejemplos:
 - `test_sld_corrections.py`
 - `test_problematic_sld.py`
 - `test_terria_compliance.py`
+- `test_process_custom_config_sld.py`
 
 Cobertura funcional:
 
@@ -61,7 +62,8 @@ Cobertura funcional:
 - robustez ante XML defectuoso;
 - normalización de colores;
 - compliance de salida para TerriaJS;
-- casos específicos de columnas y reglas.
+- casos específicos de columnas y reglas;
+- `process_custom_config` no pisa leyendas/`renderOptions`/`styles` ya guardados cuando hay SLD (COG y SHP, `tif`/`TIF`/`SHP`).
 
 ### Tests raíz orientados a endpoints y compatibilidad
 

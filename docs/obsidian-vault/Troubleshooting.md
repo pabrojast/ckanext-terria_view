@@ -78,6 +78,24 @@ Para diagnosticar otros casos: contar las vistas Terria del recurso (`POST /api/
 
 Ver también: [[Modulos]] (`TerriaJSONGenerator.format_dataset_item`).
 
+## Edito la leyenda de un COG con SLD, guardo, y al recargar vuelve el SLD
+
+Síntoma: en un visor COG/GeoTIFF con un archivo SLD adjunto, el usuario cambia texto de la leyenda (por ejemplo unidades), `displayRange` u otros campos del panel de estilo de Terria, pulsa `Save Configuration` y al recargar el mapa vuelve a las labels del SLD. En shapefiles (`format: SHP`) el mismo flujo sí parecía persistir.
+
+Causa: `process_custom_config` reinyectaba `legends` y `renderOptions` desde el SLD en **cada** render de una `custom_config`. El POST a `/api/terria/view/<id>/save-config` sí guardaba el `shareData`; el siguiente `setup_template_variables` lo pisaba. El match de formato era case-sensitive (`tif` sí, `SHP`/`TIF` no), por eso el shapefile del catálogo IHP-WINS (casi siempre `SHP`) no pasaba por ese overwrite.
+
+Fix:
+
+- el SLD solo rellena `legends` / `styles` / `activeStyle` / `defaultStyle` / `renderOptions` cuando el modelo guardado **no** trae esa clave;
+- el formato se compara en minúsculas (`tif`, `TIF`, `SHP`, `shp`);
+- `_CONFIG_PROCESSING_VERSION` subió a `7` para invalidar `cached_config` generados con el overwrite.
+
+Si se cambia el SLD en el formulario CKAN y se quiere que sustituya las ediciones del visor, hay que quitar o regenerar la `custom_config` de esa vista.
+
+Tests: `test_process_custom_config_sld.py`.
+
+Ver también: [[Flujos Importantes]] (flujos 3 y 4).
+
 ## El estilo SLD no se aplica
 
 Revisar:
@@ -161,7 +179,7 @@ Comportamiento actual (los datasets privados **se conservan** en la config guard
 - al guardar en lazy, `prepare_saved_custom_config_url` elimina el navegador y concentra sólo las capas mostradas en `Saved private layers`; también quita el token firmado;
 - en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
 - el navegador lazy se vuelve a inyectar con un namespace nuevo y puede coexistir con las capas guardadas sin colisiones;
-- `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso);
+- `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso). El SLD rellena `legends`/`styles`/`renderOptions` únicamente si esas claves no vienen ya en el estado guardado;
 - `save_view_config` sigue rechazando configs > `max_custom_config_bytes` (4 MB por defecto, configurable);
 - `_CONFIG_PROCESSING_VERSION` se subió en su momento para invalidar `cached_config` viejos.
 

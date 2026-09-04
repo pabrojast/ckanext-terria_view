@@ -27,6 +27,15 @@ _PRIVATE_CATALOG_NAME_PREFIX = 'Private Datasets ('
 _PRIVATE_CATALOG_ID_PREFIX = '__ckan_private_catalog__/'
 _SAVED_PRIVATE_CATALOG_ID = '__ckan_saved_private_layers__'
 
+# Formats that can receive SLD-derived Terria style fields. Compared in
+# lowercase: CKAN resources in this portal mix ``shp``/``SHP`` and ``tif``/``TIF``.
+_SLD_RESOURCE_FORMATS = frozenset({
+    'shp', 'shape', 'geojson', 'tif', 'tiff', 'geotiff', 'cog',
+})
+_SLD_STYLE_KEYS = (
+    'legends', 'styles', 'activeStyle', 'defaultStyle', 'renderOptions',
+)
+
 
 def _looks_like_private_catalog_id(value) -> bool:
     """True if ``value`` is a Terria model id/name for the injected private catalog.
@@ -911,6 +920,10 @@ class TerriaConfigBuilder:
         """
         Procesa una configuración personalizada y actualiza URLs y estilos.
 
+        El SLD (si hay ``sld_url``) solo rellena ``legends`` / ``styles`` /
+        ``renderOptions`` ausentes. Campos ya presentes en el estado guardado
+        (ediciones de leyenda, displayRange, estilos de tabla) se conservan.
+
         Args:
             custom_config: Configuración personalizada
             resource_url: URL del recurso
@@ -958,11 +971,15 @@ class TerriaConfigBuilder:
             # time — see ``strip_proxy_tokens_from_terria_url`` /
             # ``refresh_proxy_tokens`` and ``Terria_ViewPlugin``.
 
-            # Get SLD styles if available
+            # Get SLD styles if available. Format matching is case-insensitive
+            # because CKAN stores ``SHP`` / ``TIF`` / ``tif`` interchangeably.
+            resource_format_l = (resource_format or '').lower()
             sld_styles = None
-            if sld_url and resource_format in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
-                self._debug_print(f"Processing SLD for resource format: {resource_format}")
-                sld_styles = self.sld_processor.process_sld_for_resource(sld_url, resource_format)
+            if sld_url and resource_format_l in _SLD_RESOURCE_FORMATS:
+                self._debug_print(f"Processing SLD for resource format: {resource_format_l}")
+                sld_styles = self.sld_processor.process_sld_for_resource(
+                    sld_url, resource_format_l
+                )
                 self._debug_print(f"SLD styles result: {sld_styles}")
             
             # Strip orphaned group models (e.g. built-in catalog groups like
@@ -1027,29 +1044,12 @@ class TerriaConfigBuilder:
                             self._debug_print(f"Updated URL for model {model_key}: {resource_url}")
                             updated_model_ids.append(model_key)
 
-                            # Apply SLD styles if available
-                            if sld_styles and resource_format.lower() in ['shp', 'geojson', 'tif', 'tiff', 'geotiff', 'cog']:
-                                self._debug_print(f"Applying SLD styles to model {model_key}")
-                                # Always apply legends if available
-                                if 'legends' in sld_styles:
-                                    model_value['legends'] = sld_styles['legends']
-                                    self._debug_print(f"Applied legends to model {model_key}")
-                                
-                                # Apply styles for SHP/GeoJSON resources
-                                if resource_format.lower() in ['shp', 'geojson'] and 'styles' in sld_styles:
-                                    model_value['styles'] = sld_styles['styles']
-                                    if 'activeStyle' in sld_styles:
-                                        model_value['activeStyle'] = sld_styles['activeStyle']
-                                    # if 'forceCesiumPrimitives' in sld_styles:
-                                    #     model_value['forceCesiumPrimitives'] = sld_styles['forceCesiumPrimitives']
-                                    self._debug_print(f"Applied styles to model {model_key}: {sld_styles['styles']}")
-                                    self._debug_print(f"Applied activeStyle: {sld_styles.get('activeStyle')}")
-                                    # print(f"Applied forceCesiumPrimitives: {sld_styles.get('forceCesiumPrimitives')}")
-                                    
-                                # Apply renderOptions for COG resources
-                                elif resource_format.lower() in ['tif', 'tiff', 'geotiff', 'cog'] and 'renderOptions' in sld_styles:
-                                    model_value['renderOptions'] = sld_styles['renderOptions']
-                                    self._debug_print(f"Applied renderOptions to model {model_key}")
+                            # SLD is a seed for missing style fields only.
+                            # Saved viewer edits (legend titles, displayRange,
+                            # table styles, …) already live on the model and
+                            # must not be overwritten on every render.
+                            if sld_styles:
+                                self._apply_sld_defaults(model_value, sld_styles)
                             self._sanitize_model_styles(model_value)
 
                     # Ensure data items are visible on map by default
@@ -1068,6 +1068,21 @@ class TerriaConfigBuilder:
         except Exception as e:
             self._debug_print(f"Error processing custom config: {e}")
             return None
+
+    def _apply_sld_defaults(self, model_value: Dict, sld_styles: Dict) -> None:
+        """Fill missing style fields from SLD without clobbering saved edits.
+
+        ``Save Configuration`` serialises the Terria user stratum (legend
+        titles, ``renderOptions.displayRange``, table ``styles``, …) into
+        ``custom_config``. Re-applying the SLD on every render used to
+        replace those blocks, so COG+SLD viewer tweaks appeared unsaved.
+        """
+        if not isinstance(model_value, dict) or not isinstance(sld_styles, dict):
+            return
+        for key in _SLD_STYLE_KEYS:
+            if key in sld_styles and key not in model_value:
+                model_value[key] = sld_styles[key]
+                self._debug_print(f"Filled missing {key} from SLD")
 
     def _sanitize_model_styles(self, model_value: Dict) -> None:
         """
