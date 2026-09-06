@@ -91,7 +91,8 @@ class TerriaJSONGenerator:
                            org_info: Dict, view_index: int = 0,
                            package: Optional[Dict] = None,
                            user_context: Optional[Dict] = None,
-                           terria_views: Optional[List[Dict]] = None) -> Tuple[Dict, int]:
+                           terria_views: Optional[List[Dict]] = None,
+                           relative_urls: bool = False) -> Tuple[Dict, int]:
         """
         Format a dataset item with multiple view support.
         
@@ -105,6 +106,8 @@ class TerriaJSONGenerator:
             user_context: User context dict (optional, for private resource URL resolution)
             terria_views: Preloaded Terria views. Supplying this avoids repeating
                 ``resource_view_list`` while expanding every view of one resource.
+            relative_urls: Emit root-relative proxy URLs for non-public resources
+                (same-origin lazy private catalog). Public catalogs keep absolute URLs.
             
         Returns:
             tuple: (formatted_element, total_views)
@@ -117,7 +120,9 @@ class TerriaJSONGenerator:
         if not resource_name or resource_name.lower() in ['', 'none', 'null', 'undefined', 'unnamed resource']:
             resource_name = resource.get('id', f"Resource_{hash(resource.get('url', 'sin_url')) % 10000}")
         
-        resource_url = self.resource_utils.get_resource_url(resource, package or {}, user_context or {})
+        resource_url = self.resource_utils.get_resource_url(
+            resource, package or {}, user_context or {}, relative_urls=relative_urls
+        )
         resource_description = resource.get('description', '')
         
         # Adjust the type if necessary

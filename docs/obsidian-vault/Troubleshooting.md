@@ -40,8 +40,9 @@ Fix en el plugin:
 
 - `ResourceUtils.get_resource_url()` devuelve una URL proxy CKAN firmada en lugar de la SAS directa. Flujo: `GET /api/terria/resource/<id>/content/<filename>?token=<token>` → CKAN resuelve la SAS server-side y stremea el contenido con `Access-Control-Allow-Origin: *`.
 - El segmento `<filename>` se conserva intencionalmente en el path para que pase la validación cliente de TerriaJS (p. ej. `shp` exige `.zip`, `geojson` exige `.geojson`). La autorización no depende del filename, solo del token.
-- Verificar que el endpoint esté accesible y responda `200` al hacer `GET` con token válido. Si devuelve `401` con `Invalid or expired token`, revisar `beaker.session.secret`/`SECRET_KEY` y que el mismo proceso CKAN haya generado el token (tokens firmados con otro secret no verifican).
+- Verificar que el endpoint esté accesible y responda `200` al hacer `GET` con token válido. Si devuelve `401` (`Authentication required (token or CKAN session)`), el token no verifica **y** no hay sesión CKAN en la petición: revisar `beaker.session.secret`/`SECRET_KEY` y que el mismo proceso CKAN haya generado el token (tokens firmados con otro secret no verifican). Un `403` significa sesión válida pero sin `can_download` sobre ese recurso (`user_may_download`). Desde un Terria same-origin el proxy también autoriza por cookie, así que un token caducado no rompe la capa mientras la sesión viva.
 - Si responde `502`, es que Azure rechazó la SAS: token del uploader expirado, permisos cambiados, o el blob fue movido.
+- Si en el render la URL del recurso sale **sin** `?token=` para un usuario logueado en un dataset no publico, `get_resource_url` denego por `user_may_download` (p. ej. `viewable` sin autorizacion: puede abrir la vista, no descargar el fichero). Es lo esperado; el enlace normal de descarga respondera `403` desde datashare.
 
 Alternativa sin cambios en código: configurar CORS en el Storage Account (allowed origins = dominio del Terria) para que la URL SAS directa funcione. En ese caso el proxy queda como defensa en profundidad.
 
@@ -177,7 +178,7 @@ Causa histórica: el catálogo privado completo se inyectaba en `encoded_config`
 Comportamiento actual (los datasets privados **se conservan** en la config guardada a propósito, para poder compartir la vista entre usuarios con acceso):
 
 - al guardar en lazy, `prepare_saved_custom_config_url` elimina el navegador y concentra sólo las capas mostradas en `Saved private layers`; también quita el token firmado;
-- en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `check_access('resource_show')`**; si no, deja la URL sin token (el proxy responde 401 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
+- en render, `_refresh_proxy_tokens_in_encoded_config` recorre el `encoded_config` y emite un token fresco por recurso privado **solo si el usuario actual pasa `ResourceUtils.user_may_download`** (`datashare_resource_download`; `resource_show` solo si esa auth no está registrada); si no, deja la URL sin token (el proxy responde 401/403 para ese item) y marca `private_resources_blocked`, con lo que `terria.html` muestra un aviso encima del mapa ("inicia sesión" si es anónimo, o "tu cuenta no tiene acceso");
 - el navegador lazy se vuelve a inyectar con un namespace nuevo y puede coexistir con las capas guardadas sin colisiones;
 - `process_custom_config` solo reescribe la URL del modelo del recurso principal de la vista (por su `resource_id` en la ruta del proxy, o el único item de datos en configs de un solo recurso). El SLD rellena `legends`/`styles`/`renderOptions` únicamente si esas claves no vienen ya en el estado guardado;
 - `save_view_config` sigue rechazando configs > `max_custom_config_bytes` (4 MB por defecto, configurable);
@@ -244,6 +245,29 @@ Revisar:
 - wrappers en `action_filters.py`;
 - permisos del usuario en endpoints privados;
 - datos devueltos por `package_search`.
+
+En el catalogo privado lazy, ademas:
+
+- el indice solo lista datasets con `capacity:private` o `access_level != public` **y** `datashare_access_check.can_download` verdadero; un dataset `viewable` sobre el que el usuario solo puede previsualizar no aparece a proposito (Terria descarga el archivo crudo);
+- `findable`/`restricted` son descubribles por cualquier logueado en Solr, pero se descartan si `can_download` es falso; si aparecen para un usuario que no deberia, revisar los grants/membresias en `ckanext-datashare`;
+- si `ckanext-datashare` no esta instalado solo se listan `private=True`; si un `access_level` no llega, comprobar que Solr indexe el extra (`fl` pide `extras_access_level`);
+- un `404` en `/private-catalog/dataset/<id>` cubre inexistente, publico, inactivo y sin `can_download`: es deliberado para no revelar ids.
+
+## Terria standalone no muestra "Log in" ni datos privados
+
+Sintoma: en el Terria same-origin (`https://<host>/terria`) no aparece el boton "Log in" junto a Share, o aparece pero tras iniciar sesion en CKAN y volver a la pestana no se anade la pestana "Private Datasets (...)", o el boton queda en "Session unavailable".
+
+Revisar, en orden:
+
+- que el `wwwroot/config.json` del Terria desplegado tenga `parameters.ckanSession` (repo TerriaMap, no CKAN). Sin esa clave TerriaJS es inerte y no hay boton;
+- `curl -si https://<host>/api/terria/user/session` → `200` con `authenticated: false`. Un `404` significa que el CKAN desplegado no lleva esta version del plugin: Terria muestra "Session unavailable" con reintento y nada mas cambia;
+- con la cookie `ckan` copiada del navegador: `curl -s -b 'ckan=<valor>' https://<host>/api/terria/user/session | jq .` → `authenticated: true` y `private_catalog_url` **relativa** (`/api/terria/user/private-catalog?catalog_id=...`). Si sale absoluta o `//`, Terria la descarta y usa su default; revisar `_ckan_path`/`_api_url`;
+- en DevTools → Network, las llamadas a `/api/terria/user/...` y `/api/terria/resource/...` deben ir directas al origen, nunca por `/terria/proxy/`: el proxy de terriajs-server descarta la cookie y el whoami vuelve anonimo (`curl -b 'ckan=<valor>' https://<host>/terria/proxy/_1d/https://<host>/api/terria/user/session` lo demuestra). Si pasan por el proxy, alguna URL es absoluta o el host no esta en `corsDomains` del init de Terria;
+- `Cache-Control` de `session` y del indice debe contener `private` y `no-store` y no `public` (si aparece `public, must-revalidate`, falta `request.environ['__no_cache__']`, ver [[API y Endpoints]]);
+- si el indice llega vacio (`catalog: []`): el usuario no tiene ningun dataset con `can_download` (ver la entrada anterior); comprobar con la cookie `GET /api/3/action/datashare_access_check?id=<dataset>`;
+- si un dataset carga pero el COG no pinta o tarda mucho: `curl -s -o /dev/null -D - -b 'ckan=<valor>' -H 'Range: bytes=0-1023' https://<host>/api/terria/resource/<rid>/content/<f>.tif` debe responder `206` con `Content-Range`; un `200` completo indica que el upstream ignoro `Range` o que hay un intermediario recomprimiendo (el proxy fuerza `Accept-Encoding: identity`);
+- tras "Log out" la pestana privada debe desaparecer al volver al mapa; si no, comprobar que el whoami ya responde `authenticated: false` (throttle de foco de unos segundos; el boton permite forzar la comprobacion);
+- para la vista embebida en CKAN: `default_instance_url`/`terria_instance_url` same-origin (ver [[Variables de Entorno]]). Una vista con URL de instancia de otro origen guardada sigue en modo inline con URLs absolutas aunque cambie el default.
 
 ## Pendiente por confirmar
 

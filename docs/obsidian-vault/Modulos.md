@@ -12,8 +12,9 @@ Responsabilidades:
 - registrar interfaces CKAN;
 - crear automáticamente vistas `terria_view`;
 - transformar datos del formulario antes de persistir;
-- calcular y persistir `cached_config` en la vista;
-- invalidar cachés después de crear, actualizar o borrar vistas.
+- calcular y persistir `cached_config` en la vista (solo datasets publicos y sin token en la URL: `_may_persist_cached_config`);
+- invalidar cachés después de crear, actualizar o borrar vistas;
+- inyectar el catalogo privado en `#start=` (referencia lazy relativa si `is_same_origin`, inline en cross-origin) y renovar tokens del proxy con `user_may_download`.
 
 Tocar aquí cuando:
 
@@ -48,8 +49,9 @@ Responsabilidades:
 
 - descubrir SLDs dentro de un dataset;
 - extraer bounds desde `spatial` GeoJSON;
-- resolver URL efectiva del recurso (público directo vs proxy CKAN firmado para privados);
-- firmar y verificar tokens HMAC del proxy de recursos privados;
+- resolver URL efectiva del recurso (publico directo vs proxy CKAN firmado para datasets no publicos segun `is_non_public_dataset` **y solo si `user_may_download`**; `relative_urls=True` emite el proxy como ruta relativa para el lazy same-origin);
+- firmar y verificar tokens HMAC del proxy (`build_proxy_resource_url(..., absolute=)`);
+- `user_may_download(context, resource_id)`: gate compartido del proxy por sesion y del refresco de tokens (`datashare_resource_download` → `resource_show` solo si esa auth no esta registrada; fail closed);
 - resolver la URL upstream (SAS) que el proxy debe stremear;
 - decodificar nombres y parsear URLs de configuración custom.
 
@@ -58,6 +60,7 @@ Tocar aquí cuando:
 - cambie la procedencia de bounds;
 - cambie la lógica para recursos privados o subidos a CKAN;
 - cambie el formato/TTL del token del proxy o el secret utilizado para firmarlo;
+- cambie que auth decide si un usuario puede descargar un recurso;
 - cambie el tratamiento de URLs `#start` o `#share`.
 
 ### `ckanext/terria_view/terria_config_builder.py`
@@ -102,7 +105,7 @@ Generador de catálogos JSON on-demand.
 Responsabilidades:
 
 - construir catálogo por dataset, organización, tag y completo;
-- expandir múltiples vistas Terria por recurso;
+- expandir múltiples vistas Terria por recurso (`format_dataset_item(..., relative_urls=)` propaga a `get_resource_url` si el proxy debe ser relativo; los catalogos publicos mantienen el default absoluto);
 - aplicar estilos y configuraciones custom existentes;
 - servir como base funcional de los endpoints `/api/terria/*`.
 
@@ -116,10 +119,18 @@ Tocar aquí cuando:
 
 Responsabilidades:
 
-- resolver `auto|lazy|inline` según los orígenes CKAN/Terria;
-- crear la referencia privada mínima con namespace por sesión;
-- construir el índice privado de campos mínimos;
-- expandir y autorizar un solo dataset bajo demanda.
+- resolver `auto|lazy|inline` según los orígenes CKAN/Terria (`resolve_private_catalog_mode`, `is_same_origin`);
+- definir que es "no publico": `ACCESS_LEVEL_FIELD`, `NON_PUBLIC_FQ`, `INDEX_FL`, `dataset_access_level()`, `is_non_public_dataset()` (tambien los usa `resource_utils`);
+- construir URLs de la API privada relativas o absolutas (`_api_url(path, catalog_id, absolute=, site_url=)`; `_absolute_api_url` es alias de compatibilidad);
+- crear la referencia privada mínima con namespace por sesión (`build_private_catalog_reference(..., absolute=)`);
+- `PrivateCatalogBuilder(generator, site_url, relative_urls=True)`: construir el índice privado de campos mínimos con una sola `package_search` y el gate `_access`/`_can_load` (`datashare_access_check.can_download`, fallback private-only sin datashare);
+- expandir y autorizar un solo dataset bajo demanda (`build_dataset`, mismo gate, `format_dataset_item(..., relative_urls=)`).
+
+Tocar aquí cuando:
+
+- cambie el criterio de que datasets son no publicos o el gate de acceso;
+- cambie la forma de las URLs del catalogo lazy;
+- cambie la deteccion de mismo origen.
 
 ### `ckanext/terria_view/api_endpoints.py`
 
@@ -131,15 +142,18 @@ Responsabilidades:
 - respuestas CORS (incluye preflight con `Range`);
 - regeneración asíncrona del catálogo completo;
 - guardado de `custom_config` desde la UI;
+- whoami same-origin `GET /api/terria/user/session` (`user_session`: siempre `200`, URLs relativas via `_ckan_path`, `_get_user_context` compatible con el `AnonymousUser` de CKAN 2.10);
 - endpoints lazy y legacy de datasets privados del usuario;
-- proxy streaming de recursos privados (`/api/terria/resource/<id>/content`) validado por token firmado.
+- proxy streaming de recursos no publicos (`/api/terria/resource/<id>/content`) autorizado por token firmado **o** sesion CKAN (`user_may_download`), con reenvio de `Range`/`If-*`, paso de `206`/`304`/`416`, `_apply_proxy_headers` y `_content_disposition`;
+- respuestas privadas sin cache compartida (`_create_private_json_response`, `_disable_ckan_response_cache` → `request.environ['__no_cache__']`).
 
 Tocar aquí cuando:
 
 - cambien rutas o contratos HTTP;
 - haya que reforzar seguridad o autorización;
 - cambie la forma de servir archivos cacheados;
-- se quiera soportar `Range` requests o caching avanzado en el proxy.
+- cambie que cabeceras se reenvian al upstream o se copian al cliente en el proxy;
+- cambie el payload del whoami que consume `CkanSession` en TerriaJS.
 
 ### `ckanext/terria_view/cache_manager.py`
 

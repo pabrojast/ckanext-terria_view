@@ -29,6 +29,8 @@ from .terria_config_builder import (
 )
 from .private_catalog import (
     build_private_catalog_reference,
+    is_non_public_dataset,
+    is_same_origin,
     resolve_private_catalog_mode,
 )
 from .cache_manager import CacheManager
@@ -582,6 +584,20 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
     # we'd rather skip the cache than store megabytes.
     _MAX_PERSISTED_CACHED_CONFIG_BYTES = 2 * 1024 * 1024  # 2 MiB
 
+    @staticmethod
+    def _may_persist_cached_config(package, resource_url) -> bool:
+        """Whether a rendered config is safe to store in ``ResourceView.config``.
+
+        Only public packages qualify (CKAN ``private`` or any datashare
+        ``access_level`` other than ``public`` is user-specific), and never a
+        config whose resource URL points at the token-gated proxy: the stored
+        token would be readable through ``resource_view_show`` for up to an
+        hour by anyone who may see the view.
+        """
+        if is_non_public_dataset(package):
+            return False
+        return '/api/terria/resource/' not in (resource_url or '')
+
     def _update_view_cached_config(self, context, view, encoded_config, signature):
         """Persist cached config and signature in the resource view.
 
@@ -759,10 +775,12 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                     )
                     encoded_config = urllib.parse.quote(json.dumps(json.loads(config)))
 
-            # Persist cached configuration so we avoid future external calls
-            # Skip caching for private packages — their resolved URLs may be
-            # user-specific or temporary and must not leak across requests.
-            if not package.get('private'):
+            # Persist cached configuration so we avoid future external calls.
+            # ``cached_config`` is a schema field that ``resource_view_show``
+            # returns to anyone allowed to see the view, so it must never hold
+            # a per-viewer proxy token: skip it for non-public packages and
+            # whenever the computed URL already carries one.
+            if self._may_persist_cached_config(package, resource_url):
                 self._update_view_cached_config(context, view, encoded_config, current_signature)
 
         private_catalog_mode = self._private_catalog_mode_for(
@@ -811,8 +829,14 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         private_catalog_data = None
         if include_private_catalog:
             if private_catalog_mode == 'lazy':
+                # Same-origin Terria gets a relative URL so the cookie-backed
+                # request never goes through the terriajs-server proxy.
                 private_catalog_data = build_private_catalog_reference(
-                    user_context.get('user'), self.config_manager.site_url
+                    user_context.get('user'),
+                    self.config_manager.site_url,
+                    absolute=not is_same_origin(
+                        self.config_manager.site_url, view_terria_instance_url
+                    ),
                 )
             else:
                 private_catalog_data = self._get_private_datasets_catalog(
@@ -891,14 +915,11 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
 
             def mint(resource_id):
                 if resource_id not in decisions:
-                    allowed = False
-                    try:
-                        toolkit.check_access('resource_show', auth_context, {'id': resource_id})
-                        allowed = True
-                    except toolkit.NotAuthorized:
-                        allowed = False
-                    except Exception:
-                        allowed = False
+                    # Same gate as the resource proxy: datashare's download
+                    # auth first, ``resource_show`` only when it is absent.
+                    allowed = self.resource_utils.user_may_download(
+                        auth_context, resource_id
+                    )
                     if allowed:
                         try:
                             decisions[resource_id] = self.resource_utils.generate_resource_token(

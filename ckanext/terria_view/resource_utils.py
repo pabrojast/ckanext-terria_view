@@ -89,9 +89,10 @@ class ResourceUtils:
 
     def build_proxy_resource_url(self, resource_id: str,
                                  ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL,
-                                 filename: Optional[str] = None) -> str:
+                                 filename: Optional[str] = None,
+                                 absolute: bool = True) -> str:
         """
-        Build the CKAN-hosted proxy URL for a private resource.
+        Build the CKAN-hosted proxy URL for a non-public resource.
 
         The proxy streams the file server-side (using the CKAN uploader to
         resolve the Azure SAS) and returns it with open CORS headers, so the
@@ -103,6 +104,11 @@ class ResourceUtils:
         shapefile catalog item requires a ``.zip`` URL, GeoJSON expects
         ``.geojson``) don't reject the proxy URL. The filename is not used
         for authorization — the signed token alone gates access.
+
+        ``absolute=False`` returns a root-relative URL (``/api/terria/...``)
+        for a same-origin Terria, so the request never goes through the
+        terriajs-server proxy and the CKAN session cookie can back it up once
+        the token expires.
         """
         site_url = (self.config_manager.site_url
                     or toolkit.config.get('ckan.site_url', '') or '').rstrip('/')
@@ -117,7 +123,38 @@ class ResourceUtils:
             if safe_filename:
                 path = f"{path}/{safe_filename}"
 
+        if not absolute:
+            return f"{path}?token={token}"
         return f"{site_url}{path}?token={token}"
+
+    @staticmethod
+    def user_may_download(context: Dict, resource_id: str) -> bool:
+        """
+        Decide whether the current user may fetch a resource's raw bytes.
+
+        Prefers ckanext-datashare's ``datashare_resource_download`` auth, which
+        requires ``can_download`` (so ``viewable`` datasets are denied to users
+        who may only preview them). ``resource_show`` is used only when that
+        auth function is not registered (``check_access`` raises ``ValueError``),
+        because CKAN's chained ``resource_show`` allows ``viewable`` datasets
+        and the proxy hands out the raw file. Any other failure is a denial.
+        """
+        auth_context = {
+            'user': context.get('user'),
+            'auth_user_obj': context.get('auth_user_obj'),
+        }
+        for auth_name in ('datashare_resource_download', 'resource_show'):
+            try:
+                toolkit.check_access(auth_name, dict(auth_context), {'id': resource_id})
+                return True
+            except toolkit.NotAuthorized:
+                return False
+            except ValueError:
+                # 'Authorization function not found' (ckan/authz.py): try the next one.
+                continue
+            except Exception:
+                return False  # fail closed
+        return False
 
     def _to_absolute_url(self, url: str) -> str:
         """
@@ -267,7 +304,8 @@ class ResourceUtils:
         
         return ymax, xmax, ymin, xmin
     
-    def get_resource_url(self, resource: Dict, package: Dict, user_context: Dict) -> str:
+    def get_resource_url(self, resource: Dict, package: Dict, user_context: Dict,
+                         relative_urls: bool = False) -> str:
         """
         Obtiene la URL apropiada para un recurso considerando permisos y ubicación.
 
@@ -275,28 +313,47 @@ class ResourceUtils:
             resource: Diccionario con datos del recurso
             package: Diccionario con datos del paquete
             user_context: Contexto del usuario
+            relative_urls: Emitir la URL del proxy como ruta relativa
+                (``/api/terria/...``) para un Terria same-origin
 
         Returns:
             URL del recurso
         """
+        from .private_catalog import is_non_public_dataset
+
         resource_url = resource.get("url") or ""
 
-        is_private_dataset = package.get("private") is True
+        # Any non-public dataset (CKAN private or a datashare level other than
+        # public) goes through the token-gated proxy for logged-in users.
+        is_private_dataset = is_non_public_dataset(package)
         is_logged_user = bool(user_context.get('user'))
         is_uploaded_resource = resource.get('url_type') == 'upload' or resource_url.startswith('/')
+
+        # Terria fetches the raw file, so minting a token (or resolving the
+        # SAS) needs *download* rights, not just a login: on a datashare
+        # ``viewable`` dataset any logged-in user can render the view page,
+        # but only authorized users hold ``can_download``. Everyone else gets
+        # the plain download URL, which datashare's own gate answers with 403.
+        # Public datasets and anonymous viewers never pay for the auth check.
+        may_download = bool(
+            is_private_dataset and is_logged_user and is_uploaded_resource
+            and resource.get('id')
+            and self.user_may_download(user_context, resource['id'])
+        )
 
         # Recursos privados subidos: servirlos vía el proxy CKAN con token firmado.
         # Exponer la URL SAS de Azure directamente falla cross-origin si el Storage
         # Account no tiene CORS configurado para el dominio de Terria; el proxy
         # devuelve el archivo con CORS abierto y sin depender de esa configuración.
-        if is_private_dataset and is_logged_user and is_uploaded_resource and resource.get('id'):
+        if may_download:
             try:
                 # Preserve the original filename in the URL path so TerriaJS
                 # client-side extension checks (e.g. shp requires .zip, geojson
                 # requires .geojson) don't reject the proxy URL.
                 proxy_filename = self._extract_upload_filename(resource, resource_url)
                 return self.build_proxy_resource_url(
-                    resource['id'], filename=proxy_filename or None
+                    resource['id'], filename=proxy_filename or None,
+                    absolute=not relative_urls,
                 )
             except Exception:
                 # Proxy URL couldn't be built (e.g. missing site_url). Fall through
@@ -304,7 +361,7 @@ class ResourceUtils:
                 # even if it will hit the CORS limitation.
                 pass
 
-        if is_private_dataset and is_logged_user and is_uploaded_resource:
+        if may_download:
             try:
                 upload = uploader.get_resource_uploader(resource)
                 filename = self._extract_upload_filename(resource, resource_url)
