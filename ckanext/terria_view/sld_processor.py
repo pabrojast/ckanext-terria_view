@@ -3,6 +3,7 @@
 Module for processing SLD (Styled Layer Descriptor) files.
 Enhanced for better TerriaJS compatibility.
 """
+import hashlib
 import os
 import time
 import urllib.request
@@ -58,15 +59,121 @@ class SLDProcessor:
         'opacity': 1.0
     }
     
+    # SLD downloads are cached at two levels. Each uWSGI process keeps a copy
+    # for MEMORY_CACHE_TTL seconds, so an edited style is picked up without a
+    # restart. Behind it, CKAN's Redis holds one copy for every process and
+    # pod: per-process dicts alone meant each of dozens of workers downloaded
+    # every style again after each recycle, through Varnish, all day long.
+    MEMORY_CACHE_TTL = 300
+    SHARED_CACHE_TTL = 3600
+    NEGATIVE_CACHE_TTL = 600
+    SHARED_CACHE_MAX_BYTES = 2 * 1024 * 1024
+    SHARED_CACHE_PREFIX = 'ckanext-terria_view:sld'
+    # Failures that retrying soon will not fix (e.g. a deleted style file).
+    # They are remembered for NEGATIVE_CACHE_TTL; 429, 5xx and network errors
+    # are not, so the next render retries them.
+    NEGATIVE_CACHE_STATUSES = frozenset([400, 401, 403, 404, 410])
+
     def __init__(self):
         """Initialize the SLD processor."""
         import os
-        # URL-level cache to avoid re-fetching the same SLD files
-        self._sld_content_cache: Dict[str, Optional[bytes]] = {}
-        self._sld_result_cache: Dict[str, Dict[str, Any]] = {}
+        # url -> (expires_at, content); content None marks a remembered failure
+        self._sld_content_cache: Dict[str, Tuple[float, Optional[bytes]]] = {}
+        # cache_key -> (expires_at, result)
+        self._sld_result_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._redis_client = None
+        self._shared_ttl = self._config_int(
+            'ckanext.terria_view.sld_cache_ttl', self.SHARED_CACHE_TTL)
+        self._negative_ttl = self._config_int(
+            'ckanext.terria_view.sld_negative_cache_ttl', self.NEGATIVE_CACHE_TTL)
         if os.environ.get('TERRIA_DEBUG', 'false').lower() == 'true':
             print("SLD Processor initialized - UPDATED VERSION with TerriaJS compliance")
     
+    def _config_int(self, key: str, default: int) -> int:
+        """Read a non-negative int from CKAN config; the default outside CKAN."""
+        try:
+            from ckan.plugins import toolkit
+            value = int(toolkit.config.get(key, default))
+        except Exception:
+            return default
+        return value if value >= 0 else default
+
+    def _redis(self):
+        """CKAN's Redis client, or None when running outside CKAN."""
+        if self._redis_client is None:
+            try:
+                from ckan.lib.redis import connect_to_redis
+                self._redis_client = connect_to_redis()
+            except Exception:
+                self._redis_client = False
+        return self._redis_client or None
+
+    def _shared_key(self, client, url: str) -> str:
+        """Key under the current generation, which clear_caches() bumps."""
+        generation = client.get(self.SHARED_CACHE_PREFIX + ':generation') or b'0'
+        if isinstance(generation, bytes):
+            generation = generation.decode('ascii', 'replace')
+        digest = hashlib.sha256(url.encode('utf-8')).hexdigest()
+        return f"{self.SHARED_CACHE_PREFIX}:{generation}:{digest}"
+
+    def _shared_cache_get(self, url: str) -> Optional[bytes]:
+        """
+        Look up an SLD download shared by all workers.
+
+        Returns the content, ``b''`` for a remembered permanent failure, or
+        None when nothing is cached or Redis is unavailable.
+        """
+        client = self._redis()
+        if client is None:
+            return None
+        try:
+            return client.get(self._shared_key(client, url))
+        except Exception as e:
+            self._debug_print(f"SLD shared cache unavailable: {e}")
+            return None
+
+    def _shared_cache_set(self, url: str, content: bytes, ttl: int) -> None:
+        """Share a download (``b''`` = permanent failure); best effort."""
+        client = self._redis()
+        if client is None or ttl <= 0 or len(content) > self.SHARED_CACHE_MAX_BYTES:
+            return
+        try:
+            client.set(self._shared_key(client, url), content, ex=ttl)
+        except Exception as e:
+            self._debug_print(f"SLD shared cache unavailable: {e}")
+
+    def _remember_content(self, url: str, content: Optional[bytes]) -> None:
+        """Keep a download (or a permanent failure) in this process."""
+        ttl = self.MEMORY_CACHE_TTL
+        if not content:
+            ttl = min(ttl, self._negative_ttl)
+        if ttl > 0:
+            self._sld_content_cache[url] = (time.time() + ttl, content or None)
+
+    def _result_cache_get(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        cached = self._sld_result_cache.get(cache_key)
+        if cached is not None and cached[0] > time.time():
+            return cached[1]
+        return None
+
+    def _result_cache_set(self, cache_key: str, result: Dict[str, Any]) -> None:
+        self._sld_result_cache[cache_key] = (time.time() + self.MEMORY_CACHE_TTL, result)
+
+    def clear_caches(self) -> None:
+        """
+        Drop cached SLDs in this process and, by bumping the shared cache
+        generation, in every other one within MEMORY_CACHE_TTL.
+        """
+        self._sld_content_cache.clear()
+        self._sld_result_cache.clear()
+        client = self._redis()
+        if client is None:
+            return
+        try:
+            client.incr(self.SHARED_CACHE_PREFIX + ':generation')
+        except Exception as e:
+            self._debug_print(f"SLD shared cache unavailable: {e}")
+
     def _debug_print(self, message: str):
         """
         Print debug messages only when TERRIA_DEBUG environment variable is set to 'true'.
@@ -323,7 +430,8 @@ class SLDProcessor:
     def fetch_sld_content(self, sld_url: str) -> Optional[bytes]:
         """
         Download the content of an SLD file from a URL with robust error handling.
-        Uses an in-memory cache to avoid re-fetching the same URL.
+        HTTP downloads are cached in this process and in CKAN's Redis, shared
+        by every worker; permanent failures are remembered briefly.
         
         Args:
             sld_url: URL of the SLD file
@@ -341,15 +449,29 @@ class SLDProcessor:
             self._debug_print("Empty SLD URL provided")
             return None
         
-        # Check content cache first
-        if sld_url in self._sld_content_cache:
+        # Check caches first: this process, then the one shared by all workers
+        cached = self._sld_content_cache.get(sld_url)
+        if cached is not None and cached[0] > time.time():
             self._debug_print(f"SLD content cache hit for: {sld_url}")
-            return self._sld_content_cache[sld_url]
+            return cached[1]
+        is_http = sld_url.startswith(('http://', 'https://'))
+        if is_http:
+            shared = self._shared_cache_get(sld_url)
+            if shared is not None:
+                self._debug_print(f"SLD shared cache hit for: {sld_url}")
+                content = shared or None
+                self._remember_content(sld_url, content)
+                return content
         
         # Fetch and cache result
         content = None
-        if sld_url.startswith(('http://', 'https://')):
-            content = self._fetch_http_content(sld_url)
+        if is_http:
+            content, status = self._fetch_http_content_with_status(sld_url)
+            if content:
+                self._shared_cache_set(sld_url, content, self._shared_ttl)
+            elif status in self.NEGATIVE_CACHE_STATUSES:
+                self._shared_cache_set(sld_url, b'', self._negative_ttl)
+                self._remember_content(sld_url, None)
         elif sld_url.startswith('file://'):
             content = self._fetch_file_content(sld_url)
         elif sld_url.startswith('/') or (':\\' in sld_url and len(sld_url) > 3):
@@ -357,16 +479,22 @@ class SLDProcessor:
         else:
             content = self._fetch_local_file_content(sld_url)
 
-        # Only cache successful fetches. Caching None poisons the cache across
-        # the lifetime of the worker when an upstream (e.g. Varnish) returns a
-        # transient error like 429, silently stripping styles from every
-        # subsequent catalog response.
+        # Transient failures (429, 5xx, network) are never remembered: that
+        # would strip styles from every catalog response until the entry
+        # expired. Permanent ones were remembered above.
         if content:
-            self._sld_content_cache[sld_url] = content
+            self._remember_content(sld_url, content)
         return content
     
     def _fetch_http_content(self, url: str) -> Optional[bytes]:
-        """Fetch content from HTTP/HTTPS URL.
+        """Fetch content from HTTP/HTTPS URL; None on any failure."""
+        return self._fetch_http_content_with_status(url)[0]
+
+    def _fetch_http_content_with_status(self, url: str) -> Tuple[Optional[bytes], Optional[int]]:
+        """Fetch content from HTTP/HTTPS URL, returning ``(content, status)``.
+
+        ``status`` is the final HTTP status, or None for network errors, so
+        the caller can tell a missing file from a transient failure.
 
         Retries on 429 (honoring Retry-After) and 5xx transient errors.
         Varnish in front of CKAN throttles download URLs under burst load
@@ -388,9 +516,9 @@ class SLDProcessor:
                     # Validate content size (prevent extremely large files)
                     if len(content) > 10 * 1024 * 1024:  # 10MB limit
                         print(f"SLD file too large: {len(content)} bytes")
-                        return None
+                        return None, None
 
-                    return content
+                    return content, getattr(response, 'status', 200)
 
             except urllib.error.HTTPError as e:
                 retryable = e.code == 429 or 500 <= e.code < 600
@@ -410,7 +538,7 @@ class SLDProcessor:
                     time.sleep(delay)
                     continue
                 print(f"HTTP error fetching SLD from {url}: {e.code} {e.reason}")
-                return None
+                return None, e.code
             except urllib.error.URLError as e:
                 if attempt < max_attempts:
                     delay = base_backoff * (2 ** (attempt - 1))
@@ -421,12 +549,12 @@ class SLDProcessor:
                     time.sleep(delay)
                     continue
                 print(f"URL error fetching SLD from {url}: {e.reason}")
-                return None
+                return None, None
             except Exception as e:
                 print(f"Unexpected error fetching SLD from {url}: {e}")
-                return None
+                return None, None
 
-        return None
+        return None, None
     
     def _fetch_file_content(self, file_url: str) -> Optional[bytes]:
         """Fetch content from file:// URL."""
@@ -586,9 +714,10 @@ class SLDProcessor:
         """
         # Check result cache
         cache_key = f"cog:{sld_url}"
-        if cache_key in self._sld_result_cache:
+        cached_result = self._result_cache_get(cache_key)
+        if cached_result is not None:
             self._debug_print(f"SLD result cache hit (COG): {sld_url}")
-            return self._sld_result_cache[cache_key]
+            return cached_result
         
         sld_content = self.fetch_sld_content(sld_url)
         if not sld_content:
@@ -752,7 +881,7 @@ class SLDProcessor:
         # Only cache meaningful results. An empty dict usually means the fetch
         # or parse failed for a reason that may be transient.
         if result:
-            self._sld_result_cache[cache_key] = result
+            self._result_cache_set(cache_key, result)
         return result
 
     def process_shp_sld(self, sld_url: str) -> Dict[str, Any]:
@@ -778,9 +907,10 @@ class SLDProcessor:
         
         # Check result cache
         cache_key = f"shp:{sld_url}"
-        if cache_key in self._sld_result_cache:
+        cached_result = self._result_cache_get(cache_key)
+        if cached_result is not None:
             self._debug_print(f"SLD result cache hit (SHP): {sld_url}")
-            return self._sld_result_cache[cache_key]
+            return cached_result
         
         # Fetch and parse SLD content
         sld_content = self.fetch_sld_content(sld_url)
@@ -826,7 +956,7 @@ class SLDProcessor:
             # Build TerriaJS result based on renderer type
             result = self._build_terria_result(renderer_type, processed_data)
             if result:
-                self._sld_result_cache[cache_key] = result
+                self._result_cache_set(cache_key, result)
             return result
 
         except Exception as e:
@@ -835,7 +965,7 @@ class SLDProcessor:
             traceback.print_exc()
             fallback = self._create_fallback_result([])
             if fallback:
-                self._sld_result_cache[cache_key] = fallback
+                self._result_cache_set(cache_key, fallback)
             return fallback
     
     def _find_user_styles(self, root) -> List:

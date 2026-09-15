@@ -107,7 +107,31 @@ Revisar:
 - tests en [[Testing]] orientados a SLD;
 - si el problema está en el nombre de columna del shapefile.
 - si el estilo cambió y no se refleja en `ihp-wins.json`, invalidar caché con `POST /api/terria/cache/invalidate` y reintentar.
-- si se actualizó el archivo SLD en la misma URL, confirmar que se ejecutó una invalidación (los resultados SLD se cachean en memoria por URL).
+- si se actualizó el archivo SLD en la misma URL, confirmar que se ejecutó una invalidación o esperar al TTL (descargas y resultados SLD se cachean por URL: 300 s en memoria, `sld_cache_ttl` en Redis).
+- si el SLD devolvía `404` y ya se corrigió, esperar `sld_negative_cache_ttl` (600 s por defecto).
+
+## Muchas descargas `CKAN-TerriaView/1.0` o un SLD inexistente pedido sin parar
+
+Síntoma: en los logs de Varnish/CKAN aparecen cientos de peticiones por minuto con User-Agent `CKAN-TerriaView/1.0` a `/dataset/<id>/resource/<rid>/download/<estilo>.sld`, repetidas sobre unas pocas decenas de URLs; un SLD borrado responde `404` una y otra vez; y si Varnish limita por IP, los `429` dejan capas sin estilo.
+
+Causa: `SLDProcessor` descarga el SLD desde el propio servidor por la URL pública. La caché era un diccionario por proceso uWSGI, sin TTL y sin recordar fallos: cada worker (decenas en producción, reciclados periódicamente) volvía a bajar cada estilo, y un `404` se pedía en cada render. En IHP-WINS (2026-09-14) eran ~240 peticiones/min para 40 URLs; 696 de ellas, en 10 minutos, eran el `404` de un mismo archivo.
+
+Fix:
+
+- `fetch_sld_content` cachea en dos niveles: memoria del proceso (300 s) y Redis de CKAN compartido (`ckanext.terria_view.sld_cache_ttl`, 3600 s);
+- fallos permanentes (400/401/403/404/410) se recuerdan `ckanext.terria_view.sld_negative_cache_ttl` (600 s); `429`, `5xx` y errores de red nunca;
+- los resultados procesados (`_sld_result_cache`) también expiran a los 300 s;
+- `clear_caches()` sube la generación en Redis para invalidar en todos los workers.
+
+Tests: `ckanext/terria_view/tests/test_sld_fetch_cache.py`.
+
+Verificación post-deploy:
+
+- contar el User-Agent en Varnish: `kubectl -n ckan logs <pod-varnish> -c varnish-cache-ncsa --since=10m | grep -c CKAN-TerriaView` — debería caer a unas pocas descargas por URL por hora;
+- `redis-cli --scan --pattern 'ckanext-terria_view:sld:*'` lista las entradas compartidas;
+- si un estilo editado no se refleja: esperar 300 s tras la invalidación, o forzar con `redis-cli incr ckanext-terria_view:sld:generation`.
+
+Pendiente por confirmar: si conviene resolver los SLD alojados en el propio CKAN sin pasar por HTTP (uploader directo); se descartó por ahora para no saltarse la autorización de datasets no públicos.
 
 ## SLD con filtros compuestos (`unit_code AND unit_sub`): coloreado parcial / valores fantasma
 

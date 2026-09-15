@@ -412,6 +412,10 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
                 continue
             seen.add(processor_id)
             try:
+                if hasattr(processor, 'clear_caches'):
+                    # Also invalidates the Redis copy shared by all workers.
+                    processor.clear_caches()
+                    continue
                 if hasattr(processor, '_sld_content_cache'):
                     processor._sld_content_cache.clear()
                 if hasattr(processor, '_sld_result_cache'):

@@ -20,6 +20,14 @@ pytest -q test_private_datasets.py test_strip_private_catalog.py test_process_cu
 
 Resultado en la ultima actualizacion de esta nota: `86 passed` (67 en `test_private_datasets.py`, 13 en `test_strip_private_catalog.py`, 6 en `test_process_custom_config_sld.py`).
 
+Caché de descargas SLD (`ckanext/terria_view/tests/test_sld_fetch_cache.py`, sin CKAN, Redis ni red: `FakeRedis` con reloj controlado y descarga parcheada en `_fetch_http_content_with_status`):
+
+```bash
+pytest -q ckanext/terria_view/tests/test_sld_fetch_cache.py ckanext/terria_view/tests/test_sld_compound_filter.py test_private_datasets.py test_strip_private_catalog.py test_process_custom_config_sld.py
+```
+
+Resultado 2026-09-14: `100 passed` en el host; el subconjunto SLD (`test_sld_fetch_cache.py`, `test_sld_compound_filter.py`, `test_process_custom_config_sld.py`) también pasa en `ckan/ckan-dev:2.10` (`20 passed`, `-p no:ckan`). Cubre: descarga compartida entre workers, caché en memoria sin Redis y su expiración, `404` recordado durante `sld_negative_cache_ttl`, `429`/`5xx`/red nunca recordados, `clear_caches()` alcanzando a otros workers, SLD de más de 2 MB fuera de Redis, errores de Redis degradando a descarga, y expiración de `_sld_result_cache`. Se validó además contra un Redis 7 real (redis-py de la imagen CKAN): claves, TTL y generación.
+
 Cobertura de `test_private_datasets.py`:
 
 - selección de modo, referencia inicial, índice modular, expansión por dataset, namespace de modelos, guardado idempotente y eliminación de tokens (existente);

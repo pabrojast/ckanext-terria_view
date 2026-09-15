@@ -87,6 +87,7 @@ Procesador SLD con mucho peso funcional.
 Responsabilidades:
 
 - descargar y parsear SLD;
+- cachear descargas y resultados SLD: memoria del proceso (300 s) y Redis de CKAN compartido entre workers, con fallos permanentes recordados brevemente (ver [[Variables de Entorno]]); `clear_caches()` invalida ambos niveles;
 - convertir reglas SLD a estilos TerriaJS;
 - construir leyendas;
 - adaptar estilos para SHP y COG;

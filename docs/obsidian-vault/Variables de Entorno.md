@@ -102,6 +102,16 @@ El modo lazy requiere que la sesión CKAN alcance `/api/terria/user/private-cata
 
 Tamaño máximo (bytes) del `custom_config_url` que `/api/terria/view/<id>/save-config` acepta; por encima responde 413. Default `4 * 1024 * 1024` (4 MB) — suficiente para una vista que hornea el catálogo de datasets privados del usuario (que puede rondar ~1 MB). Subirlo si una vista legítimamente necesita más; bajarlo para ser más estricto.
 
+### `ckanext.terria_view.sld_cache_ttl`
+
+Segundos que una descarga SLD correcta queda en el Redis de CKAN (`ckan.redis.url`), compartida por todos los procesos uWSGI y pods. Default `3600`. `0` desactiva la copia compartida y deja solo la de memoria de cada proceso (300 s, `SLDProcessor.MEMORY_CACHE_TTL`). Ver [[Troubleshooting]] (descargas `CKAN-TerriaView/1.0`).
+
+### `ckanext.terria_view.sld_negative_cache_ttl`
+
+Segundos que se recuerda un fallo permanente al descargar un SLD (HTTP 400, 401, 403, 404, 410), en Redis y en memoria (esta última como máximo 300 s). Default `600`. Nunca se recuerdan `429`, `5xx` ni errores de red: el siguiente render reintenta.
+
+Invalidación: `SLDProcessor.clear_caches()` (llamado desde `_clear_sld_result_caches` del plugin) incrementa `ckanext-terria_view:sld:generation`; los demás procesos dejan de usar las copias anteriores en 300 s como máximo. Sin Redis disponible todo degrada a caché por proceso.
+
 ### `ckan.storage_path`
 
 Usado por `FileCacheManager` como primera opción para guardar JSONs cacheados.
@@ -131,6 +141,8 @@ Niveles reconocidos en el extra `access_level`: `public | confidential | findabl
 - `preload_cache`: `True`
 - `preload_delay`: `10`
 - `cache_timeout`: `3600` segundos en caché de memoria y archivo
+- `sld_cache_ttl`: `3600` (Redis); caché SLD en memoria por proceso: `300`
+- `sld_negative_cache_ttl`: `600`
 - `inject_private_catalog_on_public_views`: `False`
 - `private_catalog_mode`: `auto`
 
