@@ -55,6 +55,7 @@ curl "http://localhost:5000/api/terria/file/full"
 ## Invalidación y limpieza de caché
 
 ```bash
+# requieren sysadmin: añadir -H "Authorization: <api-token>"
 curl -X POST "http://localhost:5000/api/terria/cache/invalidate"
 curl -X POST "http://localhost:5000/api/terria/cache/cleanup"
 ```

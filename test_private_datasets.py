@@ -1979,6 +1979,117 @@ def test_options_preflight_allows_range_and_conditional_headers():
     assert response.headers['Access-Control-Max-Age'] == '600'
 
 
+# --- Public catalog hardening --------------------------------------------------
+
+def _public_search_results():
+    def _dataset(title, **extra):
+        return dict({
+            'id': f'pkg-{title}', 'title': title, 'notes': '', 'private': False,
+            'organization': {'name': 'org-a', 'title': 'Org A'},
+            'resources': [{'id': f'res-{title}', 'format': 'shp', 'name': title,
+                           'url': f'https://test.example.org/{title}.zip'}],
+        }, **extra)
+    return {'results': [
+        _dataset('open'),
+        _dataset('explicit-public', access_level='public'),
+        _dataset('viewable-one', access_level='viewable'),
+        _dataset('restricted-one', extras=[{'key': 'access_level', 'value': 'restricted'}]),
+    ]}
+
+
+def _generator_for_public_catalog():
+    from ckanext.terria_view.terria_json_generator import TerriaJSONGenerator
+
+    gen = TerriaJSONGenerator()
+    gen.cache_manager = MagicMock()
+    gen.cache_manager.get_cached_config.return_value = None
+    gen.file_cache_manager = MagicMock()
+    gen.format_dataset_item = MagicMock(
+        side_effect=lambda resource, *a, **k: ({'name': resource['name']}, 1)
+    )
+    return gen
+
+
+def _public_actions(name):
+    if name == 'package_search':
+        return MagicMock(return_value=_public_search_results())
+    return MagicMock(return_value={})
+
+
+def test_public_organization_catalog_skips_non_public_access_levels():
+    gen = _generator_for_public_catalog()
+    with patch.object(ckan_plugins_toolkit_mock, 'get_action', side_effect=_public_actions):
+        gen.generate_organization_json('org-a')
+    formatted = [call.args[0]['name'] for call in gen.format_dataset_item.call_args_list]
+    assert formatted == ['open', 'explicit-public']
+
+
+def test_public_tag_catalog_skips_non_public_access_levels():
+    gen = _generator_for_public_catalog()
+    with patch.object(ckan_plugins_toolkit_mock, 'get_action', side_effect=_public_actions):
+        gen.generate_tag_json('water')
+    formatted = [call.args[0]['name'] for call in gen.format_dataset_item.call_args_list]
+    assert formatted == ['open', 'explicit-public']
+
+
+def test_cache_maintenance_routes_require_sysadmin():
+    from ckanext.terria_view import api_endpoints
+
+    routes = ('cache_stats_endpoint', 'invalidate_cache_endpoint', 'cleanup_cache_endpoint')
+    methods = ('cache_stats', 'invalidate_cache', 'cleanup_cache')
+
+    def _call(route, user, check_access):
+        controller = _make_controller()
+        for method in methods:
+            setattr(controller, method, MagicMock(return_value='ran'))
+        with patch.object(api_endpoints, 'Response', FakeResponse), \
+                patch.object(api_endpoints, 'request', _flask_request(method='POST')), \
+                patch.object(api_endpoints, 'get_controller', return_value=controller), \
+                patch.object(ckan_plugins_toolkit_mock, 'current_user', user), \
+                patch.object(ckan_plugins_toolkit_mock, 'check_access', check_access):
+            return _route_function(route)(), controller
+
+    denied = MagicMock(side_effect=ckan_plugins_toolkit_mock.NotAuthorized('nope'))
+    for route, method in zip(routes, methods):
+        response, controller = _call(route, FakeAnonymousUser(), MagicMock())
+        assert response.status_code == 401
+        getattr(controller, method).assert_not_called()
+
+        response, controller = _call(route, FakeUser(), denied)
+        assert response.status_code == 403
+        getattr(controller, method).assert_not_called()
+
+        allowed = MagicMock(return_value=None)
+        response, controller = _call(route, FakeUser(sysadmin=True), allowed)
+        assert response == 'ran'
+        assert allowed.call_args.args[0] == 'sysadmin'
+
+
+def test_proxy_token_prefers_dedicated_secret_and_fails_closed_without_one():
+    from ckanext.terria_view.config_manager import ConfigManager
+    from ckanext.terria_view.resource_utils import ResourceUtils
+
+    utils = ResourceUtils(ConfigManager())
+    ckan_plugins_toolkit_mock.config = {'beaker.session.secret': 'shared-secret'}
+    shared_token = utils.generate_resource_token('res-1')
+
+    ckan_plugins_toolkit_mock.config = {
+        'beaker.session.secret': 'shared-secret',
+        'ckanext.terria_view.proxy_token_secret': 'dedicated-secret',
+    }
+    assert utils.verify_resource_token('res-1', shared_token) is False
+    assert utils.verify_resource_token('res-1', utils.generate_resource_token('res-1')) is True
+
+    ckan_plugins_toolkit_mock.config = {}
+    assert utils.verify_resource_token('res-1', shared_token) is False
+    try:
+        utils.generate_resource_token('res-1')
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError('token minting must fail without a configured secret')
+
+
 if __name__ == '__main__':
     print("\n=== Private Dataset Tests ===\n")
 
@@ -2045,6 +2156,10 @@ if __name__ == '__main__':
         test_process_custom_config_populates_workbench_and_sanitizes_styles,
         test_process_custom_config_sanitizes_palette_only_style,
         test_process_custom_config_category_palette_forces_enum_maptype,
+        test_public_organization_catalog_skips_non_public_access_levels,
+        test_public_tag_catalog_skips_non_public_access_levels,
+        test_cache_maintenance_routes_require_sysadmin,
+        test_proxy_token_prefers_dedicated_secret_and_fails_closed_without_one,
     ]
 
     passed = 0

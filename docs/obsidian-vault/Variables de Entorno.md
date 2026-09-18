@@ -88,6 +88,10 @@ Lista separada por comas de extras a remover.
 
 Si está en `true`, el catálogo de datasets privados del usuario logueado se inyecta en el `#start=` de **todas** las vistas Terria; si está en `false` (default), solo en vistas de datasets privados. Anónimo nunca recibe el catálogo privado, independientemente del flag. Ver [[Flujos Importantes]] (guardado de configuración) y [[Troubleshooting]] (crecimiento del config de la vista).
 
+### `ckanext.terria_view.proxy_token_secret`
+
+Secreto HMAC de los tokens del proxy de recursos. Si no esta definido se usa `beaker.session.secret`, luego `SECRET_KEY` y `flask.secret_key`. Sin ninguno, generar un token lanza `RuntimeError` y verificarlo devuelve `False` (ya no existe un literal de respaldo). Conviene definirlo desde un secreto del despliegue (`CKANEXT__TERRIA_VIEW__PROXY_TOKEN_SECRET` con `ckanext-envvars`) y distinto por entorno: quien conozca el secreto puede forjar tokens para cualquier recurso no publico.
+
 ### `ckanext.terria_view.private_catalog_mode`
 
 Controla cómo se carga el catálogo privado:

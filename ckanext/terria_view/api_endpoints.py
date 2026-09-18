@@ -1303,22 +1303,43 @@ def ihp_wins_json_endpoint():
     return get_controller().full_catalog_json_file()
 
 
+def _deny_unless_sysadmin():
+    """Return a 401/403 response unless the caller is a sysadmin, else ``None``.
+
+    Cache maintenance forces a full catalog regeneration, so it must not be
+    reachable anonymously.
+    """
+    controller = get_controller()
+    context = controller._get_user_context()
+    if not context.get('user'):
+        return controller._create_private_error_response(
+            'Authentication required. Please log in.', 401
+        )
+    try:
+        toolkit.check_access('sysadmin', context, {})
+    except toolkit.NotAuthorized:
+        return controller._create_private_error_response(
+            'Sysadmin privileges required.', 403
+        )
+    return None
+
+
 @terria_api.route('/api/terria/cache/stats', methods=['GET'])
 def cache_stats_endpoint():
-    """Cache statistics endpoint."""
-    return get_controller().cache_stats()
+    """Cache statistics endpoint (sysadmin only)."""
+    return _deny_unless_sysadmin() or get_controller().cache_stats()
 
 
 @terria_api.route('/api/terria/cache/invalidate', methods=['POST'])
 def invalidate_cache_endpoint():
-    """Cache invalidation endpoint."""
-    return get_controller().invalidate_cache()
+    """Cache invalidation endpoint (sysadmin only)."""
+    return _deny_unless_sysadmin() or get_controller().invalidate_cache()
 
 
 @terria_api.route('/api/terria/cache/cleanup', methods=['POST'])
 def cleanup_cache_endpoint():
-    """Cache cleanup endpoint."""
-    return get_controller().cleanup_cache()
+    """Cache cleanup endpoint (sysadmin only)."""
+    return _deny_unless_sysadmin() or get_controller().cleanup_cache()
 
 
 @terria_api.route('/api/terria/view/<view_id>/save-config', methods=['POST'])

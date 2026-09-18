@@ -75,6 +75,8 @@ Uso:
 - `POST /api/terria/cache/invalidate`
 - `POST /api/terria/cache/cleanup`
 
+Los tres exigen **sysadmin** (`_deny_unless_sysadmin`: `401` anonimo, `403` logueado sin privilegios). Invalidar fuerza la regeneracion completa del catalogo, por eso no es anonimo. Desde terminal hay que enviar la cookie de sesion o un API token de un sysadmin.
+
 Parámetros opcionales en invalidate:
 
 - `type`
@@ -189,6 +191,7 @@ Cabeceras de respuesta (`_apply_proxy_headers`):
 Observaciones:
 
 - `save-config` intenta operar con el usuario actual y respeta autorización CKAN.
+- el catalogo publico (`full`, `organization`, `tag`, `dataset` y sus variantes `file/`) excluye todo dataset con `is_non_public_dataset` verdadero: `include_private=False` solo descarta `confidential`, porque `findable|viewable|restricted` conservan `private=False`. Esos datasets solo aparecen en el catalogo privado.
 - `user/private-catalog`, `user/private-catalog/dataset/<id>` y `user/private-datasets` exigen usuario autenticado (`401`); `user/session` **no**: responde `200` a cualquiera y solo describe al propio solicitante.
 - el gate de datos no publicos es `can_download` (`datashare_access_check`) en indice y expansion, y `datashare_resource_download` en el proxy por sesion; el fallback a private-only / `resource_show` solo se activa si `ckanext-datashare` no esta instalado (ver [[Variables de Entorno]]).
 - el proxy por token sigue siendo legible por cualquiera que tenga el token (TTL 1 h); el proxy por sesion, el whoami y el indice solo por el navegador con la cookie.

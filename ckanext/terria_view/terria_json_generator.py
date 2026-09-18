@@ -20,6 +20,7 @@ from .file_cache_manager import FileCacheManager
 from .sld_processor import SLDProcessor
 from .config_manager import ConfigManager
 from .resource_utils import ResourceUtils
+from .private_catalog import is_non_public_dataset
 
 
 class TerriaJSONGenerator:
@@ -337,7 +338,9 @@ class TerriaJSONGenerator:
             dataset = toolkit.get_action('package_show')({}, {'id': dataset_id})
             
             # Check if dataset is public and active
-            if dataset.get('private', False):
+            # datashare levels other than ``public`` keep ``private=False``
+            # (only ``confidential`` flips it), so check the level as well.
+            if dataset.get('private', False) or is_non_public_dataset(dataset):
                 raise toolkit.ObjectNotFound('Dataset is private')
             
             if dataset.get('state', '') != 'active':
@@ -467,6 +470,10 @@ class TerriaJSONGenerator:
             datasets_by_title = defaultdict(list)
             
             for dataset in datasets_search.get('results', []):
+                # ``include_private=False`` only drops ``confidential``;
+                # findable/viewable/restricted belong to the private catalog.
+                if is_non_public_dataset(dataset):
+                    continue
                 dataset_title = dataset['title']
                 notes = dataset.get('notes', '')
                 resources = dataset.get('resources', [])
@@ -551,6 +558,10 @@ class TerriaJSONGenerator:
             datasets_by_title = defaultdict(list)
             
             for dataset in datasets_search.get('results', []):
+                # ``include_private=False`` only drops ``confidential``;
+                # findable/viewable/restricted belong to the private catalog.
+                if is_non_public_dataset(dataset):
+                    continue
                 dataset_title = dataset['title']
                 notes = dataset.get('notes', '')
                 resources = dataset.get('resources', [])

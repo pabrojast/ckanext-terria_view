@@ -34,15 +34,23 @@ class ResourceUtils:
         """
         Retrieve the HMAC secret used to sign resource proxy tokens.
 
-        Falls back across common CKAN secret keys so tokens stay valid across
-        environments. Returning bytes for HMAC compatibility.
+        Prefers the dedicated ``ckanext.terria_view.proxy_token_secret`` (set it
+        from a deployment secret, e.g. ``CKANEXT__TERRIA_VIEW__PROXY_TOKEN_SECRET``)
+        and falls back across common CKAN secret keys. Returning bytes for HMAC
+        compatibility.
+
+        Raises:
+            RuntimeError: when no secret is configured. A hardcoded fallback
+                would let anyone forge tokens for non-public resources.
         """
-        for key in ('beaker.session.secret', 'SECRET_KEY', 'flask.secret_key'):
+        for key in ('ckanext.terria_view.proxy_token_secret',
+                    'beaker.session.secret', 'SECRET_KEY', 'flask.secret_key'):
             value = toolkit.config.get(key) if toolkit.config else None
             if value:
                 return str(value).encode('utf-8')
-        # Last-resort fallback; CKAN deployments should always set a secret.
-        return b'ckanext-terria-view-proxy-fallback'
+        raise RuntimeError(
+            'ckanext-terria_view: no secret configured for resource proxy tokens'
+        )
 
     def generate_resource_token(self, resource_id: str,
                                 ttl_seconds: int = RESOURCE_PROXY_TOKEN_TTL) -> str:
@@ -82,9 +90,12 @@ class ResourceUtils:
             return False
 
         payload = f"{resource_id}|{expiry}".encode('utf-8')
-        expected = hmac.new(
-            self._get_token_secret(), payload, hashlib.sha256
-        ).hexdigest()
+        try:
+            secret = self._get_token_secret()
+        except RuntimeError:
+            # No secret configured: fail closed instead of erroring the proxy.
+            return False
+        expected = hmac.new(secret, payload, hashlib.sha256).hexdigest()
         return hmac.compare_digest(signature, expected)
 
     def build_proxy_resource_url(self, resource_id: str,
