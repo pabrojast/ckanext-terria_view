@@ -145,7 +145,7 @@ class TerriaJSONGenerator:
             "info": [
                 {
                     "name": f"Organization: {org_info['display_name']}",
-                    "content": f"<img style=\"max-width:300px;width:100%\" alt=\"{org_info['display_name']}\" src=\"{org_info['image_display_url']}\" /><br/>{org_info['description']}<br/>"
+                    "content": (f"<img style=\"max-width:300px;width:100%\" alt=\"{org_info['display_name']}\" src=\"{org_info['image_display_url']}\" /><br/>" if org_info.get('image_display_url') else "") + f"{org_info['description']}<br/>"
                 },
                 {"name": "File Description", "content": resource_description},
                 {"name": "Availability", "content": resource.get("availability", "")},
@@ -515,7 +515,7 @@ class TerriaJSONGenerator:
                     "members": org_members,
                     "info": [{
                         "name": f"Organization: {org_info['display_name']}",
-                        "content": f"<img style=\"max-width:300px;width:100%\" alt=\"{org_info['display_name']}\" src=\"{org_info['image_display_url']}\" /><br/>{org_info['description']}<br/>"
+                        "content": (f"<img style=\"max-width:300px;width:100%\" alt=\"{org_info['display_name']}\" src=\"{org_info['image_display_url']}\" /><br/>" if org_info.get('image_display_url') else "") + f"{org_info['description']}<br/>"
                     }],
                     "infoSectionOrder": [f"Organization: {org_info['display_name']}"]
                 }]
