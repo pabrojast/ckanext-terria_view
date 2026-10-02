@@ -270,6 +270,7 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         
         # Configure callback
         self.resource_view_list_callback = functools.partial(new_resource_view_list, self)
+        self.resource_view_list_callback.side_effect_free = True  # GET /api/3/action/resource_view_list
         self.package_show_callback = action_filters.package_show
         self.resource_show_callback = action_filters.resource_show
         
