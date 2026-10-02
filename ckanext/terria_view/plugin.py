@@ -253,10 +253,16 @@ class Terria_ViewPlugin(plugins.SingletonPlugin):
         self.config_manager.default_title = config.get(
             f'ckanext.{PLUGIN_NAME}.default_title', 'Terria Viewer'
         )
+        # Empty -> `<ckan.site_url>/terria/` (same-origin Terria, see ConfigManager)
         self.config_manager.default_instance_url = config.get(
-            f'ckanext.{PLUGIN_NAME}.default_instance_url', 
-            'https://ihp-wins.unesco.org/terria/'
+            f'ckanext.{PLUGIN_NAME}.default_instance_url', ''
         )
+        # Hosts whose resource URLs the catalog may reference directly; the
+        # site itself is always allowed.
+        site_url = (config.get('ckan.site_url', '') or '').rstrip('/')
+        extra_domains = (config.get(f'ckanext.{PLUGIN_NAME}.valid_domains', '') or '').split()
+        self.config_manager.valid_domains = [d for d in [site_url] + extra_domains if d]
+        self.config_manager.site_title = config.get('ckan.site_title', '') or 'Catalogue'
         configured_private_mode = config.get(
             f'ckanext.{PLUGIN_NAME}.private_catalog_mode', 'auto'
         )

@@ -439,11 +439,18 @@ class ResourceUtils:
                 return None
             try:
                 upload = uploader.get_resource_uploader(resource)
-                resolved = upload.get_url_from_filename(
-                    resource['id'], filename, content_type=content_type
-                )
-                if resolved:
-                    return resolved, content_type, filename
+                get_url = getattr(upload, 'get_url_from_filename', None)
+                if get_url is not None:
+                    # cloud storage: signed URL the proxy fetches with requests
+                    resolved = get_url(resource['id'], filename, content_type=content_type)
+                    if resolved:
+                        return resolved, content_type, filename
+                elif hasattr(upload, 'get_path'):
+                    # CKAN's default filesystem storage: hand the path to the
+                    # proxy, which streams it with send_file (Range aware).
+                    path = upload.get_path(resource['id'])
+                    if path and os.path.isfile(path):
+                        return 'file://' + path, content_type, filename
             except Exception:
                 pass
 

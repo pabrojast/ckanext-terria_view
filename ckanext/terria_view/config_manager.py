@@ -22,14 +22,12 @@ class ConfigManager:
     # Regex to validate formats
     SUPPORTED_FORMATS_REGEX = '^(' + '|'.join([s.replace('*', '.*') for s in SUPPORTED_FORMATS]) + ')$'
     
-    # Valid URLs and domains
-    VALID_DOMAINS = [
-        'https://data.dev-wins.com',
-        'https://ihp-wins.unesco.org/'
-    ]
+    # Valid URLs and domains (set from config at startup; defaults to the site itself)
+    VALID_DOMAINS: List[str] = []
     
     def __init__(self, site_url: str = '', default_title: str = 'Terria Viewer', 
-                 default_instance_url: str = 'https://ihp-wins.unesco.org/terria/'):
+                 default_instance_url: str = '', valid_domains: Optional[List[str]] = None,
+                 site_title: str = ''):
         """
         Initialize the configuration manager.
         
@@ -40,7 +38,20 @@ class ConfigManager:
         """
         self.site_url = site_url
         self.default_title = default_title
-        self.default_instance_url = default_instance_url
+        self._default_instance_url = default_instance_url
+        self.valid_domains = list(valid_domains or [])
+        self.site_title = site_title
+
+    @property
+    def default_instance_url(self) -> str:
+        """Terria instance URL: configured value, else `<site_url>/terria/`."""
+        if self._default_instance_url:
+            return self._default_instance_url
+        return (self.site_url or '').rstrip('/') + '/terria/'
+
+    @default_instance_url.setter
+    def default_instance_url(self, value: str):
+        self._default_instance_url = value or ''
     
     def can_view_resource(self, resource: Dict) -> bool:
         """
@@ -70,7 +81,8 @@ class ConfigManager:
         Returns:
             True si la URL es de un dominio válido, False en caso contrario
         """
-        return any(url.startswith(domain) for domain in self.VALID_DOMAINS)
+        domains = self.valid_domains or self.VALID_DOMAINS or ([self.site_url] if self.site_url else [])
+        return any(url.startswith(domain) for domain in domains)
     
     def is_shp_resource(self, resource: Dict) -> bool:
         """

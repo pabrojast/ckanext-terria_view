@@ -794,6 +794,21 @@ class TerriaAPIController:
                 )
 
             upstream_url, content_type, filename = source
+            if upstream_url.startswith('file://'):
+                # Filesystem storage (no cloudstorage): stream the file itself.
+                path = upstream_url[len('file://'):]
+                resolved_type = _terria_friendly_content_type(filename, content_type)
+                _debug(f"serving local file for {resource_id}: {filename!r} as {resolved_type!r}")
+                try:
+                    response = send_file(
+                        path, mimetype=resolved_type, conditional=True,
+                        download_name=filename or None, as_attachment=False,
+                    )
+                except (FileNotFoundError, OSError):
+                    return self._create_cors_error_response('Resource file not found', 404)
+                self._apply_proxy_headers(response, {}, authorized_by, filename=filename)
+                response.headers.setdefault('Accept-Ranges', 'bytes')
+                return response
             _debug(
                 f"resolved upstream for {resource_id}: "
                 f"filename={filename!r} content_type={content_type!r} "

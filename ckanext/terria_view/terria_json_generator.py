@@ -683,7 +683,7 @@ class TerriaJSONGenerator:
             # Create final configuration
             config = {
                 "catalog": catalog_members,
-                "name": "IHP-WINS"
+                "name": self._site_title()
             }
             
             # Cache the result
@@ -695,6 +695,13 @@ class TerriaJSONGenerator:
             self._debug_print(f"Error generating full catalog JSON: {e}")
             raise
     
+    def _site_title(self) -> str:
+        return (getattr(self.config_manager, 'site_title', '') or toolkit.config.get('ckan.site_title', '') or 'Catalogue')
+
+    def _site_host(self) -> str:
+        site_url = self.config_manager.site_url or toolkit.config.get('ckan.site_url', '')
+        return urllib.parse.urlparse(site_url).netloc or site_url
+
     def convert_sets_to_lists(self, obj: Any) -> Any:
         """Convert any sets in the object to lists for JSON serialization."""
         if isinstance(obj, set):
@@ -762,39 +769,38 @@ class TerriaJSONGenerator:
                 'include_dataset_count': True
             })
             
-            # Base structure inspired by your example
+            site_url = (self.config_manager.site_url or toolkit.config.get('ckan.site_url', '')).rstrip('/')
             catalog = {
                 "workbench": [],
                 "catalog": [
                     {
-                        "name": "IHP-WINS",
+                        "name": self._site_title(),
                         "type": "group",
-                        "description": "UNESCO IHP-WINS datasets and base map references",
+                        "description": f"Datasets published on {self._site_title()} and base map references",
                         "info": [
                             {
                                 "name": "Attribution",
-                                "content": "Data provided by UNESCO IHP-WINS. For more information visit: https://ihp-wins.unesco.org/"
+                                "content": f"Data provided by {self._site_title()}. For more information visit: {site_url}/"
                             },
                             {
                                 "name": "License",
-                                "content": "Data available under UNESCO data sharing policies. Please check individual datasets for specific licensing terms."
+                                "content": "Please check the licence of each dataset before reusing it."
                             }
                         ],
                         "infoSectionOrder": ["Attribution", "License"],
                         "members": [
                             {
-                                "name": "IHP-WINS Complete Catalog",
-                                "url": f"{toolkit.config.get('ckan.site_url', '')}/api/terria/full",
+                                "name": f"{self._site_title()} catalogue",
+                                "url": f"{site_url}/api/terria/full",
                                 "type": "terria-reference",
                                 "isGroup": True,
-                                "description": "UNESCO's International Hydrological Programme Water Information Network System (IHP-WINS) complete catalog"
+                                "description": f"Complete catalogue of {self._site_title()}"
                             }
                         ]
                     }
                 ],
                 "corsDomains": [
-                    "ihp-wins.unesco.org",
-                    "unesco.org",
+                    self._site_host(),
                     "gibs.earthdata.nasa.gov",
                     "gitc.earthdata.nasa.gov",
                     "earthdata.nasa.gov",
@@ -839,11 +845,11 @@ class TerriaJSONGenerator:
                 "info": [
                     {
                         "name": "About This Catalog",
-                        "content": "This is a modular version of the IHP-WINS TerriaMap catalog, organized into thematic modules for better performance and maintainability. Each module contains related datasets with complete attribution and licensing information."
+                        "content": f"Catalogue of {self._site_title()} organised by organisation, with the attribution and licence of every dataset."
                     },
                     {
-                        "name": "Data Sources", 
-                        "content": "Data sources include UNESCO IHP-WINS, NASA Global Imagery Browse Services (GIBS), USGS/Climate Hazards Center (CHIRPS), UC Irvine (PERSIANN), McGill University/WWF (HydroRIVERS), Global Dam Watch consortium, and United Nations cartographic services."
+                        "name": "Data Sources",
+                        "content": f"Datasets published on {self._site_title()} plus public base map references."
                     },
                     {
                         "name": "Contact",
