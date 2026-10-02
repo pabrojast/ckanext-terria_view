@@ -123,3 +123,9 @@ def resource_show(context, data_dict):
 
     _debug_print("resource_show: stripped keys from response")
     return result
+
+
+# The wrapped actions replace CKAN's own, which are side-effect free: keep the
+# flag so GET requests to /api/3/action/package_show etc. keep working.
+package_show.side_effect_free = True
+resource_show.side_effect_free = True
