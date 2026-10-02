@@ -57,6 +57,28 @@ Resultado:
 
 Esto confirma que la suite no está completamente desacoplada del runtime CKAN.
 
+## Configuración guardada exportada al catálogo
+
+`test_catalog_custom_config.py` reutiliza los mocks CKAN de `test_private_datasets.py`, sin red ni cachés compartidas. Sus 27 casos cubren:
+
+- vistas SWOT reaches/nodes con `#start` en `terria_instance_url` y `custom_config=NA`, estilos simples/por propiedad y plantillas HTML con gráficos;
+- precedencia de la URL directa, fallback a `custom_config`, espacios con `%20`/`+` y signos `+` literales;
+- selección de un recurso por ID o URL de descarga/proxy frente a otros GeoJSON y CSV de gráficos; configuraciones ambiguas o malformadas no rompen el catálogo;
+- overrides del mismo modelo en varias fuentes, valores vacíos/`false`/`0`, `defaultStyle`, `activeStyle` sin `styles` y gist legacy con HTTP mockeado;
+- estilos guardados sobre defaults SLD en SHP/COG y generación de dataset con varias vistas conservando IDs, aliases y URLs.
+
+Suite determinista recomendada para este cambio:
+
+```bash
+pytest -q test_catalog_custom_config.py ckanext/terria_view/tests/test_sld_fetch_cache.py ckanext/terria_view/tests/test_sld_compound_filter.py test_private_datasets.py test_strip_private_catalog.py test_process_custom_config_sld.py
+```
+
+Resultado local 2026-10-02: `131 passed`; sólo warnings existentes de deprecación de `pkg_resources`. Antes de modificar el generador, la nueva suite reprodujo la pérdida de configuración (`14 failed`, `13 passed`).
+
+Validación adicional 2026-10-02: se consultaron sólo metadatos y vistas públicas de IHP-WINS para los datasets `swot-surface-water-time-series-dnipro-river-basin`, `swot-sword-regional-observations` y `swot-sword-surface-water-observations-buzi-pungwe-save-basin-805a2fb2b78d4027b88e8d1537615995`. El generador modificado se ejecutó localmente con esas configuraciones: las 13 vistas GeoJSON conservaron sus campos de presentación guardados y sus IDs/URLs de catálogo. Incluye reaches/nodes de Dnipro, Cuba, Nepal y Buzi-Pungwe-Save, además del GeoJSON de límites de cuenca que ya usaba `custom_config`.
+
+Esta comprobación compara JSON; no acredita un despliegue ni una validación visual en el Terria publicado. La comprobación de colores y gráficos en el entorno desplegado sigue el procedimiento de [[Deployment]].
+
 ## Qué tests existen
 
 ### Tests del plugin CKAN

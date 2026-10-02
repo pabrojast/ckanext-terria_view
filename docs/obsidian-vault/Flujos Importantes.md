@@ -38,6 +38,8 @@ Secuencia:
 6. Guarda la configuracion serializada en la propia vista solo si el dataset es publico y la URL calculada no apunta al proxy con token (`_may_persist_cached_config`); `cached_config` es legible via `resource_view_show`.
 7. Renderiza `terria.html`, que embebe un iframe hacia la instancia Terria.
 
+Excepción: si `terria_instance_url` contiene `#`, el render usa esa URL directamente (`direct_url`) antes de calcular o adaptar configuraciones. Esta URL tiene precedencia sobre `custom_config`; las vistas SWOT utilizan `#start=...` en ese campo.
+
 Resultado:
 
 - Terria carga con `#start=<encoded_config>` o con la URL directa configurada.
@@ -118,6 +120,16 @@ Secuencia:
 5. Para cada recurso busca vistas `terria_view`.
 6. Genera uno o varios items Terria, uno por vista.
 7. Cachea la respuesta en memoria.
+
+### Configuración guardada del recurso
+
+`format_dataset_item` usa la URL directa de `terria_instance_url` cuando contiene un fragmento, igual que el render CKAN; en caso contrario usa `custom_config`. No hace falta volver a guardar vistas legacy como las SWOT que tienen `custom_config=NA`. El parser de `#start` decodifica una sola vez tanto `%20` como `+`, conservando los signos `+` literales codificados como `%2B`. Se mantiene el soporte previo de `#share=g-...` vía gist; otros tipos de enlaces share no se resuelven aquí.
+
+Dentro de `initSources[].models`, se selecciona el modelo por ID de catálogo/recurso (incluidos aliases `shareKeys`) y después por URL original, URL resuelta o ruta CKAN de descarga/proxy con el mismo ID. Si no hay coincidencia, sólo se acepta un único modelo con el mismo tipo de recurso. Tipos SHP y ráster se normalizan como en el catálogo. Fuentes posteriores pueden aportar overrides del mismo ID; los grupos, fuentes remotas y entradas malformadas se omiten. Ante ambigüedad o configuración inválida se conserva el item base con los defaults SLD ya aplicados, si los hay.
+
+Del modelo seleccionado se copian los campos de presentación: `legends`, `styles`, `activeStyle`, `defaultStyle`, `renderOptions`, `opacity`, `style`, `perPropertyStyles`, `featureInfoTemplate`, `clampToGround`, `forceCesiumPrimitives` y `useOutlineColorForLineFeatures`. Los valores explícitos, incluidos listas vacías, `false` y `0`, ganan sobre defaults SLD; `activeStyle` no depende de que exista `styles`. Se conservan los IDs, nombres, metadatos y URLs calculados por el catálogo. No se importa la escena, la cámara ni otros modelos como los CSV abiertos por gráficos.
+
+Esto permite que los GeoJSON SWOT conserven colores, símbolos y gráficos al cargar desde Terria standalone. El flujo compartido también se usa para organizaciones, tags y catálogos privados. Ver [[Testing]] y [[Deployment]] para regresiones y regeneración de cachés.
 
 ## 7. Generación de catálogo completo
 

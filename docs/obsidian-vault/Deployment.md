@@ -79,6 +79,17 @@ Endpoints importantes en despliegue:
 
 Operativamente, el catálogo completo depende de caché de archivo para evitar regeneraciones costosas en cada request.
 
+### Regenerar catálogos después de cambiar su generación
+
+La corrección de configuración guardada SWOT en `terria_json_generator.py` no requiere migrar datos ni volver a guardar vistas. Sí requiere retirar los JSON generados por la versión anterior:
+
+1. Desplegar la extensión mediante el procedimiento del entorno.
+2. Con una sesión/API de sysadmin, ejecutar `POST /api/terria/cache/invalidate` sin parámetros para limpiar todos los tipos de catálogo. La invalidación de archivos debe alcanzar cada instancia con un directorio de caché independiente.
+3. Reiniciar todos los workers CKAN del entorno para retirar sus cachés en memoria; una petición de invalidación sólo limpia la memoria del worker que la atiende. Hacerlo según el procedimiento operativo del entorno.
+4. Consultar de nuevo los catálogos de dataset y completo; si el completo responde `202 generating`, esperar a su regeneración. Comprobar que el item GeoJSON contiene `style`, `perPropertyStyles` y `featureInfoTemplate` cuando la vista los guarda, y abrirlo en una sesión nueva de Terria para comprobar colores y gráficos.
+
+`_CONFIG_PROCESSING_VERSION` versiona la configuración del iframe CKAN, no los JSON de catálogo; aumentarla no sustituye esta invalidación. La corrección no cambia ese render. Ver [[Flujos Importantes]] y [[Testing]].
+
 ## Inferencia
 
 La extensión probablemente convivió con procesos externos que consumían estos endpoints para publicar catálogos Terria. La guía `TERRIA_API_GUIDE.md` menciona un DAG de Airflow, pero ese DAG no está en este repositorio.
