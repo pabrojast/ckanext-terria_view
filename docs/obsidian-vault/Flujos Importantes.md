@@ -223,3 +223,5 @@ Confirmado: el botón `Save Configuration` sí requiere que la instancia Terria 
 ## Procedencia para preguntas sobre datos
 
 Los items emitidos por `TerriaJSONGenerator` incluyen `ckanResourceId` y `ckanDatasetId`. Se reasignan despues de combinar configuraciones guardadas para conservar la identidad real del recurso. Terria utiliza esos IDs al solicitar analisis a `ckanext-terriassistant`; el backend vuelve a comprobar permisos de lectura y descarga. No incluir tokens ni URLs firmadas en esos campos.
+
+Las acciones envueltas `resource_show` y `package_show` conservan `side_effect_free=True`: `CkanItemReference` las consulta mediante GET cuando el usuario agrega una capa desde el asistente. Sin ese indicador CKAN devuelve 400 y pide POST.
