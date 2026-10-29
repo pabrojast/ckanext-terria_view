@@ -219,3 +219,7 @@ Notas:
 - comportamiento del `came_from` de `/user/login` en CKAN 2.10 con `ckan.root_path` no vacio (la ruta la construye Terria a partir de `window.location.pathname`).
 
 Confirmado: el botón `Save Configuration` sí requiere que la instancia Terria embebida implemente el handler `requestShareData` → `shareDataResponse` (`updateApplicationOnMessageFromParentWindow.js`); la imagen `pabrojast/terriamap` lo trae.
+
+## Procedencia para preguntas sobre datos
+
+Los items emitidos por `TerriaJSONGenerator` incluyen `ckanResourceId` y `ckanDatasetId`. Se reasignan despues de combinar configuraciones guardadas para conservar la identidad real del recurso. Terria utiliza esos IDs al solicitar analisis a `ckanext-terriassistant`; el backend vuelve a comprobar permisos de lectura y descarga. No incluir tokens ni URLs firmadas en esos campos.

@@ -140,6 +140,8 @@ class TerriaJSONGenerator:
             "name": resource_name,
             "type": resource_format,
             "id": resource_id,
+            "ckanResourceId": resource_id,
+            "ckanDatasetId": package_id,
             "url": resource_url,
             'description': (notes or '') + '<br/><br/><strong>Dataset URL: </strong> <a href="' + site_url + '/dataset/' + package_id + '">' + site_url + '/dataset/' + package_id + '</a>',
             "info": [
@@ -228,6 +230,9 @@ class TerriaJSONGenerator:
             self._debug_print(f"Error getting views for resource {resource_id}: {e}")
             total_views = 0
         
+        # Identity is not a style override. Preserve it across saved multi-view configurations.
+        elemento['ckanResourceId'] = resource_id
+        elemento['ckanDatasetId'] = package_id
         return elemento, total_views
     
     def _process_sld_styles(self, style_url: str, resource_format: str) -> Optional[Dict]:
