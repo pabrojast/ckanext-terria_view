@@ -225,3 +225,11 @@ Confirmado: el botón `Save Configuration` sí requiere que la instancia Terria 
 Los items emitidos por `TerriaJSONGenerator` incluyen `ckanResourceId` y `ckanDatasetId`. Se reasignan despues de combinar configuraciones guardadas para conservar la identidad real del recurso. Terria utiliza esos IDs al solicitar analisis a `ckanext-terriassistant`; el backend vuelve a comprobar permisos de lectura y descarga. No incluir tokens ni URLs firmadas en esos campos.
 
 Las acciones envueltas `resource_show` y `package_show` conservan `side_effect_free=True`: `CkanItemReference` las consulta mediante GET cuando el usuario agrega una capa desde el asistente. Sin ese indicador CKAN devuelve 400 y pide POST.
+
+## Configuraciones guardadas y Asistente IA
+
+`saved_config.read_saved_config` centraliza JSON, `#start`, `#share` y gists heredados `#share=g-…`. Los shortlinks modernos se resuelven en `<instancia>/share/<token>`. Solo se admiten instancias configuradas, no se siguen redirecciones y la respuesta está limitada a 4 MiB y timeouts de conexión/lectura.
+
+La URL directa `terria_instance_url` con fragmento precede a `custom_config`, igual que la vista embebida. El generador combina modelos de initSources y selecciona el modelo del recurso por ID/alias, URL o ruta CKAN. Ante ambigüedad conserva el item base. Copia exclusivamente presentación; mantiene IDs, URLs y procedencia del catálogo. Los valores guardados, incluidos `false`, `0` y listas vacías, preceden al SLD.
+
+El Asistente IA consume esta generación mediante su propia API autenticada de lectura por recurso/vista, comprobando permisos y deshabilitando caché compartida. No utiliza el endpoint de guardar vistas. El procesamiento de vistas incrementa su versión de caché; la publicación requiere invalidar también la caché de catálogos.

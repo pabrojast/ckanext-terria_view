@@ -140,3 +140,7 @@ Para iterar por áreas:
 - qué subconjunto de tests se considera oficialmente soportado;
 - si hay una suite CI moderna fuera de Travis;
 - si los scripts raíz deben seguir siendo tests o migrarse a `scripts/` o `examples/`.
+
+## Estilos guardados y shortlinks
+
+`test_catalog_custom_config.py` cubre vistas SWOT, selección segura entre modelos, precedencia URL/config/SLD, valores vacíos, alias, varias vistas y gists. `test_saved_config.py` cubre shortlinks del servicio configurado, bloqueo de hosts/rutas ajenos, redirecciones, límites y payload inválido. Ejecutar estos tests junto a `test_private_datasets.py`, `test_process_custom_config_sld.py`, `test_strip_private_catalog.py` y los tests SLD. Los HTTP de estos tests son fixtures; validar además un enlace real en DEV.
