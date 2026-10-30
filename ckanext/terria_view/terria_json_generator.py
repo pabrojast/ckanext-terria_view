@@ -21,6 +21,17 @@ from .sld_processor import SLDProcessor
 from .config_manager import ConfigManager
 from .resource_utils import ResourceUtils
 from .private_catalog import is_non_public_dataset
+from .saved_config import read_saved_config
+
+
+_CATALOG_TYPE_ALIASES = {'tif': 'cog', 'tiff': 'cog', 'geotiff': 'cog', 'shape': 'shp',
+                         'kmz': 'kml', 'wfs': 'wfs-features', 'esri rest': 'esri-mapServer',
+                         'esri-mapserver': 'esri-mapServer'}
+_SAVED_PRESENTATION_KEYS = (
+    'legends', 'styles', 'activeStyle', 'defaultStyle', 'renderOptions', 'opacity',
+    'style', 'perPropertyStyles', 'featureInfoTemplate',
+    'clampToGround', 'forceCesiumPrimitives', 'useOutlineColorForLineFeatures',
+)
 
 
 class TerriaJSONGenerator:
@@ -114,7 +125,9 @@ class TerriaJSONGenerator:
             tuple: (formatted_element, total_views)
         """
         resource_id = resource['id']
-        resource_format = resource['format'].lower()
+        raw_format = resource['format'].lower()
+        resource_format = ('csv' if raw_format.startswith('csv-geo') else
+                           _CATALOG_TYPE_ALIASES.get(raw_format, raw_format))
         
         # Fix for resources without name - generate default name
         resource_name = resource.get('name', '').strip()
@@ -184,7 +197,9 @@ class TerriaJSONGenerator:
                 
                 selected_view = terria_views[view_index]
                 
-                custom_config = selected_view.get('custom_config')
+                instance_url = selected_view.get('terria_instance_url')
+                custom_config = (instance_url if isinstance(instance_url, str) and '#' in instance_url
+                                 else selected_view.get('custom_config'))
                 style_url = selected_view.get('style')
                 view_name = selected_view.get('title', '')
                 
@@ -222,7 +237,7 @@ class TerriaJSONGenerator:
                 if custom_config and custom_config not in ['NA', '']:
                     self._debug_print(f"Processing custom config: {custom_config}")
                     try:
-                        self._apply_custom_config(elemento, custom_config)
+                        self._apply_custom_config(elemento, custom_config, resource)
                     except Exception as e:
                         self._debug_print(f"Error processing custom config: {e}")
             
@@ -273,49 +288,87 @@ class TerriaJSONGenerator:
             elemento['clampToGround'] = True
             elemento['forceCesiumPrimitives'] = False  # Always false for categorical styling
     
-    def _apply_custom_config(self, elemento: Dict, custom_config: str):
-        """Apply custom configuration to element."""
+    def _select_custom_model(self, custom_data: Dict, elemento: Dict,
+                             resource: Dict) -> Optional[Dict]:
+        """Find this resource, not another layer or a CSV opened by a chart.
+
+        Prefer its catalog/resource ID, then its URL (including CKAN download
+        and proxy paths). Legacy views use human-readable model IDs; when no
+        identity matches, accept only a single model with the resource's type.
+        """
+        if not isinstance(custom_data, dict):
+            return None
+        sources = custom_data.get('initSources')
+        if not isinstance(sources, list):
+            return None
+
+        models = {}
+        for source in sources:
+            source_models = source.get('models') if isinstance(source, dict) else None
+            if not isinstance(source_models, dict):
+                continue
+            for key, model in source_models.items():
+                if isinstance(model, dict):
+                    # Later init sources can hold only overrides for an item
+                    # whose URL/type was provided by an earlier source.
+                    models.setdefault(key, {}).update(model)
+
+        candidates = []
+        for key, model in models.items():
+            model_type = model.get('type', '')
+            if not isinstance(model_type, str):
+                continue
+            model_type = _CATALOG_TYPE_ALIASES.get(model_type.lower(), model_type.lower())
+            if not model_type or model_type == elemento['type']:
+                candidates.append((key, model, model_type))
+
+        ids = {elemento['id'], resource.get('id')}
+        ids.update(elemento.get('shareKeys', []))
+        ids.discard(None)
+        matches = [model for key, model, _ in candidates
+                   if key in ids or (isinstance(model.get('id'), str) and model['id'] in ids)]
+        if matches:
+            return matches[0] if len(matches) == 1 else None
+
+        urls = {elemento.get('url'), resource.get('url')}
+        urls.discard(None)
+        urls.discard('')
+        matches = []
+        resource_id = resource.get('id')
+        for _key, model, _type in candidates:
+            url = model.get('url')
+            if not isinstance(url, str) or not url:
+                continue
+            # The host, filename or proxy token can change between saving a
+            # view and generating a catalog; the CKAN resource ID is stable.
+            path = urllib.parse.urlparse(url).path
+            same_resource_path = resource_id and (
+                f'/resource/{resource_id}/download/' in path
+                or f'/api/terria/resource/{resource_id}/content/' in path
+            )
+            if url in urls or same_resource_path:
+                matches.append(model)
+        if matches:
+            return matches[0] if len(matches) == 1 else None
+
+        compatible = [model for _key, model, type_ in candidates if type_ == elemento['type']]
+        return compatible[0] if len(compatible) == 1 else None
+
+    def _apply_custom_config(self, elemento: Dict, custom_config: str,
+                             resource: Optional[Dict] = None):
+        """Copy saved presentation traits, retaining catalog identity and URLs."""
         try:
-            # Extract the 'start' or 'share' parameter from the URL
-            parsed_url = urllib.parse.urlparse(custom_config)
-            fragment = parsed_url.fragment
-            
-            if fragment.startswith('share='):
-                # Case of URL with #share (gist)
-                gist_id = fragment.split('=g-')[1]
-                gist_url = f'https://gist.githubusercontent.com/pabrojast/{gist_id}/raw/Terriajs-usercatalog.json'
-                try:
-                    response = self.http.get(gist_url, timeout=self.TIMEOUT_SECONDS)
-                    if response.status_code == 200:
-                        decoded_param = response.text
-                    else:
-                        decoded_param = '{}'
-                except Exception as e:
-                    self._debug_print(f"Error fetching gist config: {e}")
-                    decoded_param = '{}'
-            else:
-                # Original case with #start
-                start_param = fragment.split('=', 1)[1]
-                decoded_param = urllib.parse.unquote(start_param)
-            
-            # Parse the JSON
-            custom_data = json.loads(decoded_param)
-            
-            # Apply custom configuration properties
-            for init_source in custom_data.get('initSources', []):
-                if 'models' in init_source:
-                    for model_key, model_value in init_source['models'].items():
-                        # Apply existing legends and styles from custom config
-                        if 'legends' in model_value:
-                            elemento['legends'] = model_value['legends']
-                        if 'styles' in model_value:
-                            elemento['styles'] = model_value['styles']
-                            if 'activeStyle' in model_value:
-                                elemento['activeStyle'] = model_value['activeStyle']
-                        if 'renderOptions' in model_value:
-                            elemento['renderOptions'] = model_value['renderOptions']
-                        if 'opacity' in model_value:
-                            elemento['opacity'] = model_value['opacity']
+            custom_data = read_saved_config(custom_config, self.config_manager.default_instance_url)
+            model = self._select_custom_model(custom_data, elemento, resource or elemento)
+            if model is None:
+                self._debug_print(f"No unambiguous saved model for resource {elemento['id']}")
+                return
+
+            # Saved values win over SLD defaults, including [] / false / 0.
+            # Never import the scene, other layers, or saved resource URLs.
+            for key in _SAVED_PRESENTATION_KEYS:
+                if key in model:
+                    elemento[key] = model[key]
                         
         except Exception as e:
             self._debug_print(f"Error processing custom config: {e}")

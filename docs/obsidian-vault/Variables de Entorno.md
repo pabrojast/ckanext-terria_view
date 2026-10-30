@@ -158,3 +158,7 @@ Si `ckan.storage_path` no es escribible, la extensión intenta degradar a `/tmp`
 
 - valores efectivos usados en producción;
 - si `strip_resource_extras_enabled` se deja encendido por defecto en todos los entornos.
+
+## Instancias de shortlinks
+
+`ckanext.terria_view.share_instances` admite una lista separada por espacios de URLs base Terria adicionales cuyos shortlinks se pueden resolver. Se admiten también `ckanext.terria_view.default_instance_url` y `<ckan.site_url>/terria/`. La coincidencia incluye esquema, host y ruta. Estas URLs son configuración administrativa y no se toman de las instrucciones del modelo.

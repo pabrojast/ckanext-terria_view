@@ -582,6 +582,9 @@ def prepare_saved_custom_config_url(url, lazy_private_catalog=False):
     )
 
 
+from .saved_config import read_saved_config
+
+
 class TerriaConfigBuilder:
     """Constructor de configuraciones para TerriaJS."""
     
@@ -939,27 +942,7 @@ class TerriaConfigBuilder:
             Configuración procesada como string JSON, None en caso de error
         """
         try:
-            # Parse custom configuration
-            parsed_url = urllib.parse.urlparse(custom_config)
-            fragment = parsed_url.fragment
-            
-            if fragment.startswith('share='):
-                # Caso de URL con #share
-                gist_id = fragment.split('=g-')[1]
-                gist_url = f'https://gist.githubusercontent.com/pabrojast/{gist_id}/raw/Terriajs-usercatalog.json'
-                try:
-                    with urllib.request.urlopen(gist_url) as response:
-                        decoded_param = response.read().decode('utf-8')
-                except Exception as e:
-                    self._debug_print(f"Error fetching gist config: {e}")
-                    return None
-            else:
-                # Caso original con #start
-                start_param = fragment.split('=', 1)[1]
-                decoded_param = urllib.parse.unquote(start_param)
-            
-            # Parsear el JSON
-            start_data = json.loads(decoded_param)
+            start_data = read_saved_config(custom_config, self.config_manager.default_instance_url)
 
             # Decode names
             start_data = self._decode_names_in_object(start_data)
